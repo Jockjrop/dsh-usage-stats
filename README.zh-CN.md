@@ -49,6 +49,20 @@ npm install /path/to/dsh-usage-stats
 
 然后打开 DSH Web GUI → 设置 → **用量统计**。
 
+## 卸载
+
+```sh
+dsh plugin remove dsh-usage-stats
+```
+
+或者使用 npm：
+
+```sh
+npm uninstall dsh-usage-stats
+```
+
+`dsh plugin remove` 会自动将插件行从 profile 的 `dsh.profile.bundles` 层栈中移除。若直接用 npm 卸载，请手动删除 profile 的 `package.json` 中 `dsh.profile.bundles` 里残留的 `dsh-usage-stats` 条目。卸载后重启 DSH Web GUI 即可生效。
+
 ## HTTP API
 
 `GET /api/dsh-usage-stats/stats`（只读；由回环信任围栏保护——仅响应来自 `localhost`/`127.0.0.1` 的请求）。

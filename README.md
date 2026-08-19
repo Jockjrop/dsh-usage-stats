@@ -49,6 +49,20 @@ npm install /path/to/dsh-usage-stats
 
 Then open the DSH web GUI → Settings → **用量统计**.
 
+## Uninstall
+
+```sh
+dsh plugin remove dsh-usage-stats
+```
+
+Or with npm:
+
+```sh
+npm uninstall dsh-usage-stats
+```
+
+`dsh plugin remove` also drops the plugin row from the profile's `dsh.profile.bundles` layer stack automatically. If you uninstall with npm directly, remove any leftover `dsh-usage-stats` entry from the `dsh.profile.bundles` list in the profile's `package.json`. Restart the DSH web GUI afterwards for the change to take effect.
+
 ## HTTP API
 
 `GET /api/dsh-usage-stats/stats` (read-only; guarded by a loopback trust fence — only requests from `localhost`/`127.0.0.1` are answered).
