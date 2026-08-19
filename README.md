@@ -1,5 +1,7 @@
 # dsh-usage-stats
 
+[English](README.md) | [中文](README.zh-CN.md)
+
 Token usage statistics for the [DSH web GUI](https://github.com/deepseek-ai/dsh): a settings page **用量统计** that shows your model-token consumption as a GitHub-style heatmap, a 24-hour (today) token bar chart, a per-model breakdown, and whole-history totals.
 
 Works as an external bundle patch — no DSH source changes required.
