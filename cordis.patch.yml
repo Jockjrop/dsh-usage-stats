@@ -1,0 +1,13 @@
+# dsh-usage-stats bundle patch: inserts the dual-face plugin row into the web
+# profile roster. Applied automatically as a bundle layer when the package is
+# installed (its `dsh.bundle.patch` declaration makes `dsh plugin add link:<dir>`
+# join it to `dsh.profile.bundles`).
+#
+# The row is a bare plugin by package name: the node half (exports ".") runs in
+# the host process (session-log aggregation, /api/dsh-usage-stats routes), and
+# the `dsh.client` declaration in package.json makes the browser half
+# (exports "./client", served at /plugins/dsh-usage-stats/client.js) load in the
+# web GUI and register the 用量统计 settings page.
+- insert:
+    - id: usage-stats
+      name: 'dsh-usage-stats'
