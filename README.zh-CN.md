@@ -21,7 +21,7 @@
 | | |
 | --- | --- |
 | ![用量统计总览](screenshots/usage-stats-overview.png) | ![用量热力图](screenshots/usage-stats-heatmap.png) |
-| 整页：用量热力图、24 小时柱状图、按模型拆分、合计与筛选 | 热力图特写：最近六个月的 GitHub 风格贡献日历 |
+| 热力图特写：最近六个月的 GitHub 风格贡献日历 | 整页：用量热力图、24 小时柱状图、按模型拆分、合计与筛选 |
 | ![opencode-go 使用情况面板](screenshots/usage-stats-opencode.png) | |
 | 页面底部面板：本机 opencode 订阅用量（Go 为配额进度条卡片，其余为数字滚动窗口卡片） | |
 

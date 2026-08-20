@@ -21,7 +21,7 @@ Works as an external bundle patch — no DSH source changes required.
 | | |
 | --- | --- |
 | ![Usage statistics overview](screenshots/usage-stats-overview.png) | ![Usage heatmap](screenshots/usage-stats-heatmap.png) |
-| Full page: usage heatmap, 24-hour chart, per-model breakdown, totals and filters | Heatmap detail: GitHub-style contribution calendar over the last six months |
+| Heatmap detail: GitHub-style contribution calendar over the last six months | Full page: usage heatmap, 24-hour chart, per-model breakdown, totals and filters |
 | ![opencode-go usage panel](screenshots/usage-stats-opencode.png) | |
 | Bottom panel: local opencode subscription usage (progress-bar quota cards for Go, numeric rolling-window cards otherwise) | |
 
