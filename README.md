@@ -16,6 +16,15 @@ Works as an external bundle patch — no DSH source changes required.
 - **opencode-go usage panel** — a standalone section at the bottom of the page: detects which subscription the local opencode login holds (`opencode-go` = OpenCode Go, `opencode` = OpenCode Zen) and renders accordingly. For **Go** it shows the official subscription quota (via `opencode.ai/zen/go/v1/usage`, reusing the local login) as **three progress-bar cards in the opencode.ai website style** (percent used, bar, $ spent / window limit, reset countdown; two-row layout — the first two cards in one row, the monthly card spanning the second row). For **Zen** (pay-as-you-go) the same official endpoint is tried first, rendering progress-bar cards when it answers; when the endpoint rejects the key (401/403/404) the three rolling windows fall back to the local opencode database (`opencode.db` `session` table), aggregated read-only, as numeric cards. The local database is always available as the hover comparison; with no login the whole section stays hidden.
 - **Light & dark themes** — styled with the DSH alias theme tokens (`--dsw-alias-*`).
 
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Usage statistics overview](screenshots/usage-stats-overview.png) | ![Usage heatmap](screenshots/usage-stats-heatmap.png) |
+| Full page: usage heatmap, 24-hour chart, per-model breakdown, totals and filters | Heatmap detail: GitHub-style contribution calendar over the last six months |
+| ![opencode-go usage panel](screenshots/usage-stats-opencode.png) | |
+| Bottom panel: local opencode subscription usage (progress-bar quota cards for Go, numeric rolling-window cards otherwise) | |
+
 ## How it works
 
 Two halves, joined into one bundle row (`usage-stats`) by `cordis.patch.yml`:

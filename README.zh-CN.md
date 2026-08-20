@@ -16,6 +16,15 @@
 - **opencode-go 使用情况面板** — 页面最下方的独立面板：自动识别本机 opencode 登录对应的订阅类型（`opencode-go` = OpenCode Go，`opencode` = OpenCode Zen）并相应渲染。**Go** 通过官方配额接口（`opencode.ai/zen/go/v1/usage`，复用本机 opencode 登录）以 **opencode 官方网站样式的三个进度条卡片**（百分比 + 进度条 + 已用 $ + 重置倒计时，两行布局）展示订阅配额用量；**Zen**（按量付费）同样先尝试该官方接口——应答时渲染相同的进度条卡片，接口拒绝 Key（401/403/404）时才回退为以本机 opencode 数据库（`opencode.db` 的 `session` 表）只读聚合出的同一组三个滚动窗口数字卡片。本机数据库始终可作为悬停对照；未登录时整个区块不显示。
 - **浅色与深色主题** — 使用 DSH 别名主题变量（`--dsw-alias-*`）样式化。
 
+## 界面截图
+
+| | |
+| --- | --- |
+| ![用量统计总览](screenshots/usage-stats-overview.png) | ![用量热力图](screenshots/usage-stats-heatmap.png) |
+| 整页：用量热力图、24 小时柱状图、按模型拆分、合计与筛选 | 热力图特写：最近六个月的 GitHub 风格贡献日历 |
+| ![opencode-go 使用情况面板](screenshots/usage-stats-opencode.png) | |
+| 页面底部面板：本机 opencode 订阅用量（Go 为配额进度条卡片，其余为数字滚动窗口卡片） | |
+
 ## 工作原理
 
 两个半区，由 `cordis.patch.yml` 合并为一行 bundle（`usage-stats`）：
