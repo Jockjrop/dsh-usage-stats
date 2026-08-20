@@ -1,6 +1,6 @@
 {
   "name": "dsh-usage-stats",
-  "description": "Usage statistics for the DSH web GUI: a settings page (用量统计) with a token-usage heatmap (GitHub-style calendar, wrapped to fit), a 24-hour token bar chart, per-model token breakdown, and whole-history totals. Aggregates every session's durable log (assistant/message usage events) on the host and serves read-only /api/dsh-usage-stats/* routes. Mounted as a permanent bundle patch without dsh source changes.",
+  "description": "Usage statistics for the DSH web GUI: a settings page (用量统计) with a token-usage heatmap (GitHub-style calendar, wrapped to fit), a 24-hour token bar chart, per-model token breakdown, whole-history totals, and an opencode-go usage panel at the bottom (aggregates the local opencode database; shows the 5-hour / weekly / monthly rolling quota windows with a per-hour strip of the last 5 hours, and the official OpenCode Go subscription quota as three opencode.ai-style progress-bar cards — percent used, $ spent / window limit, reset countdown — via opencode.ai/zen/go/v1/usage with the local opencode login key). Aggregates every session's durable log (assistant/message usage events) on the host and serves read-only /api/dsh-usage-stats/* routes. Mounted as a permanent bundle patch without dsh source changes.",
   "version": "0.1.0",
   "type": "module",
   "main": "lib/index.js",

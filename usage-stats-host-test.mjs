@@ -215,4 +215,104 @@ try {
   delete process.env.DSH_HOME
 }
 
+/* ------------------- Part 3: opencode-go stats ------------------- */
+// Hermetic: scratch SQLite database created with node:sqlite (skipped when
+// the runtime lacks the builtin). Verifies the fold of the `session` table
+// into totals / byDay / byModel / recent, plus findOpencodeDb() honoring
+// OPENCODE_DATA.
+import { collectOpencodeStats, findOpencodeDb, localHourKey } from './lib/index.js'
+
+const ocTmp = mkdtempSync(join(tmpdir(), 'dsh-usage-oc-'))
+const ocDbPath = join(ocTmp, 'opencode.db')
+const ocBefore = process.env.OPENCODE_DATA
+process.env.OPENCODE_DATA = ocTmp
+try {
+  let DatabaseSync = null
+  try {
+    const sqlite = await import('node:sqlite')
+    DatabaseSync = sqlite.DatabaseSync
+  } catch {
+    DatabaseSync = null
+  }
+  if (DatabaseSync === null) {
+    console.log('skip: node:sqlite unavailable, opencode part skipped')
+  } else {
+    const ocDb = new DatabaseSync(ocDbPath)
+    ocDb.exec('CREATE TABLE session (id TEXT PRIMARY KEY, title TEXT, model TEXT, cost REAL, tokens_input INTEGER, tokens_output INTEGER, tokens_reasoning INTEGER, tokens_cache_read INTEGER, tokens_cache_write INTEGER, summary_additions INTEGER, summary_deletions INTEGER, summary_files INTEGER, time_created INTEGER)')
+    ocDb.exec('CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, data TEXT)')
+    const ins = ocDb.prepare('INSERT INTO session (id, title, model, cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, summary_additions, summary_deletions, summary_files, time_created) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    // Two sessions on day A (same model), one on day B (different model), one
+    // inside the 5-hour window (1 h ago), one far outside the 30-day window.
+    const dayA = now - 86400000
+    const dayB = now - 2 * 86400000
+    const hourAgo = now - 3600000
+    const old40d = now - 40 * 86400000
+    ins.run('s1', '第一会话', JSON.stringify({ id: 'm1', providerID: 'opencode', variant: 'max' }), 0.001234, 100, 50, 10, 1000, 0, 5, 2, 1, dayA)
+    ins.run('s2', '第二会话', JSON.stringify({ id: 'm1', providerID: 'opencode', variant: 'max' }), 0, 200, 100, 20, 2000, 0, 0, 0, 0, dayA)
+    ins.run('s3', '第三会话', 'm2', 0.5, 10, 20, 0, 0, 30, 1, 0, 1, dayB)
+    ins.run('s4', '第四会话', JSON.stringify({ id: 'm4', providerID: 'opencode', variant: '' }), 0.01, 30, 10, 5, 500, 0, 0, 0, 0, hourAgo)
+    ins.run('s5', '第五会话', JSON.stringify({ id: 'm5', providerID: 'opencode', variant: 'old' }), 0, 9999, 1, 0, 0, 0, 0, 0, 0, old40d)
+    ocDb.prepare('INSERT INTO message (id, session_id, time_created, data) VALUES (?,?,?,?)').run('msg1', 's1', dayA, '{}')
+    ocDb.prepare('INSERT INTO message (id, session_id, time_created, data) VALUES (?,?,?,?)').run('msg2', 's2', dayA, '{}')
+    ocDb.close()
+
+    const found = await findOpencodeDb()
+    assert(found === ocDbPath, 'findOpencodeDb honours OPENCODE_DATA (' + found + ')')
+
+    const oc = await collectOpencodeStats(ocDbPath, TZ, now)
+    assert(oc.ok === true && oc.available === true, 'collectOpencodeStats ok+available')
+    assert(oc.totals.sessions === 5, 'oc totals.sessions = 5, got ' + oc.totals.sessions)
+    assert(oc.totals.messages === 2, 'oc totals.messages = 2, got ' + oc.totals.messages)
+    assert(oc.totals.inputTokens === 10339, 'oc input = 10339, got ' + oc.totals.inputTokens)
+    assert(oc.totals.outputTokens === 181, 'oc output = 181, got ' + oc.totals.outputTokens)
+    assert(oc.totals.reasoningTokens === 35, 'oc reasoning = 35, got ' + oc.totals.reasoningTokens)
+    assert(oc.totals.cacheReadTokens === 3500, 'oc cacheRead = 3500, got ' + oc.totals.cacheReadTokens)
+    assert(oc.totals.cacheWriteTokens === 30, 'oc cacheWrite = 30, got ' + oc.totals.cacheWriteTokens)
+    assert(oc.totals.billed === 14050, 'oc billed = input+output+cache, got ' + oc.totals.billed)
+    assert(Math.abs(oc.totals.cost - 0.5112) < 1e-9, 'oc cost rounded to 4dp, got ' + oc.totals.cost)
+    assert(oc.totals.additions === 6 && oc.totals.deletions === 2 && oc.totals.files === 2, 'oc diff stats folded')
+    assert(oc.byDay.length === 4, 'oc byDay = 4 distinct days, got ' + oc.byDay.length)
+    const dayABucket = oc.byDay.find((d) => d.date === localDayKey(dayA, TZ))
+    assert(dayABucket && dayABucket.billed === 100 + 50 + 1000 + 200 + 100 + 2000, 'oc byDay dayA billed matches, got ' + (dayABucket && dayABucket.billed))
+    assert(dayABucket && dayABucket.sessions === 2, 'oc byDay dayA sessions = 2')
+    assert(oc.byModel.length === 4, 'oc byModel = 4, got ' + oc.byModel.length)
+    const m1 = oc.byModel.find((m) => m.id === 'm1')
+    assert(m1 && m1.sessions === 2 && m1.billed === 100 + 50 + 1000 + 200 + 100 + 2000, 'oc m1 aggregated across sessions')
+    assert(m1 && m1.variant === 'max', 'oc m1 variant parsed from JSON')
+    const m2 = oc.byModel.find((m) => m.id === 'm2')
+    assert(m2 && m2.provider === 'unknown', 'oc plain-string model -> provider unknown')
+    assert(oc.byModel[0].key === 'opencode/m5', 'oc byModel sorted by billed desc (' + oc.byModel[0].key + ')')
+    assert(oc.recent.length === 5, 'oc recent = 5 sessions, got ' + oc.recent.length)
+    assert(oc.recent[0].title === '第四会话', 'oc recent newest first, got ' + oc.recent[0].title)
+
+    // Rolling quota windows: 5 hours / 7 days / 30 days (exact from
+    // timestamps). s4 is inside the 5-hour window; s1..s4 inside week/month;
+    // s5 (40 days old) must be excluded from month.
+    assert(oc.windows, 'oc response carries windows')
+    assert(oc.windows.h5.sessions === 1 && oc.windows.h5.billed === 540, 'oc h5 window = 1 session / 540 billed, got ' + JSON.stringify(oc.windows.h5))
+    assert(oc.windows.h5.inputTokens === 30 && oc.windows.h5.outputTokens === 10 && oc.windows.h5.reasoningTokens === 5 && oc.windows.h5.cacheReadTokens === 500, 'oc h5 window token split')
+    assert(Math.abs(oc.windows.h5.cost - 0.01) < 1e-9, 'oc h5 window cost = 0.01, got ' + oc.windows.h5.cost)
+    assert(oc.windows.week.sessions === 4 && oc.windows.week.billed === 4050, 'oc week window = 4 sessions / 4050 billed, got ' + JSON.stringify(oc.windows.week))
+    assert(oc.windows.week.inputTokens === 340 && oc.windows.week.outputTokens === 180 && oc.windows.week.reasoningTokens === 35 && oc.windows.week.cacheReadTokens === 3500 && oc.windows.week.cacheWriteTokens === 30, 'oc week window token split')
+    assert(Math.abs(oc.windows.week.cost - 0.5112) < 1e-9, 'oc week window cost = 0.5112, got ' + oc.windows.week.cost)
+    assert(oc.windows.month.sessions === 4 && oc.windows.month.billed === 4050, 'oc month window excludes 40-day-old session (4 / 4050), got ' + JSON.stringify(oc.windows.month))
+
+    // Per-hour buckets inside the 5-hour window (viewer tz).
+    assert(Array.isArray(oc.h5Hours) && oc.h5Hours.length === 1, 'oc h5Hours = 1 hour bucket, got ' + (oc.h5Hours && oc.h5Hours.length))
+    const hb = oc.h5Hours[0]
+    const h5ExpHour = localHourKey(hourAgo, TZ)
+    assert(hb.hour === h5ExpHour, 'oc h5Hours hour = ' + h5ExpHour + ', got ' + hb.hour)
+    const h5ExpStart = Date.parse(localDayKey(hourAgo, TZ) + 'T00:00:00Z') + TZ * 60000 + h5ExpHour * 3600000
+    assert(hb.hourStart === h5ExpStart, 'oc h5Hours hourStart matches (' + hb.hourStart + ')')
+    assert(hb.sessions === 1 && hb.billed === 540 && hb.inputTokens === 30, 'oc h5Hours bucket contents, got ' + JSON.stringify(hb))
+    let h5Sum = 0
+    for (const h of oc.h5Hours) h5Sum += h.billed
+    assert(h5Sum === oc.windows.h5.billed, 'oc h5Hours sum equals h5 window (' + h5Sum + ')')
+  }
+} finally {
+  rmSync(ocTmp, { recursive: true, force: true })
+  if (ocBefore === undefined) delete process.env.OPENCODE_DATA
+  else process.env.OPENCODE_DATA = ocBefore
+}
+
 console.log('DONE')
