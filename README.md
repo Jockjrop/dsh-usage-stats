@@ -30,6 +30,11 @@
 
 <p align="center"><sub>Today's usage, lifetime totals, and the patterns behind them.</sub></p>
 
+| **Quotas · 配额** | **Controls · 控制** |
+| :---: | :---: |
+| <a href="screenshots/quotas.png"><img src="screenshots/quotas.png" alt="Provider balances and WorkBuddy credits" width="400"></a> | <a href="screenshots/controls.png"><img src="screenshots/controls.png" alt="Refresh settings and custom quota queries" width="400"></a> |
+| Check provider balances and WorkBuddy credits in one place. | Set automatic refresh intervals and custom quota queries. |
+
 ## Features
 
 | Tab | What you can do |
@@ -43,19 +48,6 @@
 - **Refresh on your terms:** fetch manually or enable scheduled queries. Automatic quota refresh is off by default.
 - **Choose models faster:** opt into a model/reasoning panel with an effort slider; disabling it restores the official selector.
 - **Fit the desktop:** light/dark themes, responsive charts, pinned tabs, and a keyboard-operable provider picker.
-
-<details>
-<summary><strong>View the Quotas and Controls screenshots</strong></summary>
-
-### Quotas
-
-![Provider balances and WorkBuddy credits](screenshots/quotas.png)
-
-### Controls
-
-![Refresh settings and custom quota queries](screenshots/controls.png)
-
-</details>
 
 ## Installation
 

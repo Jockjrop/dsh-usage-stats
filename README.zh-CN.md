@@ -30,6 +30,11 @@
 
 <p align="center"><sub>从今天用了多少，到长期使用趋势，一眼看清。</sub></p>
 
+| **配额** | **控制** |
+| :---: | :---: |
+| <a href="screenshots/quotas.png"><img src="screenshots/quotas.png" alt="供应商余额与 WorkBuddy 积分" width="400"></a> | <a href="screenshots/controls.png"><img src="screenshots/controls.png" alt="自动查询设置与自定义配额查询" width="400"></a> |
+| 集中查看供应商余额与 WorkBuddy 积分。 | 设置自动刷新间隔和自定义配额查询。 |
+
 ## 功能
 
 | 页面 | 你可以做什么 |
@@ -43,19 +48,6 @@
 - **按需刷新**：手动获取或开启定时查询；自动查询默认关闭。
 - **更快选择模型**：可开启模型与推理强度面板，拖动滑条调整；关闭后恢复官方选择器。
 - **融入桌面界面**：适配浅色／深色主题，图表自适应宽度，标签页固定，供应商选择支持键盘。
-
-<details>
-<summary><strong>查看「配额」与「控制」界面</strong></summary>
-
-### 配额
-
-![供应商余额与 WorkBuddy 积分](screenshots/quotas.png)
-
-### 控制
-
-![自动查询设置与自定义配额查询](screenshots/controls.png)
-
-</details>
 
 ## 安装
 
