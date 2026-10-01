@@ -11,12 +11,13 @@
 
 <p align="center">
   <a href="#安装"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH 桌面端"></a>
-  <img src="https://img.shields.io/badge/version-0.1.0-64748b?style=flat-square" alt="版本 0.1.0">
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/version-0.1.0-64748b?style=flat-square" alt="版本 0.1.0"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 许可"></a>
 </p>
 
 <p align="center">
   <a href="README.md">English</a> · 简体中文<br>
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest">下载</a> ·
   <a href="#功能">功能</a> ·
   <a href="#安装">安装</a> ·
   <a href="#使用">使用</a> ·
@@ -30,10 +31,21 @@
 
 <p align="center"><sub>从今天用了多少，到长期使用趋势，一眼看清。</sub></p>
 
-| **配额** | **控制** |
-| :---: | :---: |
-| <a href="screenshots/quotas.png"><img src="screenshots/quotas.png" alt="供应商余额与 WorkBuddy 积分" width="400"></a> | <a href="screenshots/controls.png"><img src="screenshots/controls.png" alt="自动查询设置与自定义配额查询" width="400"></a> |
-| 集中查看供应商余额与 WorkBuddy 积分。 | 设置自动刷新间隔和自定义配额查询。 |
+<table align="center">
+  <thead>
+    <tr><th align="center">配额</th><th align="center">控制</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center"><a href="screenshots/quotas.png"><img src="screenshots/quotas.png" alt="供应商余额与 WorkBuddy 积分" width="400"></a></td>
+      <td align="center"><a href="screenshots/controls.png"><img src="screenshots/controls.png" alt="自动查询设置与自定义配额查询" width="400"></a></td>
+    </tr>
+    <tr>
+      <td align="center">集中查看供应商余额与 WorkBuddy 积分。</td>
+      <td align="center">设置自动刷新间隔和自定义配额查询。</td>
+    </tr>
+  </tbody>
+</table>
 
 ## 功能
 
@@ -51,9 +63,47 @@
 
 ## 安装
 
-**准备好：** DSH 桌面端、Git、Node.js 和 pnpm。以下命令已在 Windows + Node.js 24 环境验证。
+**推荐通过 DSH 桌面端安装预构建的 [Release 包](https://github.com/Jockjrop/dsh-usage-stats/releases/latest)。** 无需克隆仓库或在本机构建。
 
-### 1. 获取插件
+### 1. 打开插件安装入口
+
+在 DSH 桌面端主界面的侧栏进入 **插件 → 添加插件**。
+
+### 2. 粘贴安装包地址
+
+```text
+https://github.com/Jockjrop/dsh-usage-stats/releases/latest/download/dsh-usage-stats.tgz
+```
+
+将地址粘贴到 **包名或地址**，点击 **安装**。压缩包已包含构建好的宿主与界面模块。
+
+### 3. 启用并打开面板
+
+点击 **立即启用**，进入 **设置 → 用量统计**。如果插件管理器提示需要重启，按提示重启 DSH。
+
+用量页会读取本地 DSH 会话。进入 **配额**，点击对应卡片的刷新按钮，即可查询账户数据。
+
+<details>
+<summary>安装指定版本或已下载的压缩包</summary>
+
+要固定使用 `0.1.0`，在同一安装入口填入：
+
+```text
+https://github.com/Jockjrop/dsh-usage-stats/releases/download/v0.1.0/dsh-usage-stats-0.1.0.tgz
+```
+
+也可以从对应 Release 下载带版本号的 `.tgz` 和 `SHA256SUMS`，将压缩包的 SHA-256 与发布值比对后，在安装入口填入它的本地绝对路径。安装前无需解压。
+
+```powershell
+Get-FileHash ./dsh-usage-stats-0.1.0.tgz -Algorithm SHA256
+```
+
+</details>
+
+<details>
+<summary>从源码安装／手动链接开发目录</summary>
+
+开发时准备 Git、Node.js 和 pnpm，再构建仓库。以下步骤已在 Windows + Node.js 24 环境验证：
 
 ```sh
 git clone https://github.com/Jockjrop/dsh-usage-stats.git
@@ -64,9 +114,7 @@ npm run build
 
 请将克隆目录保存在固定位置，DSH 会链接到该目录。
 
-### 2. 接入 DSH 桌面端
-
-完全退出 DSH 桌面端，备份其 profile 的 `package.json`，然后在**刚克隆的目录内，用 PowerShell** 运行：
+在 **插件 → 添加插件** 填入克隆目录的绝对路径，安装后点击 **立即启用**。如果选择手动链接，完全退出 DSH 桌面端，备份其 profile 的 `package.json`，然后在**刚克隆的目录内，用 PowerShell** 运行：
 
 ```powershell
 $pluginDir = (Get-Location).Path.Replace('\', '/')
@@ -77,18 +125,16 @@ pnpm --dir $profileDir add "link:$pluginDir"
 
 打开 `$profileDir/package.json`，在其已有的 `dsh.profile.bundles` 数组末尾加入 `"dsh-usage-stats"`，保留其他 bundle 条目。
 
-> DSH 桌面端自行管理 desktop profile，不能使用 `dsh plugin --profile desktop` 命令安装。
+DSH 桌面端自行管理 desktop profile，不能使用 `dsh plugin --profile desktop`。手动链接完成后，启动应用并进入 **设置 → 用量统计**。
 
-### 3. 打开面板
-
-启动 DSH 桌面端，进入 **设置 → 用量统计**。
-
-用量页会读取本地 DSH 会话。进入 **配额**，点击对应卡片的刷新按钮，即可查询账户数据。
+</details>
 
 <details>
 <summary>更新与卸载</summary>
 
-**更新：** 完全退出 DSH 桌面端，在克隆目录执行以下命令，再启动应用：
+**Release 安装：** 在「插件」页面卸载 `dsh-usage-stats`，再使用上面的 Release 地址安装并启用新版。彻底卸载时，使用同一页面的卸载操作。
+
+**源码安装：** 完全退出 DSH 桌面端，在克隆目录执行以下命令，再启动应用：
 
 ```sh
 git pull --ff-only
@@ -96,7 +142,7 @@ npm ci
 npm run build
 ```
 
-**卸载：** 退出桌面端，从 desktop profile 中仅移除 `dsh-usage-stats` 依赖和 bundle 条目，在该 profile 运行 `pnpm install`，然后重启。
+**手动链接卸载：** 退出桌面端，从 desktop profile 中仅移除 `dsh-usage-stats` 依赖和 bundle 条目，在该 profile 运行 `pnpm install`，然后重启。
 
 </details>
 
@@ -231,9 +277,12 @@ node scripts/render-heatmap-check.mjs
 node scripts/check-heat-tip-placement.mjs
 npm run preview:heatmap
 npm pack --dry-run
+npm run release
 ```
 
 测试使用模拟数据与临时 DSH 目录，无需真实凭据或付费调用。可设置 `DSH_THEME_CLIENT` 验证已安装主题，默认使用随仓库提供的变量契约。模拟预览生成已忽略的 `preview-heatmap.html`。
+
+`npm run release` 构建插件，将带版本号的 `.tgz`、`dsh-usage-stats.tgz` 别名与 `SHA256SUMS` 写入已忽略的 `release/`，并在临时 profile 验证安装。推送与 `package.json` 版本一致的 `v<版本号>` 标签后，GitHub Actions 会运行测试并将这些文件发布到 Release。
 
 接口统一使用 `/api/dsh-usage-stats/` 前缀：
 

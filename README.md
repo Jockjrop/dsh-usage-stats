@@ -11,12 +11,13 @@
 
 <p align="center">
   <a href="#installation"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH Desktop"></a>
-  <img src="https://img.shields.io/badge/version-0.1.0-64748b?style=flat-square" alt="Version 0.1.0">
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/version-0.1.0-64748b?style=flat-square" alt="Version 0.1.0"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 license"></a>
 </p>
 
 <p align="center">
   English · <a href="README.zh-CN.md">简体中文</a><br>
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest">Download</a> ·
   <a href="#features">Features</a> ·
   <a href="#installation">Installation</a> ·
   <a href="#usage">Usage</a> ·
@@ -30,10 +31,21 @@
 
 <p align="center"><sub>Today's usage, lifetime totals, and the patterns behind them.</sub></p>
 
-| **Quotas · 配额** | **Controls · 控制** |
-| :---: | :---: |
-| <a href="screenshots/quotas.png"><img src="screenshots/quotas.png" alt="Provider balances and WorkBuddy credits" width="400"></a> | <a href="screenshots/controls.png"><img src="screenshots/controls.png" alt="Refresh settings and custom quota queries" width="400"></a> |
-| Check provider balances and WorkBuddy credits in one place. | Set automatic refresh intervals and custom quota queries. |
+<table align="center">
+  <thead>
+    <tr><th align="center">Quotas · 配额</th><th align="center">Controls · 控制</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center"><a href="screenshots/quotas.png"><img src="screenshots/quotas.png" alt="Provider balances and WorkBuddy credits" width="400"></a></td>
+      <td align="center"><a href="screenshots/controls.png"><img src="screenshots/controls.png" alt="Refresh settings and custom quota queries" width="400"></a></td>
+    </tr>
+    <tr>
+      <td align="center">Check provider balances and WorkBuddy credits in one place.</td>
+      <td align="center">Set automatic refresh intervals and custom quota queries.</td>
+    </tr>
+  </tbody>
+</table>
 
 ## Features
 
@@ -51,9 +63,47 @@
 
 ## Installation
 
-**Requirements:** DSH Desktop, Git, Node.js, and pnpm. The commands below are verified on Windows with Node.js 24.
+**Recommended: install the prebuilt [Release package](https://github.com/Jockjrop/dsh-usage-stats/releases/latest) through DSH Desktop.** No Git checkout or local build is required.
 
-### 1. Get the plugin
+### 1. Open the plugin installer
+
+In DSH Desktop's main sidebar, open **插件 → 添加插件** (Plugins → Add plugin).
+
+### 2. Paste the package URL
+
+```text
+https://github.com/Jockjrop/dsh-usage-stats/releases/latest/download/dsh-usage-stats.tgz
+```
+
+Paste it into **包名或地址** (Package name or address) and click **安装** (Install). The archive already contains the built host and client modules.
+
+### 3. Enable and open
+
+Click **立即启用** (Enable now), then open **Settings → 用量统计**. Restart DSH if its plugin manager asks you to.
+
+Usage statistics load from your local DSH sessions. Open **配额** and click a refresh button to query an account.
+
+<details>
+<summary>Install a specific version or a downloaded archive</summary>
+
+To pin `0.1.0`, use this address in the same installer:
+
+```text
+https://github.com/Jockjrop/dsh-usage-stats/releases/download/v0.1.0/dsh-usage-stats-0.1.0.tgz
+```
+
+You can also download the versioned `.tgz` and `SHA256SUMS` from the matching Release, compare the archive's SHA-256 with the published value, and enter its local absolute path. Do not extract the archive before installing it.
+
+```powershell
+Get-FileHash ./dsh-usage-stats-0.1.0.tgz -Algorithm SHA256
+```
+
+</details>
+
+<details>
+<summary>Install from source / manually link a checkout</summary>
+
+For development, install Git, Node.js and pnpm, then build the checkout. This path is verified on Windows with Node.js 24:
 
 ```sh
 git clone https://github.com/Jockjrop/dsh-usage-stats.git
@@ -64,9 +114,7 @@ npm run build
 
 Keep the clone in a permanent location; DSH will link to it.
 
-### 2. Link it to DSH Desktop
-
-Fully exit DSH Desktop and back up its profile's `package.json`. Then run this in **PowerShell from the cloned directory**:
+In **插件 → 添加插件**, enter the clone's absolute path, install it, and click **立即启用**. To link it manually instead, fully exit DSH Desktop and back up its profile's `package.json`, then run this in **PowerShell from the cloned directory**:
 
 ```powershell
 $pluginDir = (Get-Location).Path.Replace('\', '/')
@@ -77,18 +125,16 @@ pnpm --dir $profileDir add "link:$pluginDir"
 
 Open `$profileDir/package.json` and append `"dsh-usage-stats"` to its existing `dsh.profile.bundles` array. Keep the other bundle entries.
 
-> DSH Desktop manages its own profile. The CLI command `dsh plugin --profile desktop` cannot be used for this installation.
+DSH Desktop manages its own profile; `dsh plugin --profile desktop` is unavailable. After a manual link, start the app and open **Settings → 用量统计**.
 
-### 3. Open the dashboard
-
-Start DSH Desktop and open **Settings → 用量统计**.
-
-Usage statistics load from your local DSH sessions. Open **配额** and click a refresh button to query an account.
+</details>
 
 <details>
 <summary>Updating or uninstalling</summary>
 
-**Update:** fully exit DSH Desktop, then run these commands in the clone and restart the app:
+**Release installation:** remove `dsh-usage-stats` from the Plugins page, install the Release URL above again, and enable it. To uninstall, use the same page's uninstall action.
+
+**Source installation:** fully exit DSH Desktop, run these commands in the clone, and restart:
 
 ```sh
 git pull --ff-only
@@ -96,7 +142,7 @@ npm ci
 npm run build
 ```
 
-**Uninstall:** exit DSH Desktop, remove only the `dsh-usage-stats` dependency and bundle entry from the desktop profile, run `pnpm install` in that profile, then restart the app.
+**Manual link removal:** exit DSH Desktop, remove only the `dsh-usage-stats` dependency and bundle entry from its profile, run `pnpm install` there, and restart.
 
 </details>
 
@@ -231,9 +277,12 @@ node scripts/render-heatmap-check.mjs
 node scripts/check-heat-tip-placement.mjs
 npm run preview:heatmap
 npm pack --dry-run
+npm run release
 ```
 
 Tests use synthetic data and temporary DSH homes; no live credentials or paid calls are required. Set `DSH_THEME_CLIENT` to validate an installed theme client instead of the checked-in alias contract. The synthetic preview writes an ignored `preview-heatmap.html`.
+
+`npm run release` builds the package, writes the versioned `.tgz`, the `dsh-usage-stats.tgz` alias and `SHA256SUMS` to the ignored `release/` directory, then verifies installation in a temporary profile. A matching `v<package.json version>` tag triggers GitHub Actions to run the tests and publish those files to a Release.
 
 Routes use the `/api/dsh-usage-stats/` prefix:
 
