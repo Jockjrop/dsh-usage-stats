@@ -32,6 +32,7 @@ usage-stats-controls.json
 *.bak
 *.tmp
 *.tgz
+release/
 coverage/
 preview-*.html
 playwright-report/

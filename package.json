@@ -43,6 +43,8 @@
   "dependencies": {},
   "scripts": {
     "build": "node scripts/build.mjs",
+    "prepack": "npm run build",
+    "release": "node scripts/build-release.mjs",
     "test": "node test/consistency.test.mjs && node --test test/desktop.test.mjs test/usage.test.mjs test/client.test.mjs test/provider-quotas.test.mjs test/quota-controls.test.mjs test/privacy.test.mjs",
     "preview:heatmap": "node scripts/build-heatmap-preview.mjs"
   },

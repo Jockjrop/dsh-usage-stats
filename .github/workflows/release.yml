@@ -1,0 +1,57 @@
+name: Build and publish Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install development dependencies
+        run: npm ci
+      - name: Build and test
+        run: |
+          npm run build
+          npm test
+          git diff --exit-code -- lib index.js client.js provider-quotas.js quota-controls.js
+      - name: Package and verify a consumer installation
+        run: npm run release
+      - name: Publish the prebuilt archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            existing_dir="$RUNNER_TEMP/published-release"
+            mkdir -p "$existing_dir"
+            gh release download "$GITHUB_REF_NAME" --dir "$existing_dir" --pattern '*.tgz' --pattern SHA256SUMS
+            for asset in release/*.tgz release/SHA256SUMS; do
+              cmp "$asset" "$existing_dir/$(basename "$asset")"
+            done
+            echo 'Existing Release assets match; leaving them unchanged.'
+          else
+            release_args=()
+            if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+              release_args+=(--prerelease)
+            fi
+            gh release create "$GITHUB_REF_NAME" release/*.tgz release/SHA256SUMS \
+              --verify-tag --title "dsh-usage-stats $GITHUB_REF_NAME" \
+              --notes-file release/RELEASE_NOTES.txt "${release_args[@]}"
+          fi
