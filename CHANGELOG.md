@@ -1,5 +1,23 @@
 # Changelog / 更新日志
 
+## 0.1.2 - 2026-10-01
+
+### 中文
+
+- 使用独立的 npm 包名 `@sligqoer/dsh-usage-stats`。通过此包名安装后，插件管理器可从 npm 获取新版本并进行更新。
+- 同步 bundle 与界面模块的包名；构建时从 `package.json` 注入界面模块标识，保留原有用量数据、配额接口和设置标识。
+- 发布脚本支持作用域包的压缩包命名，并验证预构建包的安装、宿主入口和界面入口。
+- GitHub Actions 增加 npm 可信发布流程，使用同一份验证过的压缩包发布 npm 与 GitHub Release；已有版本只在压缩包完整性一致时跳过发布。
+- 更新中英文安装与升级说明：旧版卸载后改用新 npm 包名安装一次，后续使用「检查更新」。保留 GitHub Release 压缩包作为手动安装选项。
+
+### English
+
+- Use the dedicated npm package name `@sligqoer/dsh-usage-stats`. Install by this name so the plugin manager can discover and install updates from npm.
+- Align the bundle and renderer module with the scoped package name. Inject the renderer identity from `package.json` while preserving usage data, quota routes, and settings identifiers.
+- Support scoped archive names and verify the prebuilt package's installation, host entry, and renderer entry.
+- Add npm trusted publishing to GitHub Actions. Publish the same verified archive to npm and GitHub Releases, and skip existing npm versions only when archive integrity matches.
+- Update installation and migration instructions in both languages: uninstall the old package once, install the scoped npm package, then use Check updates. Keep Release archives available for manual installation.
+
 ## 0.1.1 - 2026-10-01
 
 ### 中文

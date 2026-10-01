@@ -213,16 +213,19 @@ test('quota tabs retain component identity and refresh-all feeds snapshots witho
   assert.equal(requests.filter(url => url.includes('/provider-quotas') && !url.includes('fresh=1')).length, 1)
 })
 
-test('build reads a changed package version and renders it in both installed client copies', () => {
+test('build uses the scoped package identity and version in both installed client copies', () => {
   const directory = mkdtempSync(join(tmpdir(), 'dsh-version-test-'))
   try {
     mkdirSync(join(directory, 'scripts'))
     cpSync(new URL('../src', import.meta.url), join(directory, 'src'), { recursive: true })
     cpSync(new URL('../scripts/build.mjs', import.meta.url), join(directory, 'scripts/build.mjs'))
-    writeFileSync(join(directory, 'package.json'), JSON.stringify({ version: '9.8.7-test', type: 'module' }))
+    writeFileSync(join(directory, 'package.json'), JSON.stringify({ name: '@fixture/usage-stats', version: '9.8.7-test', type: 'module' }))
     execFileSync(process.execPath, [join(directory, 'scripts/build.mjs')], { stdio: 'pipe' })
     const built = readFileSync(join(directory, 'lib/client.js'), 'utf8')
     assert.equal(built, readFileSync(join(directory, 'client.js'), 'utf8'))
+    let definition
+    vm.runInNewContext(built, { window: { __ModuleLoader__: { load(value) { definition = value } } } })
+    assert.equal(definition.id, '@fixture/usage-stats')
     assert.match(textOf(harness({ code: built }).page().tree), /v9\.8\.7-test/)
   } finally {
     assert.equal(dirname(resolve(directory)), resolve(tmpdir()))

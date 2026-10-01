@@ -65,19 +65,19 @@
 
 ## Installation
 
-**Recommended: install the prebuilt [Release package](https://github.com/Jockjrop/dsh-usage-stats/releases/latest) through DSH Desktop.** No Git checkout or local build is required.
+**Recommended: install the [npm package `@sligqoer/dsh-usage-stats`](https://www.npmjs.com/package/@sligqoer/dsh-usage-stats) through DSH Desktop.** It includes prebuilt modules, needs no Git checkout or local build, and supports the plugin page's Check updates button when installed by package name.
 
 ### 1. Open the plugin installer
 
 In DSH Desktop's main sidebar, open **插件 → 添加插件** (Plugins → Add plugin).
 
-### 2. Paste the package URL
+### 2. Enter the full npm package name
 
 ```text
-https://github.com/Jockjrop/dsh-usage-stats/releases/latest/download/dsh-usage-stats.tgz
+@sligqoer/dsh-usage-stats
 ```
 
-Paste it into **包名或地址** (Package name or address) and click **安装** (Install). The archive already contains the built host and client modules.
+Paste it into **包名或地址** (Package name or address) and click **安装** (Install). Keep the full `@sligqoer/` scope.
 
 ### 3. Enable and open
 
@@ -88,16 +88,20 @@ Usage statistics load from your local DSH sessions. Open **配额** and click a 
 <details>
 <summary>Install a specific version or a downloaded archive</summary>
 
-To pin `0.1.0`, use this address in the same installer:
+To install version `0.1.2`, enter this in the same installer:
 
 ```text
-https://github.com/Jockjrop/dsh-usage-stats/releases/download/v0.1.0/dsh-usage-stats-0.1.0.tgz
+@sligqoer/dsh-usage-stats@0.1.2
 ```
 
-You can also download the versioned `.tgz` and `SHA256SUMS` from the matching Release, compare the archive's SHA-256 with the published value, and enter its local absolute path. Do not extract the archive before installing it.
+You can also manually install a [Release archive](https://github.com/Jockjrop/dsh-usage-stats/releases/latest). Enter the URL below, or download the `.tgz` and `SHA256SUMS`, verify the hash, and enter the archive's local absolute path. Do not extract it before installing.
+
+```text
+https://github.com/Jockjrop/dsh-usage-stats/releases/latest/download/dsh-usage-stats.tgz
+```
 
 ```powershell
-Get-FileHash ./dsh-usage-stats-0.1.0.tgz -Algorithm SHA256
+Get-FileHash ./sligqoer-dsh-usage-stats-0.1.2.tgz -Algorithm SHA256
 ```
 
 </details>
@@ -125,7 +129,7 @@ $profileDir = Join-Path $dshDataDir 'profiles/desktop'
 pnpm --dir $profileDir add "link:$pluginDir"
 ```
 
-Open `$profileDir/package.json` and append `"dsh-usage-stats"` to its existing `dsh.profile.bundles` array. Keep the other bundle entries.
+Open `$profileDir/package.json` and append `"@sligqoer/dsh-usage-stats"` to its existing `dsh.profile.bundles` array. Keep the other bundle entries.
 
 DSH Desktop manages its own profile; `dsh plugin --profile desktop` is unavailable. After a manual link, start the app and open **Settings → 用量统计**.
 
@@ -134,7 +138,11 @@ DSH Desktop manages its own profile; `dsh plugin --profile desktop` is unavailab
 <details>
 <summary>Updating or uninstalling</summary>
 
-**Release installation:** remove `dsh-usage-stats` from the Plugins page, install the Release URL above again, and enable it. To uninstall, use the same page's uninstall action.
+**Migrating an older installation:** uninstall the old `dsh-usage-stats` package from the Plugins page, then install and enable `@sligqoer/dsh-usage-stats` by name. This package-name migration is needed only once; the plugin keeps its existing data directory, quota routes, and settings identifiers.
+
+**npm installation:** use Check updates on the plugin page and restart if prompted. The current update checker only handles direct npm package-name installations. GitHub URLs, archive URLs, local paths, and `link:` installations need manual updates; “Already up to date” for these sources does not confirm that no newer release exists.
+
+**Release installation:** uninstall the package from the Plugins page, install the Release URL above again, and enable it. To uninstall permanently, use the same page's uninstall action.
 
 **Source installation:** fully exit DSH Desktop, run these commands in the clone, and restart:
 
@@ -144,7 +152,7 @@ npm ci
 npm run build
 ```
 
-**Manual link removal:** exit DSH Desktop, remove only the `dsh-usage-stats` dependency and bundle entry from its profile, run `pnpm install` there, and restart.
+**Manual link removal:** exit DSH Desktop, remove only the `@sligqoer/dsh-usage-stats` dependency and bundle entry from its profile, run `pnpm install` there, and restart.
 
 </details>
 
@@ -270,7 +278,7 @@ Bug reports and pull requests are welcome. For a bug, include your DSH version, 
 <details>
 <summary><strong>Development and local API</strong></summary>
 
-Edit `src/`. `npm run build` synchronizes modules to `lib/` and root compatibility copies and injects the header version from `package.json`; package exports load `lib/`.
+Edit module sources in `src/`. `npm run build` synchronizes modules to `lib/` and root compatibility copies and injects the renderer package identity and header version from `package.json`; package exports load `lib/`.
 
 ```sh
 npm run build
@@ -284,7 +292,9 @@ npm run release
 
 Tests use synthetic data and temporary DSH homes; no live credentials or paid calls are required. Set `DSH_THEME_CLIENT` to validate an installed theme client instead of the checked-in alias contract. The synthetic preview writes an ignored `preview-heatmap.html`.
 
-`npm run release` builds the package, writes the versioned `.tgz`, the `dsh-usage-stats.tgz` alias and `SHA256SUMS` to the ignored `release/` directory, then verifies installation in a temporary profile. Release notes include the matching version entry from [CHANGELOG.md](CHANGELOG.md). A matching `v<package.json version>` tag triggers GitHub Actions to run the tests and publish those files to a Release.
+`npm run release` builds the package, writes `sligqoer-dsh-usage-stats-<version>.tgz`, the `dsh-usage-stats.tgz` alias and `SHA256SUMS` to the ignored `release/` directory, then verifies installation in a temporary profile. Release notes include the matching version entry from [CHANGELOG.md](CHANGELOG.md).
+
+A matching `v<package.json version>` tag triggers GitHub Actions to run the tests, publish the verified archive as a public npm package through trusted publishing, and attach the same files to a GitHub Release. Trust is bound to the `release.yml` workflow in `Jockjrop/dsh-usage-stats`; no npm token is stored in the repository. `npm run publish:release` publishes the prebuilt archive and skips an existing version only when its integrity matches; different contents fail the release.
 
 Routes use the `/api/dsh-usage-stats/` prefix:
 

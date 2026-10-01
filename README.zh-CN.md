@@ -65,19 +65,19 @@
 
 ## 安装
 
-**推荐通过 DSH 桌面端安装预构建的 [Release 包](https://github.com/Jockjrop/dsh-usage-stats/releases/latest)。** 无需克隆仓库或在本机构建。
+**推荐通过 DSH 桌面端安装 [npm 包 `@sligqoer/dsh-usage-stats`](https://www.npmjs.com/package/@sligqoer/dsh-usage-stats)。** 已包含预构建模块，无需克隆仓库或在本机构建；通过包名安装后可使用插件页的「检查更新」。
 
 ### 1. 打开插件安装入口
 
 在 DSH 桌面端主界面的侧栏进入 **插件 → 添加插件**。
 
-### 2. 粘贴安装包地址
+### 2. 填入完整 npm 包名
 
 ```text
-https://github.com/Jockjrop/dsh-usage-stats/releases/latest/download/dsh-usage-stats.tgz
+@sligqoer/dsh-usage-stats
 ```
 
-将地址粘贴到 **包名或地址**，点击 **安装**。压缩包已包含构建好的宿主与界面模块。
+将包名粘贴到 **包名或地址**，点击 **安装**。请保留完整的 `@sligqoer/` 前缀。
 
 ### 3. 启用并打开面板
 
@@ -88,16 +88,20 @@ https://github.com/Jockjrop/dsh-usage-stats/releases/latest/download/dsh-usage-s
 <details>
 <summary>安装指定版本或已下载的压缩包</summary>
 
-要固定使用 `0.1.0`，在同一安装入口填入：
+要安装指定版本 `0.1.2`，在同一安装入口填入：
 
 ```text
-https://github.com/Jockjrop/dsh-usage-stats/releases/download/v0.1.0/dsh-usage-stats-0.1.0.tgz
+@sligqoer/dsh-usage-stats@0.1.2
 ```
 
-也可以从对应 Release 下载带版本号的 `.tgz` 和 `SHA256SUMS`，将压缩包的 SHA-256 与发布值比对后，在安装入口填入它的本地绝对路径。安装前无需解压。
+也可以手动安装 [Release 压缩包](https://github.com/Jockjrop/dsh-usage-stats/releases/latest)，在安装入口填入以下地址，或下载 `.tgz` 与 `SHA256SUMS` 后填写压缩包的本地绝对路径。安装前无需解压。
+
+```text
+https://github.com/Jockjrop/dsh-usage-stats/releases/latest/download/dsh-usage-stats.tgz
+```
 
 ```powershell
-Get-FileHash ./dsh-usage-stats-0.1.0.tgz -Algorithm SHA256
+Get-FileHash ./sligqoer-dsh-usage-stats-0.1.2.tgz -Algorithm SHA256
 ```
 
 </details>
@@ -125,7 +129,7 @@ $profileDir = Join-Path $dshDataDir 'profiles/desktop'
 pnpm --dir $profileDir add "link:$pluginDir"
 ```
 
-打开 `$profileDir/package.json`，在其已有的 `dsh.profile.bundles` 数组末尾加入 `"dsh-usage-stats"`，保留其他 bundle 条目。
+打开 `$profileDir/package.json`，在其已有的 `dsh.profile.bundles` 数组末尾加入 `"@sligqoer/dsh-usage-stats"`，保留其他 bundle 条目。
 
 DSH 桌面端自行管理 desktop profile，不能使用 `dsh plugin --profile desktop`。手动链接完成后，启动应用并进入 **设置 → 用量统计**。
 
@@ -134,7 +138,11 @@ DSH 桌面端自行管理 desktop profile，不能使用 `dsh plugin --profile d
 <details>
 <summary>更新与卸载</summary>
 
-**Release 安装：** 在「插件」页面卸载 `dsh-usage-stats`，再使用上面的 Release 地址安装并启用新版。彻底卸载时，使用同一页面的卸载操作。
+**从旧版迁移：** 在「插件」页面卸载旧的 `dsh-usage-stats`，再填入 `@sligqoer/dsh-usage-stats` 安装并启用。包名切换仅需做一次；插件继续使用原有的数据目录、配额接口和设置标识。
+
+**npm 安装：** 使用插件页的「检查更新」，按提示更新并重启。当前更新检查器只处理直接通过 npm 包名安装的插件。GitHub 地址、压缩包地址、本地路径或 `link:` 安装需要手动升级；这些来源显示「已是最新版本」也不代表没有新发布。
+
+**Release 安装：** 从「插件」页面卸载后，使用上面的 Release 地址重新安装并启用新版。彻底卸载时，使用同一页面的卸载操作。
 
 **源码安装：** 完全退出 DSH 桌面端，在克隆目录执行以下命令，再启动应用：
 
@@ -144,7 +152,7 @@ npm ci
 npm run build
 ```
 
-**手动链接卸载：** 退出桌面端，从 desktop profile 中仅移除 `dsh-usage-stats` 依赖和 bundle 条目，在该 profile 运行 `pnpm install`，然后重启。
+**手动链接卸载：** 退出桌面端，从 desktop profile 中仅移除 `@sligqoer/dsh-usage-stats` 依赖和 bundle 条目，在该 profile 运行 `pnpm install`，然后重启。
 
 </details>
 
@@ -270,7 +278,7 @@ WorkBuddy 与 WorkBuddy AI 依赖可选的 `dsh-workbuddy-connect` 适配器，�
 <details>
 <summary><strong>开发与本地接口</strong></summary>
 
-只编辑 `src/`。`npm run build` 同步到 `lib/` 和根目录兼容副本，并从 `package.json` 注入顶部版本号，包入口加载 `lib/`。
+只编辑 `src/` 中的模块源码。`npm run build` 同步到 `lib/` 和根目录兼容副本，并从 `package.json` 注入界面模块的包名和顶部版本号，包入口加载 `lib/`。
 
 ```sh
 npm run build
@@ -284,7 +292,9 @@ npm run release
 
 测试使用模拟数据与临时 DSH 目录，无需真实凭据或付费调用。可设置 `DSH_THEME_CLIENT` 验证已安装主题，默认使用随仓库提供的变量契约。模拟预览生成已忽略的 `preview-heatmap.html`。
 
-`npm run release` 构建插件，将带版本号的 `.tgz`、`dsh-usage-stats.tgz` 别名与 `SHA256SUMS` 写入已忽略的 `release/`，并在临时 profile 验证安装。发行说明包含 [CHANGELOG.md](CHANGELOG.md) 中对应版本的更新内容。推送与 `package.json` 版本一致的 `v<版本号>` 标签后，GitHub Actions 会运行测试并将这些文件发布到 Release。
+`npm run release` 构建插件，将 `sligqoer-dsh-usage-stats-<版本号>.tgz`、`dsh-usage-stats.tgz` 别名与 `SHA256SUMS` 写入已忽略的 `release/`，并在临时 profile 验证安装。发行说明包含 [CHANGELOG.md](CHANGELOG.md) 中对应版本的更新内容。
+
+推送与 `package.json` 版本一致的 `v<版本号>` 标签后，GitHub Actions 会运行测试，使用 npm 可信发布将验证过的压缩包发布为公开包，再将同一文件发布到 GitHub Release。可信发布绑定 `Jockjrop/dsh-usage-stats` 仓库的 `release.yml` 工作流，无需在仓库保存 npm 令牌。`npm run publish:release` 发布已构建的压缩包；已有版本仅在完整性与本地压缩包一致时跳过，内容不同则终止。
 
 接口统一使用 `/api/dsh-usage-stats/` 前缀：
 

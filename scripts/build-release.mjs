@@ -32,7 +32,7 @@ const packResult = JSON.parse(execFileSync(process.execPath, [npmCli, 'pack', '-
 // npm 12 keys pack results by package name; earlier npm versions return an array.
 const packed = Array.isArray(packResult) ? packResult.find(result => result.name === pkg.name) : packResult[pkg.name] ?? packResult;
 assert.ok(packed?.filename, 'npm pack did not return package metadata.');
-const archiveName = `${pkg.name}-${pkg.version}.tgz`;
+const archiveName = `${pkg.name.replace(/^@/, '').replace('/', '-')}-${pkg.version}.tgz`;
 assert.equal(packed.filename, archiveName);
 const members = new Set(packed.files.map(file => file.path));
 for (const member of ['package.json', 'cordis.patch.yml', 'CHANGELOG.md', 'lib/index.js', 'lib/client.js', 'lib/provider-quotas.js', 'lib/quota-controls.js']) {
@@ -41,7 +41,7 @@ for (const member of ['package.json', 'cordis.patch.yml', 'CHANGELOG.md', 'lib/i
 assert.ok([...members].every(member => !/^(?:src|test|scripts|node_modules|storages|credentials)\//.test(member)), 'Release must contain prebuilt public files only.');
 
 const archivePath = path.join(outputDir, archiveName);
-const aliasName = `${pkg.name}.tgz`;
+const aliasName = 'dsh-usage-stats.tgz';
 const bytes = await fs.readFile(archivePath);
 const digest = createHash('sha256').update(bytes).digest('hex');
 await fs.writeFile(path.join(outputDir, aliasName), bytes);
@@ -61,10 +61,13 @@ try {
   });
   const installedRoot = path.join(smokeDir, 'node_modules', pkg.name);
   const installed = JSON.parse(await fs.readFile(path.join(installedRoot, 'package.json'), 'utf8'));
+  assert.equal(installed.name, pkg.name);
   assert.equal(installed.version, pkg.version);
   assert.equal(installed.main, 'lib/index.js');
   assert.equal(installed.dsh.client.platform, 'web');
   await fs.access(path.join(installedRoot, installed.dsh.bundle.patch));
+  const patch = await fs.readFile(path.join(installedRoot, installed.dsh.bundle.patch), 'utf8');
+  assert.ok(patch.split('\n').some(line => line.trim() === `name: '${pkg.name}'`), 'Bundle patch must load the installed package by its scoped name.');
   const host = await import(pathToFileURL(path.join(installedRoot, installed.main)).href);
   assert.equal(host.name, 'usage-stats');
   assert.equal(typeof host.apply, 'function');
@@ -72,7 +75,7 @@ try {
   vm.runInNewContext(await fs.readFile(path.join(installedRoot, installed.exports['./client']), 'utf8'), {
     window: { __ModuleLoader__: { load(definition) { client = definition; } } },
   }, { timeout: 5000 });
-  assert.equal(client.id, 'dsh-usage-stats');
+  assert.equal(client.id, pkg.name);
   assert.equal(typeof client.factory, 'function');
   const profile = JSON.parse(await fs.readFile(path.join(smokeDir, 'package.json'), 'utf8'));
   assert.deepEqual(profile.dsh.profile.bundles, ['existing-bundle']);
@@ -83,6 +86,6 @@ try {
   await fs.rm(smokeDir, { recursive: true, force: true });
 }
 
-await fs.writeFile(path.join(outputDir, 'RELEASE_NOTES.txt'), `## 本次更新 / What's changed\n\n${releaseChanges}\n\n## 安装 / Installation\n\n在 DSH 桌面端主界面侧栏进入「插件 → 添加插件」，粘贴以下地址，安装后点击「立即启用」：\n\nhttps://github.com/Jockjrop/dsh-usage-stats/releases/download/v${pkg.version}/${archiveName}\n\n面板入口：设置 → 用量统计。此版本仅支持 desktop profile。\n\nIn DSH Desktop, open Plugins → Add plugin, paste the archive URL above, install, and select Enable now. No Git checkout or build step is required.\n\nAssets: versioned package, latest-download alias, and SHA256SUMS. Both archives contain identical prebuilt modules; installation was verified with lifecycle scripts disabled.\n`);
+await fs.writeFile(path.join(outputDir, 'RELEASE_NOTES.txt'), `## 本次更新 / What's changed\n\n${releaseChanges}\n\n## 安装 / Installation\n\n在 DSH 桌面端主界面侧栏进入「插件 → 添加插件」，填入 npm 包名，安装后点击「立即启用」：\n\n\`${pkg.name}\`\n\n旧版用户先卸载旧的 \`dsh-usage-stats\`，再安装上面的新包。之后可通过插件页的「检查更新」更新。请使用包名安装；GitHub、压缩包地址和本地链接安装不进入当前更新检查流程。\n\n面板入口：设置 → 用量统计。此版本仅支持 desktop profile。\n\nIn DSH Desktop, open Plugins → Add plugin, enter the npm package name above, install, and select Enable now. Existing users should uninstall the old \`dsh-usage-stats\` package once, then install this scoped package. Future updates can use Check updates. GitHub URLs, archive URLs, and local links do not participate in the current update checker.\n\nOptional prebuilt archive: https://github.com/Jockjrop/dsh-usage-stats/releases/download/v${pkg.version}/${archiveName}\n\nAssets: versioned package, latest-download alias, and SHA256SUMS. Both archives contain identical prebuilt modules; installation was verified with lifecycle scripts disabled.\n`);
 console.log(`Release ${pkg.version}: built modules, package installation and renderer entry verified.`);
 console.log(`  release/${archiveName}\n  release/${aliasName}\n  release/SHA256SUMS`);

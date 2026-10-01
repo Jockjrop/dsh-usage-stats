@@ -15,10 +15,16 @@ const srcQuotaControls = path.join(root, 'src', 'quota-controls.js');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const clientTemplate = fs.readFileSync(srcClient, 'utf8');
 const versionMarker = "var PLUGIN_VERSION = '__DSH_USAGE_STATS_VERSION__'";
+const packageMarker = "id: '__DSH_USAGE_STATS_PACKAGE__'";
 if (!clientTemplate.includes(versionMarker) || typeof pkg.version !== 'string' || !pkg.version) {
   throw new Error('The client version marker or package version is missing.');
 }
-const client = clientTemplate.replace(versionMarker, 'var PLUGIN_VERSION = ' + JSON.stringify(pkg.version));
+if (!clientTemplate.includes(packageMarker) || typeof pkg.name !== 'string' || !pkg.name) {
+  throw new Error('The client package marker or package name is missing.');
+}
+const client = clientTemplate
+  .replace(versionMarker, 'var PLUGIN_VERSION = ' + JSON.stringify(pkg.version))
+  .replace(packageMarker, 'id: ' + JSON.stringify(pkg.name));
 
 if (!fs.existsSync(srcIndex) || !fs.existsSync(srcClient) || !fs.existsSync(srcProviderQuotas) || !fs.existsSync(srcQuotaControls)) {
   console.error('Error: required src/ file does not exist.');

@@ -1,6 +1,6 @@
 /**
  * dsh-usage-stats — desktop renderer half. Loaded by DSH's client-modules
- * bundle route at /plugins/dsh-usage-stats/client.js inside the Electron app.
+ * bundle route at /plugins/<package-name>/client.js inside the Electron app.
  *
  * Registers a settings page (用量统计) under settings.section: a usage
  * heatmap (GitHub-contribution-style calendar, one cell per day, colour =
@@ -16,7 +16,7 @@
  * logged, never thrown — an external plugin must not take the GUI down.
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-usage-stats',
+  id: "@sligqoer/dsh-usage-stats",
   factory: (require) => {
     'use strict'
     var module = { exports: {} }
@@ -29,7 +29,7 @@ window.__ModuleLoader__.load({
     var SECTION_ID = 'usage-stats'
     var STYLE_ID = 'dsh-usage-stats-styles'
     // Replaced from package.json by the build and npm prepack steps.
-    var PLUGIN_VERSION = "0.1.1"
+    var PLUGIN_VERSION = "0.1.2"
     var localeService = null
     var translate = null
 

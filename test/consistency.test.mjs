@@ -19,7 +19,8 @@ const rootIndexHash = sha256(path.join(root, 'index.js'));
 
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const expectedClient = fs.readFileSync(path.join(root, 'src', 'client.js'), 'utf8')
-  .replace("var PLUGIN_VERSION = '__DSH_USAGE_STATS_VERSION__'", 'var PLUGIN_VERSION = ' + JSON.stringify(pkg.version));
+  .replace("var PLUGIN_VERSION = '__DSH_USAGE_STATS_VERSION__'", 'var PLUGIN_VERSION = ' + JSON.stringify(pkg.version))
+  .replace("id: '__DSH_USAGE_STATS_PACKAGE__'", 'id: ' + JSON.stringify(pkg.name));
 const srcClientHash = crypto.createHash('sha256').update(expectedClient).digest('hex');
 const libClientHash = sha256(path.join(root, 'lib', 'client.js'));
 const rootClientHash = sha256(path.join(root, 'client.js'));

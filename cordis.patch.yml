@@ -6,11 +6,11 @@
 # The row is a bare plugin by package name: the node half (exports ".") runs in
 # the host process (session-log aggregation, /api/dsh-usage-stats routes), and
 # the `dsh.client` declaration in package.json makes the renderer half
-# (exports "./client", served at /plugins/dsh-usage-stats/client.js) load in the
+# (exports "./client", served under the scoped package's /plugins/ route) load in the
 # desktop app and register the 用量统计 settings page. The platform declaration
 # stays `web` because that is DSH's renderer bundle format, including Electron.
 # The profile gate applies to both halves; other profiles do not mount this row.
 - insert:
     - id: usage-stats
-      name: 'dsh-usage-stats'
+      name: '@sligqoer/dsh-usage-stats'
       disabled: !!js "ctx.get('profileContext')?.name !== 'desktop'"
