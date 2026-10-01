@@ -1,5 +1,38 @@
+# Dependencies and local tooling
 node_modules/
-*.log
+.env
+.env.*
+!.env.example
+.dsh/
+.workbuddy/
+.codex/
+.local-archive/
+.tmp-shot/
 .DS_Store
-*.bak
+Thumbs.db
+
+# Private runtime data and credentials
 storages/
+sessions/
+credentials/
+auth.json
+usage-stats-corpus.json
+usage-stats-controls.json
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Temporary outputs and legacy backups
+*.log
+*.bak
+*.tmp
+*.tgz
+coverage/
+preview-*.html
+playwright-report/
+test-results/

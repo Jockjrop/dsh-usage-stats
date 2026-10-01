@@ -2,193 +2,176 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-Token usage statistics for the [DSH web GUI](https://github.com/deepseek-ai/dsh): a settings page **用量统计** that shows your model-token consumption as a GitHub-style heatmap, a 24-hour (today) token bar chart, a per-model breakdown, and whole-history totals — plus an **opencode-go usage panel** at the bottom that shows the local opencode (Go CLI / desktop) subscription usage: the official OpenCode Go quota when the login is a Go subscription, the local database otherwise.
+A token usage and quota dashboard for [DeepSeek Harness Desktop](https://github.com/deepseek-ai/deepseek-harness). Open **Settings → 用量统计** to view usage history, connected account quotas, and query controls.
 
-Works as an external bundle patch — no DSH source changes required.
-
-## Features
-
-- **Usage heatmap** — GitHub-contribution-style calendar; one cell per day, colour intensity = billed tokens. Rendered as a single wrapped row covering the last six months, so it fits the settings pane width without horizontal scrolling.
-- **24-hour token chart** — usage by hour of the current local day (one bar per hour).
-- **Per-model breakdown** — stacked bars per provider/model with totals, plus a filtered view.
-- **Time-range filter** — 7 / 30 / 90 / 365 days / all.
-- **Model filter** — restrict every chart and total to a single provider/model.
-- **opencode-go usage panel** — a standalone section at the bottom of the page: detects which subscription the local opencode login holds (`opencode-go` = OpenCode Go, `opencode` = OpenCode Zen) and renders accordingly. For **Go** it shows the official subscription quota (via `opencode.ai/zen/go/v1/usage`, reusing the local login) as **three progress-bar cards in the opencode.ai website style** (percent used, bar, $ spent / window limit, reset countdown; two-row layout — the first two cards in one row, the monthly card spanning the second row). For **Zen** (pay-as-you-go) the same official endpoint is tried first, rendering progress-bar cards when it answers; when the endpoint rejects the key (401/403/404) the three rolling windows fall back to the local opencode database (`opencode.db` `session` table), aggregated read-only, as numeric cards. The local database is always available as the hover comparison; with no login the whole section stays hidden.
-- **Light & dark themes** — styled with the DSH alias theme tokens (`--dsw-alias-*`).
+The plugin loads through an external bundle patch without DSH source changes. It supports the desktop profile and Electron main window.
 
 ## Screenshots
 
-| | |
-| --- | --- |
-| ![Usage statistics overview](screenshots/usage-stats-overview.png) | ![Usage heatmap](screenshots/usage-stats-heatmap.png) |
-| Heatmap detail: GitHub-style contribution calendar over the last six months | Full page: usage heatmap, 24-hour chart, per-model breakdown, totals and filters |
-| ![opencode-go usage panel](screenshots/usage-stats-opencode.png) | |
-| Bottom panel: local opencode subscription usage (progress-bar quota cards for Go, numeric rolling-window cards otherwise) | |
+### Usage · 用量
 
-## How it works
+Today's tokens, active days, lifetime tokens, hourly tokens/calls, and a daily or weekly heatmap.
 
-Two halves, joined into one bundle row (`usage-stats`) by `cordis.patch.yml`:
+![Usage overview, hourly chart and heatmap](screenshots/usage.png)
 
-| Half | File | Runs in | What it does |
-| --- | --- | --- | --- |
-| Host | `lib/index.js` | DSH host process | Aggregates `assistant/message` usage events from every session's durable log, keeps a persisted corpus, serves read-only `/api/dsh-usage-stats/stats`, `/api/dsh-usage-stats/opencode` and `/api/dsh-usage-stats/opencode-go` |
-| Client | `lib/client.js` | Browser (dsh web GUI) | Registers the 用量统计 settings section under `settings.section` and renders the charts plus the opencode-go panel from the host routes |
+### Quotas · 配额
 
-### Performance model
+Provider balances, subscription windows, and optional WorkBuddy credits. Visible cards depend on your configured providers and successful queries.
 
-- The corpus is aggregated into **per-session contributions** kept in memory **and** persisted to `<DSH_HOME>/storages/usage-stats-corpus.json`, so a server restart does not force a cold full scan.
-- Refresh is **incremental**: a cheap fingerprint (file size + mtime) of each session's persisted log decides which sessions actually changed; only changed/new sessions are re-read (`sessionQuery.readSession()`), and totals are folded in memory in milliseconds.
-- A **background interval (30 s)** keeps the corpus warm, and the server-local timezone seeds the buckets, so the first request after opening the GUI is served from warm memory instead of blocking on a multi-second scan.
-- A request never waits more than **1500 ms** on a refresh: if a cold scan is still running it is served the current snapshot with `stale: true`, and the UI can refresh once more shortly after.
+![Provider balances and WorkBuddy credits](screenshots/quotas.png)
 
-Day/week/hour buckets follow the browser's UTC offset (the `tz` query parameter, in minutes as `UTC - local`), so the heatmap days match your calendar.
+### Controls · 控制
+
+Automatic quota refresh, interval, model details, advanced model selector, and custom queries.
+
+![Refresh controls and custom quota queries](screenshots/controls.png)
+
+## Features
+
+- Daily/weekly heatmap with paging; today's 24-hour token chart and call-count line.
+- Model distribution and details; historical filters for 7 / 30 / 365 days or all history. Overview cards retain their day/lifetime meanings.
+- Compact token totals with exact values in tooltips and integer call counts. Statistics follow the desktop system timezone.
+- Built-in quota readers for Claude, DeepSeek, StepFun, Codex, Copilot, OpenRouter, Moonshot, Kimi Coding, MiniMax, Z.AI / GLM Coding, Alibaba Cloud Token Plan China, xAI, and OpenCode Go. Availability depends on credentials, permissions and upstream APIs.
+- Separate WorkBuddy / WorkBuddy AI panels when the optional `dsh-workbuddy-connect` adapter is enabled. Other features do not require it.
+- Custom JSON quota queries: select a configured provider, edit, test, then confirm. Confirmed queries override the provider's built-in reader; removal restores it.
+- Optional model/reasoning popup with an effort slider. Turning it off restores DSH's official selector immediately.
+- DSH light/dark themes, responsive charts, keyboard-operable provider picker, and pinned tabs.
+
+Automatic quota refresh and the advanced selector are **off by default**; model details are **on by default**. Intervals are 10 minutes, 1 hour (default), 5 hours, or daily. Automatic refresh requires acknowledging possible query costs and continues while settings are closed. Normal quota-page reads use cached data; refresh buttons request new data.
 
 ## Install
 
-The package declares `dsh.bundle.patch` (`cordis.patch.yml`), so it installs as a permanent bundle layer:
+You need DSH Desktop and Node.js for the build commands. Development is verified with Node.js 24. SQLite fingerprints require `node:sqlite` in the host runtime; otherwise sessions are reread.
 
 ```sh
-dsh plugin add link:/path/to/dsh-usage-stats
+git clone https://github.com/Jockjrop/dsh-usage-stats.git
+cd dsh-usage-stats
+npm ci
+npm run build
+npm test
 ```
 
-Or with npm-style linkage from the profile's `node_modules`:
+Install the package into the **desktop** profile. The current DSH CLI reserves that profile for Electron, so `dsh plugin --profile desktop` cannot manage it.
 
-```sh
-npm install /path/to/dsh-usage-stats
+Manual installation on Windows:
+
+1. Fully exit DSH Desktop. Keep the clone in a permanent location.
+2. Back up `<DSH_HOME>/profiles/desktop/package.json`. Add `dsh-usage-stats` to its existing dependencies as `link:<absolute-clone-directory>`, and append `dsh-usage-stats` to its existing `dsh.profile.bundles` array. Preserve other entries; use forward slashes in the link.
+3. Run `pnpm install` in that desktop profile directory.
+4. Start DSH Desktop and open **Settings → 用量统计**.
+
+This fragment shows the two entries to merge. Replace the link placeholder with your clone path; do not overwrite the existing profile:
+
+```json
+{
+  "dependencies": {
+    "dsh-usage-stats": "link:<absolute-clone-directory>"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": ["dsh-usage-stats"]
+    }
+  }
+}
 ```
 
-Then open the DSH web GUI → Settings → **用量统计**.
+`DSH_HOME` is DSH's data directory; when unset, the plugin uses `.dsh` under the current user's home. The clone can live anywhere and has no machine-specific absolute paths.
 
-## Uninstall
+To update, pull this repository, run `npm ci`, `npm run build` and `npm test`, then restart DSH Desktop. To uninstall, exit the app, remove only this dependency and bundle entry, run `pnpm install` in the desktop profile, and restart.
 
-```sh
-dsh plugin remove dsh-usage-stats
+## Quota queries
+
+A configured balance may show **未查询** before its first query. Missing permissions, expired logins, unavailable endpoints or invalid responses can hide a card or mark it unavailable. Panels report API data; token totals are not converted into estimated account charges.
+
+Open **控制 → 配额查询**, select a provider, edit the template, **test**, then **confirm**. Changes invalidate the test; successful tests expire after 15 minutes.
+
+Example for an API returning `{ "data": { "balance": 12.34 } }`:
+
+```json
+{
+  "url": "https://api.example.com/balance",
+  "method": "GET",
+  "auth": "provider",
+  "headers": { "accept": "application/json" },
+  "response": {
+    "metrics": [
+      { "label": "Account balance", "kind": "amount", "remaining": "data.balance", "currency": "USD" }
+    ]
+  }
+}
 ```
 
-Or with npm:
+Replace the example URL with a working endpoint. Templates support GET/POST, JSON bodies, amount/window metrics, and paths such as `data.items[0].balance`. Windows accept `remainingPercent`, `usedPercent`, or `total` with `remaining` / `used`; `response.rows` selects an array. Use `auth: "none"` for unauthenticated endpoints. A prefilled `/balance` is an editable example for an unknown gateway.
 
-```sh
-npm uninstall dsh-usage-stats
-```
+Optional host credential references:
 
-`dsh plugin remove` also drops the plugin row from the profile's `dsh.profile.bundles` layer stack automatically. If you uninstall with npm directly, remove any leftover `dsh-usage-stats` entry from the `dsh.profile.bundles` list in the profile's `package.json`. Restart the DSH web GUI afterwards for the change to take effect.
-
-## HTTP API
-
-`GET /api/dsh-usage-stats/stats` (read-only; guarded by a loopback trust fence — only requests from `localhost`/`127.0.0.1` are answered).
-
-Query parameters:
-
-| Param | Meaning |
+| Reader | Credentials |
 | --- | --- |
-| `days` | Bucket window in days; `0` (default) means all history. Clamped to 3650. |
-| `tz` | Browser UTC offset in minutes (`UTC - local`, e.g. `-480` for UTC+8). Seeds the day/week/hour buckets. |
-| `model` | Optional `provider/model` key to filter to a single model. |
-| `fresh` | `1` forces an incremental rescan before answering. |
+| OpenRouter account credits | `OPENROUTER_MANAGEMENT_API_KEY` |
+| xAI prepaid balance | `XAI_MANAGEMENT_API_KEY`, `XAI_TEAM_ID` |
+| Alibaba Cloud Token Plan China | `ALIBABA_CLOUD_ACCESS_KEY_ID`, `ALIBABA_CLOUD_ACCESS_KEY_SECRET`; optional `ALIBABA_CLOUD_SECURITY_TOKEN` |
 
-Response shape (excerpt):
+Other readers use the corresponding DSH provider credential or supported existing OAuth grant. Claude, Codex and Copilot do not refresh or modify logins. OpenCode Go uses only its own configured DSH credential; Zen has no built-in wallet reader but accepts custom queries. Alibaba Cloud's international Token Plan is not queried.
 
-```jsonc
-{
-  "ok": true,
-  "days": 365,
-  "tz": -480,
-  "totals": { "billed": 123456, "inputTokens": ..., "outputTokens": ..., "cacheReadTokens": ..., "cacheWriteTokens": ... },
-  "messages": 271,
-  "sessions": 12,
-  "sessionsWithUsage": 9,
-  "firstTime": 1735689600000,
-  "lastTime": 1738022400000,
-  "byDay":   [{ "date": "2025-01-01", "billed": ..., "inputTokens": ... }],
-  "byWeek":  [{ "date": "2024-12-30", "billed": ... }],
-  "byHour":  [{ "hour": 14, "billed": ... }],            // current local day only, 24 entries
-  "byHourModels": [{ "hour": 14, "key": "deepseek/deepseek-chat", "billed": ... }],
-  "byModel": [{ "key": "deepseek/deepseek-chat", "provider": "deepseek", "model": "deepseek-chat", "billed": ..., "lastTime": ... }],
-  "syncedAt": 1738022400000,
-  "stale": false,
-  "scanMs": 12
-}
+## Privacy and local storage
+
+- Usage is aggregated on the host. The corpus stores counts, model identifiers and compact usage timestamps, without conversation text.
+- Credentials are resolved on the host and used for the relevant quota endpoint. API keys, OAuth tokens and raw upstream responses are not returned to the renderer.
+- Authenticated custom queries must match the provider's configured origin or official quota origin. Templates reject credential-bearing URL parameters, authentication headers and common credential fields in bodies. Requests do not follow redirects; custom HTTP queries have an 8-second timeout and a 1 MB response limit.
+- Local APIs check socket address, Host, Origin and cross-site requests. Responses use `Cache-Control: no-store`; unexpected host exceptions return generic errors.
+- WorkBuddy adapters use the active host port and retain quota display fields.
+- No analytics or telemetry endpoint is included. Quota tests, manual refreshes and automatic refreshes after opt-in access the relevant quota services.
+
+| File under `<DSH_HOME>/storages/` | Contents |
+| --- | --- |
+| `usage-stats-corpus.json` | Per-session usage contributions |
+| `usage-stats-controls.json` | Controls, custom templates and quota snapshots |
+
+These files contain private usage/account information, with paths resolved at runtime. Runtime data, environment files, credentials, databases, logs, backups and previews are excluded from Git. The npm package uses an explicit file allowlist. Supplied showcase screenshots contain the figures displayed at capture time.
+
+The loopback API assumes a trusted local host; another process under your account can access local data.
+
+## Development
+
+Edit **`src/`**. `npm run build` synchronizes modules to `lib/` and root compatibility copies; package exports load `lib/`.
+
+```text
+src/                  canonical host, client, quota readers and controls
+lib/                  generated package entry points
+test/                 isolated behavior, privacy and consistency tests
+test/fixtures/        portable DSH theme alias contract
+scripts/              build and synthetic heatmap checks
+screenshots/          usage, quotas and controls showcase
+cordis.patch.yml       desktop-only bundle registration
 ```
 
-`billed` = `inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens`.
-
-### opencode-go panel
-
-`GET /api/dsh-usage-stats/opencode` (read-only, same loopback fence; `tz` / `fresh` params as above). Opens the local opencode database read-only (probed via `OPENCODE_DATA` → `$XDG_DATA_HOME/opencode` → `~/.local/share/opencode` → `%LOCALAPPDATA%/opencode` → `%APPDATA%/opencode`) and folds the `session` table (`tokens_*`, `cost`, `model`, `time_created`) into the same day/model buckets as the main page. Besides the lifetime totals, it folds **three rolling quota windows** (last 5 hours / 7 days / 30 days, `windows` field) exactly from session timestamps, plus **per-hour buckets** inside the 5-hour window (`h5Hours`, keyed by viewer-local hour start `hourStart`) for the panel's quota cards and hourly strip. The response is cached in memory for 30 s (opencode keeps writing while it runs); `?fresh=1` forces a re-read.
-
-`GET /api/dsh-usage-stats/opencode-go` (official subscription quota, loopback fence; `fresh` param as above). Reads the local opencode auth file (`OPENCODE_AUTH` → `~/.local/share/opencode/auth.json` → `%LOCALAPPDATA%/opencode/auth.json`) and detects the subscription kind by auth entry — `opencode-go` = OpenCode Go, `opencode` (or legacy `zen`) = OpenCode Zen (the key never leaves the host process):
-
-- **Go** — proxies the official usage endpoint `https://opencode.ai/zen/go/v1/usage` and returns the three rolling windows exactly like the opencode.ai website (`rolling` 5 hours / `weekly` / `monthly`), each with `percent` used, `resetsAt` reset time and `limit` (official USD window limits: $12 / $30 / $60).
-- **Zen** — pay-as-you-go; the same official endpoint is tried first (`https://opencode.ai/zen/go/v1/usage` — the `zen/` segment is URL namespacing; the key is accepted server-side). When the endpoint answers, it returns progress-window percentages (same response shape as Go, but no fixed dollar caps — `limit` is null). When the endpoint rejects the key (HTTP 401/403/404) the code falls back to local-only mode: `available:true, official:false, subscription:"zen", reason:"no-official-usage-api"` and the panel renders the local-database numeric cards.
-- Not logged in → `available:false, reason:"no-key"`; endpoint or network failure → `ok:false` + `error` (with `reason:"http-<status>"` / `"network"`).
-
-Cached in memory for 60 s; `?fresh=1` forces a refresh.
-
-```jsonc
-// GET /api/dsh-usage-stats/opencode-go
-{
-  "ok": true,
-  "available": true,            // false = not logged in / network error, see reason
-  "official": true,             // false = Zen fallback (no official usage API)
-  "subscription": "go",         // "go" = OpenCode Go, "zen" = OpenCode Zen
-  "source": "opencode.ai/zen/go/v1/usage",
-  "windows": {                  // same three windows as the opencode.ai website
-    "rolling": { "title": "5小时用量", "percent": 1, "resetsAt": "2026-08-20T05:54:32.242Z",
-                 "status": "ok", "limit": 12 },
-    "weekly":  { "title": "周用量", "percent": 40, "resetsAt": "2026-08-24T00:00:00.242Z",
-                 "status": "ok", "limit": 30 },
-    "monthly": { "title": "月用量", "percent": 20, "resetsAt": "2026-09-15T23:48:34.242Z",
-                 "status": "ok", "limit": 60 }
-  },
-  "syncedAt": 1787194800000, "scanMs": 320
-}
-```
-
-Panel behaviour: the panel renders **only when an opencode subscription is detected** — Go: the official quota endpoint answers; Zen: the same endpoint answers or the key is rejected (401/403/404 falls back to local-only mode) — with no login / endpoint failure the whole section is not rendered. For **Go**, the quota-window section renders three progress-bar cards in the opencode.ai website style (large percent, rounded progress bar, $ spent / window limit, reset countdown; bar colour grades with usage: green <70%, orange 70–90%, red ≥90%; two-row layout — first two cards in one row, the monthly card spanning the full second row). For **Zen**, the same official endpoint is tried first — when it answers, the panel renders the same progress-bar cards (percent + bar + reset countdown, with "按量计费" placeholder instead of dollar limits); when the endpoint rejects the key, the three windows come from the local opencode database as numeric cards. Hover always shows window details plus the local-database rolling-window comparison (the local DB only backs the comparison, it never decides whether the panel shows).
-
-```jsonc
-{
-  "ok": true,
-  "available": true,            // false = no opencode.db found on this machine
-  "dbPath": "C:\\Users\\me\\.local\\share\\opencode\\opencode.db",
-  "totals": { "sessions": 36, "messages": 2690, "cost": 0, "billed": 210819937,
-              "inputTokens": ..., "outputTokens": ..., "reasoningTokens": ...,
-              "cacheReadTokens": ..., "cacheWriteTokens": ...,
-              "additions": ..., "deletions": ..., "files": ... },
-  "windows": {                  // rolling quota windows (exact from timestamps)
-    "h5":    { "sessions": 4, "cost": 0.0012, "billed": 812034, "inputTokens": ..., "outputTokens": ..., "cacheReadTokens": ... },
-    "week":  { "sessions": 23, "cost": 0.0112, "billed": 4321098, "inputTokens": ..., "outputTokens": ..., "cacheReadTokens": ... },
-    "month": { "sessions": 61, "cost": 0.0234, "billed": 9876543, "inputTokens": ..., "outputTokens": ..., "cacheReadTokens": ... }
-  },
-  "h5Hours": [{ "hourStart": 1787191200000, "hour": 10, "sessions": 2, "cost": 0.0008,
-                "billed": 400123, "inputTokens": ..., "outputTokens": ..., "cacheReadTokens": ... }],
-  "firstTime": 1735689600000, "lastTime": 1738022400000,
-  "byDay":   [{ "date": "2026-07-09", "sessions": 2, "billed": ..., "inputTokens": ... }],
-  "byModel": [{ "key": "opencode/deepseek-v4-flash-free", "id": "deepseek-v4-flash-free",
-                "provider": "opencode", "variant": "max", "sessions": 30, "billed": ... }],
-  "recent":  [{ "id": "ses_...", "title": "...", "model": "...", "provider": "...",
-                "billed": ..., "cost": ..., "timeCreated": 1786804839480 }],
-  "syncedAt": 1738022400000, "scanMs": 12
-}
-```
-
-## Tests
+Tests use synthetic data and temporary DSH homes, with no live credentials, paid calls or installed DSH instance. The theme test uses the checked-in contract; set `DSH_THEME_CLIENT` to validate an installed theme client file.
 
 ```sh
-node usage-stats-host-test.mjs
+node scripts/render-heatmap-check.mjs
+node scripts/check-heat-tip-placement.mjs
+npm run preview:heatmap
+npm pack --dry-run
 ```
 
-Hermetic host test that cross-checks `foldResponse()` against an independent brute-force aggregation and exercises `syncCorpus()` incremental behaviour (first scan, no-change no-op, single append, session deletion, timezone re-bucket, persist/reload round trip) under an isolated `DSH_HOME`; part three verifies `collectOpencodeStats()` folding (totals / byDay / byModel / recent / 5-hour-week-month rolling windows / 5-hour per-hour buckets) against a scratch SQLite database and `findOpencodeDb()` probing of `OPENCODE_DATA`.
+The preview writes an ignored `preview-heatmap.html`. Consistency tests ensure source, package and compatibility copies match.
 
-## Files
+`platform: "web"` is DSH Desktop's renderer transport. Both plugin halves require the desktop profile; the client also requires the native `dshDesktop.deviceInfo` bridge. Ordinary web/browser profiles do not start this plugin.
 
-```
-cordis.patch.yml      # bundle patch: inserts the usage-stats plugin row
-package.json          # dual-face package (exports "." + "./client")
-lib/index.js          # host half: aggregation + API
-lib/client.js         # browser half: 用量统计 settings page
-usage-stats-host-test.mjs  # hermetic host tests
-```
+## Local API
+
+Routes use the `/api/dsh-usage-stats/` prefix and loopback trust checks.
+
+| Route | Method | Purpose |
+| --- | --- | --- |
+| `stats` | GET | Usage; `days`, `tz`, `model`, optional `fresh=1` |
+| `provider-quotas` | GET | Cached quotas; `fresh=1` refreshes |
+| `workbuddy`, `workbuddy-ai` | GET | Optional adapter caches; support `fresh=1` |
+| `controls` | GET / POST | Read/update controls; writes require JSON |
+| `quota-providers` | GET | Configured providers and credential-free templates |
+| `quota-test` | POST | Test a template and return an expiring confirmation ID |
+
+`stats.billed` is input + output + cache-read + cache-write tokens. The corpus refreshes every 30 seconds; requests wait up to 1500 ms and can return `stale: true` / `partial: true`. Timezone changes re-bucket stored events; old retained hourly aggregates may be approximate at fractional-hour boundaries.
 
 ## License
 

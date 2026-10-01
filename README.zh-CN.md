@@ -1,194 +1,177 @@
-# dsh-usage-stats
+# dsh-usage-stats · 用量统计
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-[DSH Web GUI](https://github.com/deepseek-ai/dsh) 的 Token 用量统计插件：设置页 **用量统计** 以 GitHub 风格热力图展示模型 Token 消耗，并附带当日 24 小时 Token 柱状图、按模型拆分统计与全历史汇总；页面最下方还提供 **opencode-go 使用情况** 面板，展示本机 opencode（Go CLI / 桌面端）订阅用量——登录为 Go 订阅时显示官方配额，否则使用本地数据库。
+[DeepSeek Harness 桌面端](https://github.com/deepseek-ai/deepseek-harness) 的 Token 用量与配额插件。打开 **设置 → 用量统计**，即可查看用量历史、已连接账号的配额与查询控制。
 
-以外部 bundle 补丁方式工作，无需改动 DSH 源码。
+通过外部 bundle 补丁加载，无需修改 DSH 源码。适用于 `desktop` profile 和 Electron 主窗口。
 
-## 功能特性
+## 界面展示
 
-- **用量热力图** — GitHub 贡献风格日历；每格代表一天，颜色深浅 = 计费 Token 数。以单行换行布局覆盖最近六个月，适配设置面板宽度，无需横向滚动。
-- **24 小时 Token 图** — 当前本地日按小时统计用量（每小时一根柱）。
-- **按模型拆分** — 按 provider/model 堆叠柱状图与合计，并支持筛选视图。
-- **时间范围筛选** — 7 / 30 / 90 / 365 天 / 全部。
-- **模型筛选** — 将全部图表与合计限定到某个 provider/model。
-- **opencode-go 使用情况面板** — 页面最下方的独立面板：自动识别本机 opencode 登录对应的订阅类型（`opencode-go` = OpenCode Go，`opencode` = OpenCode Zen）并相应渲染。**Go** 通过官方配额接口（`opencode.ai/zen/go/v1/usage`，复用本机 opencode 登录）以 **opencode 官方网站样式的三个进度条卡片**（百分比 + 进度条 + 已用 $ + 重置倒计时，两行布局）展示订阅配额用量；**Zen**（按量付费）同样先尝试该官方接口——应答时渲染相同的进度条卡片，接口拒绝 Key（401/403/404）时才回退为以本机 opencode 数据库（`opencode.db` 的 `session` 表）只读聚合出的同一组三个滚动窗口数字卡片。本机数据库始终可作为悬停对照；未登录时整个区块不显示。
-- **浅色与深色主题** — 使用 DSH 别名主题变量（`--dsw-alias-*`）样式化。
+### 用量
 
-## 界面截图
+今日 Token、使用天数、累计 Token、小时用量与调用次数，以及每日／每周热力图。
 
-| | |
-| --- | --- |
-| ![用量统计总览](screenshots/usage-stats-overview.png) | ![用量热力图](screenshots/usage-stats-heatmap.png) |
-| 热力图特写：最近六个月的 GitHub 风格贡献日历 | 整页：用量热力图、24 小时柱状图、按模型拆分、合计与筛选 |
-| ![opencode-go 使用情况面板](screenshots/usage-stats-opencode.png) | |
-| 页面底部面板：本机 opencode 订阅用量（Go 为配额进度条卡片，其余为数字滚动窗口卡片） | |
+![用量概览、今日图表与热力图](screenshots/usage.png)
 
-## 工作原理
+### 配额
 
-两个半区，由 `cordis.patch.yml` 合并为一行 bundle（`usage-stats`）：
+供应商余额、订阅窗口与可选的 WorkBuddy 积分。实际卡片取决于已有供应商、账号权限和查询结果。
 
-| 半区 | 文件 | 运行位置 | 作用 |
-| --- | --- | --- | --- |
-| Host | `lib/index.js` | DSH 宿主进程 | 汇总每个会话持久日志中的 `assistant/message` 用量事件，维护持久化语料库，提供只读 `/api/dsh-usage-stats/stats`、`/api/dsh-usage-stats/opencode` 与 `/api/dsh-usage-stats/opencode-go` |
-| Client | `lib/client.js` | 浏览器（dsh web GUI） | 在 `settings.section` 下注册「用量统计」设置区块，从宿主路由渲染图表与 opencode-go 面板 |
+![供应商余额与 WorkBuddy 积分](screenshots/quotas.png)
 
-### 性能模型
+### 控制
 
-- 语料库聚合为**按会话的贡献**，保存在内存中**并**持久化到 `<DSH_HOME>/storages/usage-stats-corpus.json`，服务器重启无需冷全量扫描。
-- 刷新是**增量**的：以每个会话持久日志的廉价指纹（文件大小 + mtime）判断哪些会话真正变化；只重读变化/新增的会话（`sessionQuery.readSession()`），并在毫秒级内在内存中折叠合计。
-- **后台定时任务（30 秒）** 保持语料库温热，且桶以服务器本地时区为种子，打开 GUI 后的首次请求由热内存直接服务，而非阻塞在多秒扫描上。
-- 请求等待刷新的时间从不超过 **1500 ms**：若冷扫描仍在进行，则返回当前快照并标记 `stale: true`，UI 稍后可再次刷新。
+自动获取、查询间隔、模型明细、高级模型选择器与自定义查询。
 
-日/周/小时桶跟随浏览器 UTC 偏移（`tz` 查询参数，单位为分钟，`UTC - local`），因此热力图的天与你的日历一致。
+![自动查询与自定义查询控制](screenshots/controls.png)
+
+## 功能
+
+- 每日／每周热力图与翻页，今日 24 小时 Token 柱图及调用次数折线。
+- 模型分布与明细；历史筛选支持 7／30／365 天和全部，概览卡片保持今日／完整历史口径。
+- Token 紧凑显示，提示保留准确值，调用次数使用整数。日期跟随桌面系统时区。
+- 内置 Claude、DeepSeek、StepFun、Codex、Copilot、OpenRouter、Moonshot、Kimi Coding、MiniMax、Z.AI／GLM Coding、阿里云 Token Plan 国内版、xAI、OpenCode Go 配额读取器；能否获取取决于凭据、权限与上游接口。
+- 启用可选的 `dsh-workbuddy-connect` 后，分别展示与刷新 WorkBuddy／WorkBuddy AI 积分；其他功能不依赖该插件。
+- 自定义 JSON 查询：选择已有供应商，编辑、测试、确认后启用；覆盖对应内置读取器，移除后恢复。
+- 可选的模型／推理强度面板与滑条，关闭后立即恢复官方选择器。
+- DSH 浅色／深色主题、自适应图表、键盘供应商选择器与固定标签页。
+
+自动查询和高级模型选择器**默认关闭**，模型明细**默认开启**。间隔支持 10 分钟、1 小时（默认）、5 小时、每天。开启自动查询需要确认可能产生的成本；关闭设置页后宿主仍按间隔执行。配额页通常只读缓存，刷新按钮才触发新查询。
 
 ## 安装
 
-包声明了 `dsh.bundle.patch`（`cordis.patch.yml`），因此以永久 bundle 层方式安装：
+需要 DSH 桌面端，以及用于构建的 Node.js。开发命令已在 Node.js 24 验证。SQLite 指纹要求宿主支持 `node:sqlite`，否则插件回退为重读会话。
 
 ```sh
-dsh plugin add link:/path/to/dsh-usage-stats
+git clone https://github.com/Jockjrop/dsh-usage-stats.git
+cd dsh-usage-stats
+npm ci
+npm run build
+npm test
 ```
 
-或者通过 profile 的 `node_modules` 以 npm 风格链接：
+将本地包加入 **desktop** profile。当前 DSH CLI 将此 profile 保留给 Electron 管理，不能使用 `dsh plugin --profile desktop` 操作。
 
-```sh
-npm install /path/to/dsh-usage-stats
+Windows 手动安装步骤：
+
+1. 完全退出 DSH 桌面端，将克隆目录保存在固定位置。
+2. 备份 `<DSH_HOME>/profiles/desktop/package.json`。在已有依赖中加入 `dsh-usage-stats`，值为 `link:<克隆目录绝对路径>`；在已有的 `dsh.profile.bundles` 数组末尾加入 `dsh-usage-stats`。保留其他条目，链接路径使用正斜杠。
+3. 在该 desktop profile 目录运行 `pnpm install`。
+4. 启动 DSH 桌面端，进入 **设置 → 用量统计**。
+
+以下仅展示需要合并的两个条目。替换链接占位符，不要覆盖整个 profile 文件：
+
+```json
+{
+  "dependencies": {
+    "dsh-usage-stats": "link:<克隆目录绝对路径>"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": ["dsh-usage-stats"]
+    }
+  }
+}
 ```
 
-然后打开 DSH Web GUI → 设置 → **用量统计**。
+`DSH_HOME` 为 DSH 数据目录；未设置时，插件使用当前用户主目录下的 `.dsh`。克隆目录可以放在任意位置，不依赖特定机器的绝对路径。
 
-## 卸载
+更新时拉取仓库，运行 `npm ci`、`npm run build`、`npm test`，再重启桌面端。卸载时退出应用，仅移除此依赖和 bundle 条目，在 desktop profile 运行 `pnpm install`，然后重启。
 
-```sh
-dsh plugin remove dsh-usage-stats
+## 配额查询
+
+已配置但未查询的余额可能显示 **未查询**。权限不足、登录过期、接口不可用或响应无效时，卡片可能隐藏或显示无法获取。展示的是接口返回结果，不会把 Token 数估算为账号费用。
+
+进入 **控制 → 配额查询**，选择供应商并编辑模板，先**测试**，再**确认**。修改模板后需重新测试；成功结果有效期为 15 分钟。
+
+假设接口返回 `{ "data": { "balance": 12.34 } }`：
+
+```json
+{
+  "url": "https://api.example.com/balance",
+  "method": "GET",
+  "auth": "provider",
+  "headers": { "accept": "application/json" },
+  "response": {
+    "metrics": [
+      { "label": "账户可用余额", "kind": "amount", "remaining": "data.balance", "currency": "CNY" }
+    ]
+  }
+}
 ```
 
-或者使用 npm：
+请将示例 URL 替换为真实接口。模板支持 GET／POST、JSON body、余额／窗口指标，以及 `data.items[0].balance` 等路径。窗口支持 `remainingPercent`、`usedPercent`，或 `total` 与 `remaining`／`used`；`response.rows` 指定数组。无需认证时使用 `auth: "none"`。未知网关预填的 `/balance` 仅是可修改示例。
 
-```sh
-npm uninstall dsh-usage-stats
-```
+可选的宿主凭据引用：
 
-`dsh plugin remove` 会自动将插件行从 profile 的 `dsh.profile.bundles` 层栈中移除。若直接用 npm 卸载，请手动删除 profile 的 `package.json` 中 `dsh.profile.bundles` 里残留的 `dsh-usage-stats` 条目。卸载后重启 DSH Web GUI 即可生效。
-
-## HTTP API
-
-`GET /api/dsh-usage-stats/stats`（只读；由回环信任围栏保护——仅响应来自 `localhost`/`127.0.0.1` 的请求）。
-
-查询参数：
-
-| 参数 | 含义 |
+| 读取器 | 凭据名称 |
 | --- | --- |
-| `days` | 桶窗口天数；`0`（默认）表示全部历史。上限 3650。 |
-| `tz` | 浏览器 UTC 偏移（分钟，`UTC - local`，例如 UTC+8 为 `-480`），作为日/周/小时桶的种子。 |
-| `model` | 可选的 `provider/model` 键，筛选到单一模型。 |
-| `fresh` | `1` 强制在应答前进行增量重扫。 |
+| OpenRouter 账号总余额 | `OPENROUTER_MANAGEMENT_API_KEY` |
+| xAI 预付余额 | `XAI_MANAGEMENT_API_KEY`、`XAI_TEAM_ID` |
+| 阿里云 Token Plan 国内版 | `ALIBABA_CLOUD_ACCESS_KEY_ID`、`ALIBABA_CLOUD_ACCESS_KEY_SECRET`；临时凭据可加 `ALIBABA_CLOUD_SECURITY_TOKEN` |
 
-响应结构（节选）：
+其他读取器使用对应的 DSH 供应商凭据或支持的已有 OAuth 登录。Claude、Codex、Copilot 不刷新或改写登录。OpenCode Go 只使用自身 DSH 凭据；Zen 无内置钱包读取器，但支持自定义查询。阿里云国际版 Token Plan 暂未接入。
 
-```jsonc
-{
-  "ok": true,
-  "days": 365,
-  "tz": -480,
-  "totals": { "billed": 123456, "inputTokens": ..., "outputTokens": ..., "cacheReadTokens": ..., "cacheWriteTokens": ... },
-  "messages": 271,
-  "sessions": 12,
-  "sessionsWithUsage": 9,
-  "firstTime": 1735689600000,
-  "lastTime": 1738022400000,
-  "byDay":   [{ "date": "2025-01-01", "billed": ..., "inputTokens": ... }],
-  "byWeek":  [{ "date": "2024-12-30", "billed": ... }],
-  "byHour":  [{ "hour": 14, "billed": ... }],            // 仅当前本地日，24 条
-  "byHourModels": [{ "hour": 14, "key": "deepseek/deepseek-chat", "billed": ... }],
-  "byModel": [{ "key": "deepseek/deepseek-chat", "provider": "deepseek", "model": "deepseek-chat", "billed": ..., "lastTime": ... }],
-  "syncedAt": 1738022400000,
-  "stale": false,
-  "scanMs": 12
-}
+## 隐私与本地数据
+
+- 用量在宿主汇总；语料库保存统计数、模型标识和精简时间记录，不保存对话正文。
+- 凭据仅在宿主解析，用于对应配额接口。API Key、OAuth Token 和完整上游响应不返回渲染进程。
+- 认证自定义查询必须与供应商配置或官方配额地址同源。模板拒绝 URL 密钥参数、认证请求头及 body 中常见的凭据字段。请求不跟随重定向；自定义 HTTP 查询超时 8 秒，响应上限 1 MB。
+- 本地接口检查连接地址、Host、Origin 与跨站请求。响应使用 `Cache-Control: no-store`；未知宿主异常只返回通用提示。
+- WorkBuddy 使用当前宿主端口，只缓存配额展示字段。
+- 无分析上报或遥测接口。测试查询、手动刷新，以及开启后的自动刷新会访问对应配额服务。
+
+| `<DSH_HOME>/storages/` 下的文件 | 内容 |
+| --- | --- |
+| `usage-stats-corpus.json` | 按会话保存的用量贡献 |
+| `usage-stats-controls.json` | 控制设置、自定义模板与配额快照 |
+
+这些文件含私人用量或账号信息，路径在运行时解析。运行数据、环境文件、凭据、数据库、日志、备份和预览均排除在 Git 之外，npm 包采用明确的文件白名单。展示图使用用户提供的截图，数值反映截图时的配置。
+
+回环接口以可信本机为前提；同一用户权限下的其他进程可以访问本地数据。
+
+## 开发
+
+只编辑 **`src/`**。`npm run build` 同步到 `lib/` 和根目录兼容副本；包入口加载 `lib/`。
+
+```text
+src/                  宿主、客户端、配额读取器与控制源码
+lib/                  生成的包入口
+test/                 隔离的行为、隐私与副本一致性测试
+test/fixtures/        可移植的 DSH 主题变量契约
+scripts/              构建与模拟热力图检查
+screenshots/          用量、配额、控制展示图
+cordis.patch.yml       仅桌面端加载的 bundle 注册
 ```
 
-`billed` = `inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens`。
-
-### opencode-go 面板
-
-`GET /api/dsh-usage-stats/opencode`（只读，回环信任围栏保护，`tz` / `fresh` 参数同上）。以只读方式打开本机 opencode 数据库（按 `OPENCODE_DATA` → `$XDG_DATA_HOME/opencode` → `~/.local/share/opencode` → `%LOCALAPPDATA%/opencode` → `%APPDATA%/opencode` 依次探测），聚合 `session` 表（`tokens_*`、`cost`、`model`、`time_created`）并折叠为与主页面一致的日 / 模型桶。除全量汇总外，还按会话时间戳精确折叠 **三个滚动额度窗口**（最近 5 小时 / 7 天 / 30 天，`windows` 字段）及 5 小时窗口内的**逐小时桶**（`h5Hours`，按查看者时区的本地小时起点 `hourStart` 键控），供面板的额度卡片与逐小时柱状图使用。响应带 30 秒内存缓存（opencode 运行时会持续写库），`?fresh=1` 可强制重读。
-
-`GET /api/dsh-usage-stats/opencode-go`（官方订阅配额，回环保护，`fresh` 参数同上）。从本机 opencode 登录文件（`OPENCODE_AUTH` → `~/.local/share/opencode/auth.json` → `%LOCALAPPDATA%/opencode/auth.json`）按登录条目识别订阅类型——`opencode-go` 为 OpenCode Go，`opencode`（或旧名 `zen`）为 OpenCode Zen（Key 不离开宿主进程）：
-
-- **Go** — 代理官方用量接口 `https://opencode.ai/zen/go/v1/usage`，返回与 opencode 官方网站一致的三个滚动窗口（`rolling` 5 小时 / `weekly` 周 / `monthly` 月）：`percent`（已用百分比）、`resetsAt`（重置时间）、`limit`（官方美元额度：$12 / $30 / $60）。
-- **Zen** — 按量付费；同样先尝试同一个官方接口（`https://opencode.ai/zen/go/v1/usage`——`zen/` 路径段只是 URL 命名空间，服务端按 Key 识别账号）。接口应答时返回各窗口用量百分比（与 Go 相同的响应结构，但无固定美元额度，`limit` 为 null）；接口拒绝该 Key（HTTP 401/403/404）时回退为本地模式：`available:true, official:false, subscription:"zen", reason:"no-official-usage-api"`，面板改用本地数据库数字卡片渲染。
-- 未登录 → `available:false, reason:"no-key"`；接口或网络异常 → `ok:false` + `error`（附 `reason:"http-<状态码>"` / `"network"`）。
-
-响应带 60 秒内存缓存，`?fresh=1` 可强制刷新。
-
-```jsonc
-// GET /api/dsh-usage-stats/opencode-go
-{
-  "ok": true,
-  "available": true,            // false = 未登录 / 网络失败，见 reason
-  "official": true,             // false = Zen 回退（无官方用量接口）
-  "subscription": "go",         // "go" = OpenCode Go，"zen" = OpenCode Zen
-  "source": "opencode.ai/zen/go/v1/usage",
-  "windows": {                  // 与官方网站一致的三个滚动窗口
-    "rolling": { "title": "5小时用量", "percent": 1, "resetsAt": "2026-08-20T05:54:32.242Z",
-                 "status": "ok", "limit": 12 },
-    "weekly":  { "title": "周用量", "percent": 40, "resetsAt": "2026-08-24T00:00:00.242Z",
-                 "status": "ok", "limit": 30 },
-    "monthly": { "title": "月用量", "percent": 20, "resetsAt": "2026-09-15T23:48:34.242Z",
-                 "status": "ok", "limit": 60 }
-  },
-  "syncedAt": 1787194800000, "scanMs": 320
-}
-```
-
-面板行为：**仅当检测到 opencode 订阅时显示本面板**——Go：官方配额接口可用；Zen：同一接口应答，或接口拒绝 Key（401/403/404）后进入本地模式；未登录 / 接口失败时整个区块不渲染。**Go** 显示为三个进度条卡片（opencode.ai 官网样式：大号百分比 + 圆角进度条 + 已用 $ / 窗口额度 + 重置倒计时，颜色随用量分级：<70% 绿、70–90% 橙、≥90% 红；卡片两行布局，前两张一行、月用量占满第二行）；**Zen** 同样先尝试官方接口——应答时渲染相同的进度条卡片（百分比 + 进度条 + 重置倒计时，无美元额度处显示「按量计费」占位），接口拒绝 Key 时才用本机 opencode 数据库的同一组滚动窗口渲染为数字卡片。悬停始终显示窗口明细与本机数据库滚动窗口对照（本机数据库仅作对照，不决定面板是否显示）。
-
-```jsonc
-{
-  "ok": true,
-  "available": true,            // false = 本机未找到 opencode.db
-  "dbPath": "C:\\Users\\me\\.local\\share\\opencode\\opencode.db",
-  "totals": { "sessions": 36, "messages": 2690, "cost": 0, "billed": 210819937,
-              "inputTokens": ..., "outputTokens": ..., "reasoningTokens": ...,
-              "cacheReadTokens": ..., "cacheWriteTokens": ...,
-              "additions": ..., "deletions": ..., "files": ... },
-  "windows": {                  // 滚动额度窗口（精确按会话时间戳）
-    "h5":    { "sessions": 4, "cost": 0.0012, "billed": 812034, "inputTokens": ..., "outputTokens": ..., "cacheReadTokens": ... },
-    "week":  { "sessions": 23, "cost": 0.0112, "billed": 4321098, "inputTokens": ..., "outputTokens": ..., "cacheReadTokens": ... },
-    "month": { "sessions": 61, "cost": 0.0234, "billed": 9876543, "inputTokens": ..., "outputTokens": ..., "cacheReadTokens": ... }
-  },
-  "h5Hours": [{ "hourStart": 1787191200000, "hour": 10, "sessions": 2, "cost": 0.0008,
-                "billed": 400123, "inputTokens": ..., "outputTokens": ..., "cacheReadTokens": ... }],
-  "firstTime": 1735689600000, "lastTime": 1738022400000,
-  "byDay":   [{ "date": "2026-07-09", "sessions": 2, "billed": ..., "inputTokens": ... }],
-  "byModel": [{ "key": "opencode/deepseek-v4-flash-free", "id": "deepseek-v4-flash-free",
-                "provider": "opencode", "variant": "max", "sessions": 30, "billed": ... }],
-  "recent":  [{ "id": "ses_...", "title": "...", "model": "...", "provider": "...",
-                "billed": ..., "cost": ..., "timeCreated": 1786804839480 }],
-  "syncedAt": 1738022400000, "scanMs": 12
-}
-```
-
-## 测试
+测试使用模拟数据与临时 DSH 目录，无需真实凭据、付费调用或已安装的 DSH 实例。主题测试使用随仓库提供的变量契约；可设置 `DSH_THEME_CLIENT` 指向主题客户端文件，验证其他已安装版本。
 
 ```sh
-node usage-stats-host-test.mjs
+node scripts/render-heatmap-check.mjs
+node scripts/check-heat-tip-placement.mjs
+npm run preview:heatmap
+npm pack --dry-run
 ```
 
-封闭式宿主测试：将 `foldResponse()` 与独立的暴力聚合交叉校验，并在隔离的 `DSH_HOME` 下演练 `syncCorpus()` 的增量行为（首次扫描、无变化 no-op、单次追加、会话删除、时区重新分桶、持久化/重载往返）；第三部分用临时 SQLite 库验证 `collectOpencodeStats()` 的折叠（总量 / 按天 / 按模型 / 最近会话 / 5 小时-周-月滚动窗口 / 5 小时逐小时桶）与 `findOpencodeDb()` 对 `OPENCODE_DATA` 的探测。
+预览生成已忽略的 `preview-heatmap.html`。一致性测试确保源码、包入口与兼容副本相同。
 
-## 文件
+`platform: "web"` 是 DSH 桌面端的渲染通信格式；两端入口均限制 desktop profile，客户端还要求原生 `dshDesktop.deviceInfo` 桥接。普通 Web／浏览器 profile 不启动插件。
 
-```
-cordis.patch.yml      # bundle 补丁：插入 usage-stats 插件行
-package.json          # 双面包（导出 "." + "./client"）
-lib/index.js          # 宿主半区：聚合 + API
-lib/client.js         # 浏览器半区：用量统计设置页
-usage-stats-host-test.mjs  # 封闭式宿主测试
-```
+## 本地接口
+
+以下路由使用 `/api/dsh-usage-stats/` 前缀，并受回环来源检查保护。
+
+| 路由 | 方法 | 作用 |
+| --- | --- | --- |
+| `stats` | GET | 用量；`days`、`tz`、`model`、`fresh=1` |
+| `provider-quotas` | GET | 配额缓存；`fresh=1` 刷新 |
+| `workbuddy`、`workbuddy-ai` | GET | 可选适配器缓存；支持 `fresh=1` |
+| `controls` | GET／POST | 读取／修改控制设置，写入要求 JSON |
+| `quota-providers` | GET | 已有供应商与无凭据模板 |
+| `quota-test` | POST | 测试模板并返回限时确认 ID |
+
+`stats.billed` 为输入、输出、缓存读取和缓存写入 Token 之和。语料库每 30 秒刷新；接口最多等待 1500 ms，可返回 `stale: true`／`partial: true`。时区变化时按已存事件重新分桶；只剩逐小时聚合的旧历史在半小时时区边界上可能有近似。
 
 ## 许可
 
