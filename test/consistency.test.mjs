@@ -17,7 +17,10 @@ const srcIndexHash = sha256(path.join(root, 'src', 'index.js'));
 const libIndexHash = sha256(path.join(root, 'lib', 'index.js'));
 const rootIndexHash = sha256(path.join(root, 'index.js'));
 
-const srcClientHash = sha256(path.join(root, 'src', 'client.js'));
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const expectedClient = fs.readFileSync(path.join(root, 'src', 'client.js'), 'utf8')
+  .replace("var PLUGIN_VERSION = '__DSH_USAGE_STATS_VERSION__'", 'var PLUGIN_VERSION = ' + JSON.stringify(pkg.version));
+const srcClientHash = crypto.createHash('sha256').update(expectedClient).digest('hex');
 const libClientHash = sha256(path.join(root, 'lib', 'client.js'));
 const rootClientHash = sha256(path.join(root, 'client.js'));
 
@@ -51,7 +54,7 @@ if (srcClientHash !== libClientHash || srcClientHash !== rootClientHash) {
   console.error('  root:', rootClientHash);
   failed = true;
 } else {
-  console.log('✅ client.js is 100% consistent across src, lib, and root.');
+  console.log('✅ client.js matches src and package.json in lib and root.');
 }
 
 if (srcQuotasHash !== libQuotasHash || srcQuotasHash !== rootQuotasHash) {

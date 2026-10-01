@@ -16,6 +16,12 @@ if (process.env.GITHUB_REF_TYPE === 'tag') {
   assert.equal(process.env.GITHUB_REF_NAME, `v${pkg.version}`, 'Release tag must match package.json.');
 }
 
+const changelog = await fs.readFile(path.join(root, 'CHANGELOG.md'), 'utf8');
+const currentChanges = changelog.split(/^## /m).find(section => section.startsWith(`${pkg.version} - `));
+assert.ok(currentChanges, `CHANGELOG.md is missing version ${pkg.version}.`);
+const releaseChanges = currentChanges.slice(currentChanges.indexOf('\n') + 1).trim();
+assert.ok(releaseChanges, 'The current changelog entry must contain release notes.');
+
 await import('./build.mjs');
 const outputDir = path.join(root, 'release');
 await fs.mkdir(outputDir, { recursive: true });
@@ -29,7 +35,7 @@ assert.ok(packed?.filename, 'npm pack did not return package metadata.');
 const archiveName = `${pkg.name}-${pkg.version}.tgz`;
 assert.equal(packed.filename, archiveName);
 const members = new Set(packed.files.map(file => file.path));
-for (const member of ['package.json', 'cordis.patch.yml', 'lib/index.js', 'lib/client.js', 'lib/provider-quotas.js', 'lib/quota-controls.js']) {
+for (const member of ['package.json', 'cordis.patch.yml', 'CHANGELOG.md', 'lib/index.js', 'lib/client.js', 'lib/provider-quotas.js', 'lib/quota-controls.js']) {
   assert.ok(members.has(member), `Release is missing ${member}.`);
 }
 assert.ok([...members].every(member => !/^(?:src|test|scripts|node_modules|storages|credentials)\//.test(member)), 'Release must contain prebuilt public files only.');
@@ -77,6 +83,6 @@ try {
   await fs.rm(smokeDir, { recursive: true, force: true });
 }
 
-await fs.writeFile(path.join(outputDir, 'RELEASE_NOTES.txt'), `用量统计 ${pkg.version}\n\n预构建的 DSH Desktop 插件：Token 用量趋势、供应商配额与余额、自动刷新和自定义配额查询。\n\n安装：在 DSH 桌面端主界面侧栏进入「插件 → 添加插件」，粘贴以下地址，安装后点击「立即启用」：\n\nhttps://github.com/Jockjrop/dsh-usage-stats/releases/download/v${pkg.version}/${archiveName}\n\n面板入口：设置 → 用量统计。此版本仅支持 desktop profile。\n\nPrebuilt DSH Desktop plugin. In Plugins → Add plugin, paste the archive URL above, install, and select Enable now. No Git checkout or build step is required.\n\nAssets: versioned package, latest-download alias, and SHA256SUMS. Both archives contain identical prebuilt modules; installation was verified with lifecycle scripts disabled.\n`);
+await fs.writeFile(path.join(outputDir, 'RELEASE_NOTES.txt'), `用量统计 ${pkg.version}\n\n${releaseChanges}\n\n预构建的 DSH Desktop 插件：Token 用量趋势、供应商配额与余额、自动刷新和自定义配额查询。\n\n安装：在 DSH 桌面端主界面侧栏进入「插件 → 添加插件」，粘贴以下地址，安装后点击「立即启用」：\n\nhttps://github.com/Jockjrop/dsh-usage-stats/releases/download/v${pkg.version}/${archiveName}\n\n面板入口：设置 → 用量统计。此版本仅支持 desktop profile。\n\nPrebuilt DSH Desktop plugin. In Plugins → Add plugin, paste the archive URL above, install, and select Enable now. No Git checkout or build step is required.\n\nAssets: versioned package, latest-download alias, and SHA256SUMS. Both archives contain identical prebuilt modules; installation was verified with lifecycle scripts disabled.\n`);
 console.log(`Release ${pkg.version}: built modules, package installation and renderer entry verified.`);
 console.log(`  release/${archiveName}\n  release/${aliasName}\n  release/SHA256SUMS`);

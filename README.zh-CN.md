@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="#安装"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH 桌面端"></a>
-  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/version-0.1.0-64748b?style=flat-square" alt="版本 0.1.0"></a>
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/github/v/release/Jockjrop/dsh-usage-stats?style=flat-square&amp;color=64748b" alt="最新发行版"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 许可"></a>
 </p>
 
@@ -22,6 +22,7 @@
   <a href="#安装">安装</a> ·
   <a href="#使用">使用</a> ·
   <a href="#常见问题">常见问题</a> ·
+  <a href="CHANGELOG.md">更新日志</a> ·
   <a href="https://github.com/Jockjrop/dsh-usage-stats/issues">反馈问题</a>
 </p>
 
@@ -60,6 +61,7 @@
 - **按需刷新**：手动获取或开启定时查询；自动查询默认关闭。
 - **更快选择模型**：可开启模型与推理强度面板，拖动滑条调整；关闭后恢复官方选择器。
 - **融入桌面界面**：适配浅色／深色主题，图表自适应宽度，标签页固定，供应商选择支持键盘。
+- **跟随应用语言**：支持中文、英语和日语，随 DSH 所选语言即时切换；用户自定义名称与配额标签保持原样。
 
 ## 安装
 
@@ -268,7 +270,7 @@ WorkBuddy 与 WorkBuddy AI 依赖可选的 `dsh-workbuddy-connect` 适配器，�
 <details>
 <summary><strong>开发与本地接口</strong></summary>
 
-只编辑 `src/`。`npm run build` 同步到 `lib/` 和根目录兼容副本，包入口加载 `lib/`。
+只编辑 `src/`。`npm run build` 同步到 `lib/` 和根目录兼容副本，并从 `package.json` 注入顶部版本号，包入口加载 `lib/`。
 
 ```sh
 npm run build
@@ -282,7 +284,7 @@ npm run release
 
 测试使用模拟数据与临时 DSH 目录，无需真实凭据或付费调用。可设置 `DSH_THEME_CLIENT` 验证已安装主题，默认使用随仓库提供的变量契约。模拟预览生成已忽略的 `preview-heatmap.html`。
 
-`npm run release` 构建插件，将带版本号的 `.tgz`、`dsh-usage-stats.tgz` 别名与 `SHA256SUMS` 写入已忽略的 `release/`，并在临时 profile 验证安装。推送与 `package.json` 版本一致的 `v<版本号>` 标签后，GitHub Actions 会运行测试并将这些文件发布到 Release。
+`npm run release` 构建插件，将带版本号的 `.tgz`、`dsh-usage-stats.tgz` 别名与 `SHA256SUMS` 写入已忽略的 `release/`，并在临时 profile 验证安装。发行说明包含 [CHANGELOG.md](CHANGELOG.md) 中对应版本的更新内容。推送与 `package.json` 版本一致的 `v<版本号>` 标签后，GitHub Actions 会运行测试并将这些文件发布到 Release。
 
 接口统一使用 `/api/dsh-usage-stats/` 前缀：
 

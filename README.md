@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="#installation"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH Desktop"></a>
-  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/version-0.1.0-64748b?style=flat-square" alt="Version 0.1.0"></a>
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/github/v/release/Jockjrop/dsh-usage-stats?style=flat-square&amp;color=64748b" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 license"></a>
 </p>
 
@@ -22,6 +22,7 @@
   <a href="#installation">Installation</a> ·
   <a href="#usage">Usage</a> ·
   <a href="#faq">FAQ</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
   <a href="https://github.com/Jockjrop/dsh-usage-stats/issues">Feedback</a>
 </p>
 
@@ -60,6 +61,7 @@
 - **Refresh on your terms:** fetch manually or enable scheduled queries. Automatic quota refresh is off by default.
 - **Choose models faster:** opt into a model/reasoning panel with an effort slider; disabling it restores the official selector.
 - **Fit the desktop:** light/dark themes, responsive charts, pinned tabs, and a keyboard-operable provider picker.
+- **Follow your language:** Chinese, English, and Japanese UI text updates with DSH's selected language. User-defined names and quota labels stay as configured.
 
 ## Installation
 
@@ -268,7 +270,7 @@ Bug reports and pull requests are welcome. For a bug, include your DSH version, 
 <details>
 <summary><strong>Development and local API</strong></summary>
 
-Edit `src/`. `npm run build` synchronizes modules to `lib/` and root compatibility copies; package exports load `lib/`.
+Edit `src/`. `npm run build` synchronizes modules to `lib/` and root compatibility copies and injects the header version from `package.json`; package exports load `lib/`.
 
 ```sh
 npm run build
@@ -282,7 +284,7 @@ npm run release
 
 Tests use synthetic data and temporary DSH homes; no live credentials or paid calls are required. Set `DSH_THEME_CLIENT` to validate an installed theme client instead of the checked-in alias contract. The synthetic preview writes an ignored `preview-heatmap.html`.
 
-`npm run release` builds the package, writes the versioned `.tgz`, the `dsh-usage-stats.tgz` alias and `SHA256SUMS` to the ignored `release/` directory, then verifies installation in a temporary profile. A matching `v<package.json version>` tag triggers GitHub Actions to run the tests and publish those files to a Release.
+`npm run release` builds the package, writes the versioned `.tgz`, the `dsh-usage-stats.tgz` alias and `SHA256SUMS` to the ignored `release/` directory, then verifies installation in a temporary profile. Release notes include the matching version entry from [CHANGELOG.md](CHANGELOG.md). A matching `v<package.json version>` tag triggers GitHub Actions to run the tests and publish those files to a Release.
 
 Routes use the `/api/dsh-usage-stats/` prefix:
 

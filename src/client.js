@@ -28,6 +28,314 @@ window.__ModuleLoader__.load({
     /** Stable data attribute identifying this settings section. */
     var SECTION_ID = 'usage-stats'
     var STYLE_ID = 'dsh-usage-stats-styles'
+    // Replaced from package.json by the build and npm prepack steps.
+    var PLUGIN_VERSION = '__DSH_USAGE_STATS_VERSION__'
+    var localeService = null
+    var translate = null
+
+    // Chinese is also the fallback for standalone checks without the host service.
+    // Each entry supplies the English and Japanese dictionaries for DSH's locale registry.
+    var messages = {
+      '用量统计': ['Usage statistics', '利用状況'],
+      '用量统计页面': ['Usage statistics tabs', '利用状況のタブ'],
+      '用量': ['Usage', '使用量'],
+      '配额': ['Quota', '利用枠'],
+      '控制': ['Controls', '設定'],
+      '刷新用量统计': ['Refresh usage statistics', '利用状況を更新'],
+      '刷新全部配额': ['Refresh all quotas', 'すべての利用枠を更新'],
+      '部分配额未能更新，请稍后刷新重试。': ['Some quotas could not be updated. Try refreshing again later.', '一部の利用枠を更新できませんでした。しばらくしてから再試行してください。'],
+      '部分会话读取失败': ['Some sessions could not be read', '一部のセッションを読み込めませんでした'],
+      '在 GitHub 查看 dsh-usage-stats': ['View dsh-usage-stats on GitHub', 'GitHub で dsh-usage-stats を表示'],
+      '概览指标': ['Overview', '概要'],
+      '今日tokens数': ["Today's tokens", '今日のトークン数'],
+      '使用天数': ['Active days', '利用日数'],
+      '累计tokens数': ['Total tokens', '累計トークン数'],
+      '暂无数据': ['No data yet', 'データはまだありません'],
+      '今日Token用量': ["Today's token usage", '今日のトークン使用量'],
+      '今日Token用量统计模式': ["Today's token grouping", '今日のトークン使用量の集計方法'],
+      '供应商·模型': ['Provider · Model', 'プロバイダー・モデル'],
+      '按模型': ['By model', 'モデル別'],
+      '使用量热力图': ['Usage heatmap', '使用量ヒートマップ'],
+      '热力图时长': ['Heatmap interval', 'ヒートマップの間隔'],
+      '每日': ['Daily', '日別'],
+      '每周': ['Weekly', '週別'],
+      '每日Token趋势图': ['Daily token trend', '日別トークン使用量の推移'],
+      '每日Token趋势时长': ['Token trend period', 'トークン推移の期間'],
+      '7天': ['7 days', '7日間'],
+      '30天': ['30 days', '30日間'],
+      '模型明细与分布': ['Model details and distribution', 'モデル別の詳細と分布'],
+      '每个供应商 · 模型组合单独统计': ['Count each provider and model combination separately', 'プロバイダーとモデルの組み合わせごとに集計'],
+      '合并同名模型，不区分供应商': ['Combine matching model names across providers', '同名モデルをプロバイダーを問わず合算'],
+      '模型用量清单 ({count})': ['Model usage ({count})', 'モデル使用量一覧（{count}）'],
+      '搜索模型或供应商名称…': ['Search models or providers…', 'モデル名・プロバイダー名で検索…'],
+      '模型名称': ['Model', 'モデル名'],
+      '用量 Tokens': ['Tokens used', 'トークン使用量'],
+      '占比': ['Share', '割合'],
+      '分布条': ['Distribution', '分布'],
+      '最后活跃时间': ['Last active', '最終利用日時'],
+      '没有找到匹配的模型': ['No matching models', '一致するモデルがありません'],
+      '收起清单': ['Collapse list', '一覧を折りたたむ'],
+      '展开其余 {count} 个模型': ['Show {count} more models', '残り{count}個のモデルを表示'],
+      '近期调用': ['Recent activity', '最近の利用'],
+      '全部': ['All', 'すべて'],
+      '其他': ['Other', 'その他'],
+      '没有按模型聚合的数据': ['No usage data by model', 'モデル別の集計データがありません'],
+      '窗口内没有记录': ['No records in this period', 'この期間に記録がありません'],
+      '无记录': ['No records', '記録なし'],
+      '不在所选时间范围内': ['Outside the selected period', '選択した期間の範囲外'],
+      '，不在所选时间范围内': [', outside the selected period', '、選択した期間の範囲外'],
+      '正在读取模型明细…': ['Loading model details…', 'モデルの詳細を読み込み中…'],
+      '模型明细暂不可用': ['Model details are temporarily unavailable', 'モデルの詳細を現在取得できません'],
+      '总调用次数': ['Total calls', '総呼び出し回数'],
+      '{count} 次': ['{count} calls', '{count}回'],
+      '{count} 次调用': ['{count} calls', '{count}回の呼び出し'],
+      '{date} 当周': ['Week of {date}', '{date}の週'],
+      '{year}年{month}月{day}日起的一周': ['Week starting {year}-{month}-{day}', '{year}年{month}月{day}日からの週'],
+      '{year}年{month}月{day}日': ['{year}-{month}-{day}', '{year}年{month}月{day}日'],
+      '{hour}时': ['{hour}:00', '{hour}時'],
+      '{time}，{count} 次调用，{tokens} tokens': ['{time}, {count} calls, {tokens} tokens', '{time}、{count}回の呼び出し、{tokens}トークン'],
+      '{time}: {tokens} tokens，{count} 次调用': ['{time}: {tokens} tokens, {count} calls', '{time}：{tokens}トークン、{count}回の呼び出し'],
+      ' · 全天': [' · All day', '・終日'],
+      'Token 用量': ['Token usage', 'トークン使用量'],
+      '每日Token用量与调用次数': ['Daily token usage and calls', '日別のトークン使用量と呼び出し回数'],
+      '今日每小时用量与调用次数': ["Today's hourly usage and calls", '今日の時間別使用量と呼び出し回数'],
+      '调用次数': ['Calls', '呼び出し回数'],
+      '少': ['Less', '少'],
+      '多': ['More', '多'],
+      '热力图翻页': ['Heatmap pagination', 'ヒートマップのページ切り替え'],
+      '当前显示的日期范围': ['Visible date range', '表示中の日付範囲'],
+      '查看更早日期': ['Show earlier dates', '以前の日付を表示'],
+      '查看较新日期': ['Show later dates', '以降の日付を表示'],
+      '连接模型服务后，可读取的配额会显示在这里': ['Connect a model provider to see available quotas here', 'モデルプロバイダーに接続すると、取得可能な利用枠が表示されます'],
+      '上次获取时间：{time}': ['Last fetched: {time}', '最終取得日時：{time}'],
+      '未查询': ['Not queried', '未照会'],
+      '未获取': ['Not available', '未取得'],
+      '未登录': ['Signed out', '未ログイン'],
+      '刷新 {name} 配额': ['Refresh {name} quota', '{name}の利用枠を更新'],
+      '{name} 配额{status}': ['{name} quota: {status}', '{name}の利用枠：{status}'],
+      '已在模型设置中配置，尚未查询配额。': ['Configured in model settings; quota has not been queried yet.', 'モデル設定に登録済みです。利用枠はまだ照会されていません。'],
+      '尚未获取到有效配额，可刷新重试。': ['No valid quota data yet. Refresh to try again.', '有効な利用枠を取得できていません。更新して再試行してください。'],
+      '上限 {amount}': ['Limit {amount}', '上限 {amount}'],
+      '剩余 {value}': ['{value} remaining', '残り{value}'],
+      '重置时间：{time}': ['Resets at: {time}', 'リセット日時：{time}'],
+      '即将重置': ['Resetting soon', 'まもなくリセット'],
+      '{minutes} 分钟后重置': ['Resets in {minutes} min', '{minutes}分後にリセット'],
+      '{hours} 小时{minutes}后重置': ['Resets in {hours}h{minutes}', '{hours}時間{minutes}後にリセット'],
+      ' {minutes} 分': [' {minutes}m', '{minutes}分'],
+      '{days} 天{hours}后重置': ['Resets in {days}d{hours}', '{days}日{hours}後にリセット'],
+      ' {hours} 小时': [' {hours}h', '{hours}時間'],
+      '刷新 {name} 账号与积分': ['Refresh {name} account and credits', '{name}のアカウントとクレジットを更新'],
+      '剩余积分合计': ['Total remaining credits', '残りクレジット合計'],
+      '有效套餐 {active} / {total} 个': ['Active plans {active} / {total}', '有効なプラン {active} / {total}'],
+      '套餐': ['Plan', 'プラン'],
+      '{name} 剩余 {percent}%': ['{name}: {percent}% remaining', '{name}：残り{percent}%'],
+      '计费套餐': ['Billing plan', '課金プラン'],
+      '使用中': ['In use', '利用中'],
+      '{value} 积分': ['{value} credits', '{value}クレジット'],
+      '收起其余套餐': ['Collapse other plans', '他のプランを折りたたむ'],
+      '展开其余 {count} 个套餐': ['Show {count} more plans', '残り{count}件のプランを表示'],
+      '免费': ['Free', '無料'],
+      '{value} 积分/次': ['{value} credits/call', '1回あたり{value}クレジット'],
+      '模型优惠': ['Model offers', 'モデルの特典'],
+      '自动获取剩余余额': ['Fetch remaining balance automatically', '残高を自動取得'],
+      '自动查询费用提醒': ['Automatic query cost notice', '自動照会の料金に関する確認'],
+      '自动查询可能会消耗少量余额，具体取决于供应商的计费规则。确认开启后，将立即获取一次，之后按所选间隔更新。': ['Automatic queries may incur a small charge, depending on the provider. Enabling this fetches once immediately, then updates at the selected interval.', '自動照会では、プロバイダーの料金設定によって少額の残高が消費される場合があります。有効にすると直ちに1回取得し、以後は選択した間隔で更新します。'],
+      '确认开启': ['Enable', '有効にする'],
+      '取消': ['Cancel', 'キャンセル'],
+      '自动获取间隔': ['Automatic refresh interval', '自動取得の間隔'],
+      '10 分钟': ['10 minutes', '10分'],
+      '1 小时': ['1 hour', '1時間'],
+      '5 小时': ['5 hours', '5時間'],
+      '每天': ['Daily', '毎日'],
+      '下次获取：{time} · 当前设置：{interval}': ['Next fetch: {time} · Interval: {interval}', '次回取得：{time}・現在の間隔：{interval}'],
+      '当前设置：{interval}': ['Current interval: {interval}', '現在の間隔：{interval}'],
+      '高级模型选择器': ['Advanced model selector', '詳細モデル選択'],
+      '已关闭，已恢复官方模型选择器': ['Disabled; the default model selector is restored', '無効にしました。標準のモデル選択に戻りました'],
+      '已开启高级模型选择器': ['Advanced model selector enabled', '詳細モデル選択を有効にしました'],
+      '配额查询': ['Quota queries', '利用枠の照会'],
+      '刷新供应商列表': ['Refresh provider list', 'プロバイダー一覧を更新'],
+      '查询来源': ['Query source', '照会元'],
+      '正在加载供应商…': ['Loading providers…', 'プロバイダーを読み込み中…'],
+      '选择已有供应商': ['Select a provider', 'プロバイダーを選択'],
+      '已保存自定义查询': ['Saved custom query', '保存済みのカスタム照会'],
+      '内置扩展查询': ['Built-in extension query', '拡張機能の標準照会'],
+      '内置供应商查询': ['Built-in provider query', 'プロバイダーの標準照会'],
+      '尚无可选来源，请先添加模型供应商或启用支持的扩展。': ['No sources available. Add a model provider or enable a supported extension.', '照会元がありません。モデルプロバイダーを追加するか、対応する拡張機能を有効にしてください。'],
+      '正在查询…': ['Querying…', '照会中…'],
+      '查询配额': ['Query quota', '利用枠を照会'],
+      '查询模板（JSON）': ['Query template (JSON)', '照会テンプレート（JSON）'],
+      '重置模板': ['Reset template', 'テンプレートをリセット'],
+      '用 AI 生成模板': ['Generate a template with AI', 'AIでテンプレートを作成'],
+      '复制提示词': ['Copy prompt', 'プロンプトをコピー'],
+      '可复制的模板生成提示词': ['Template generation prompt', 'テンプレート作成用プロンプト'],
+      '已复制，粘贴到任意 AI 对话即可': ['Copied. Paste into an AI chat.', 'コピーしました。AIのチャットに貼り付けてください'],
+      '复制失败，请手动选中下方提示词': ['Copy failed. Select the prompt below to copy it manually.', 'コピーできませんでした。下のプロンプトを選択して手動でコピーしてください'],
+      '正在测试…': ['Testing…', 'テスト中…'],
+      '测试查询': ['Test query', '照会をテスト'],
+      '正在保存…': ['Saving…', '保存中…'],
+      '确认并显示': ['Confirm and display', '確定して表示'],
+      '测试会发起一次请求，可能消耗少量余额。': ['Testing sends one request and may incur a small charge.', 'テストでは1回リクエストを送信します。少額の残高が消費される場合があります。'],
+      '测试成功 · {name}': ['Test successful · {name}', 'テスト成功・{name}'],
+      '已启用的自定义查询': ['Enabled custom queries', '有効なカスタム照会'],
+      '编辑': ['Edit', '編集'],
+      '移除': ['Remove', '削除'],
+      '正在读取设置…': ['Loading settings…', '設定を読み込み中…'],
+      '设置已保存': ['Settings saved', '設定を保存しました'],
+      '已保存，可在配额页查看此供应商。': ['Saved. This provider is now available on the quota tab.', '保存しました。利用枠タブでこのプロバイダーを確認できます。'],
+      '已移除自定义查询，恢复内置配额查询。': ['Custom query removed; the built-in quota query is restored.', 'カスタム照会を削除し、標準の利用枠照会に戻しました。'],
+      '查询已更新，可在配额页查看。': ['Query updated. View it on the quota tab.', '照会を更新しました。利用枠タブで確認できます。'],
+      '请先在 WorkBuddy 中登录。': ['Sign in to WorkBuddy first.', '先にWorkBuddyにログインしてください。'],
+      '尚未获取到配额，请检查扩展是否启用后重试。': ['Quota is not available yet. Check that the extension is enabled and try again.', '利用枠をまだ取得できていません。拡張機能が有効か確認して再試行してください。'],
+      '模板不是有效 JSON，请检查引号、逗号和括号。': ['Invalid JSON template. Check quotes, commas and brackets.', 'テンプレートのJSONが無効です。引用符、カンマ、括弧を確認してください。'],
+      '重试': ['Retry', '再試行'],
+      '自动': ['Auto', '自動'],
+      '默认': ['Default', '既定'],
+      '关': ['Off', 'オフ'],
+      '极简': ['Minimal', '最小'],
+      '低': ['Low', '低'],
+      '中': ['Medium', '中'],
+      '高': ['High', '高'],
+      '极高': ['Extra high', '非常に高い'],
+      '极致': ['Maximum', '最大'],
+      '推理强度': ['Reasoning effort', '推論の強度'],
+      '‹ 模型': ['‹ Models', '‹ モデル'],
+      '模型目录加载失败': ['Failed to load model catalog', 'モデル一覧を読み込めませんでした'],
+      '加载中…': ['Loading…', '読み込み中…'],
+      '选择模型': ['Select a model', 'モデルを選択'],
+      '账户可用余额': ['Available balance', '利用可能な残高'],
+      '账户可用额度': ['Available credit', '利用可能なクレジット'],
+      '充值余额': ['Paid balance', 'チャージ残高'],
+      '赠送余额': ['Gift balance', '付与残高'],
+      '预付费余额': ['Prepaid balance', '前払い残高'],
+      '密钥额度': ['API key allowance', 'APIキーの利用枠'],
+      '余额': ['Balance', '残高'],
+      '{hours} 小时剩余': ['{hours}-hour remaining', '{hours}時間枠の残り'],
+      '周剩余': ['Weekly remaining', '週間枠の残り'],
+      '月剩余': ['Monthly remaining', '月間枠の残り'],
+      '窗口剩余': ['Window remaining', '期間枠の残り'],
+      '积分剩余': ['Credits remaining', '残りクレジット'],
+      'Token 配额剩余': ['Tokens remaining', '残りトークン枠'],
+      '高级请求剩余': ['Premium requests remaining', '残りプレミアムリクエスト'],
+      '聊天请求剩余': ['Chat requests remaining', '残りチャットリクエスト'],
+      '补全请求剩余': ['Completion requests remaining', '残り補完リクエスト'],
+      'Claude 订阅': ['Claude subscription', 'Claudeサブスクリプション'],
+      'OpenAI Codex 订阅': ['OpenAI Codex subscription', 'OpenAI Codexサブスクリプション'],
+      'StepFun 阶跃星辰': ['StepFun', 'StepFun'],
+      'Moonshot AI 国内': ['Moonshot AI China', 'Moonshot AI 中国'],
+      'MiniMax 国际': ['MiniMax Global', 'MiniMax グローバル'],
+      'MiniMax 国内': ['MiniMax China', 'MiniMax 中国'],
+      '智谱 GLM Coding': ['Zhipu GLM Coding', 'Zhipu GLM Coding'],
+      '阿里云 Token Plan 国内': ['Alibaba Cloud Token Plan China', 'Alibaba Cloud Token Plan 中国'],
+      '配额窗口 {index}': ['Quota window {index}', '利用枠の期間 {index}'],
+      '其他模型': ['Other models', 'その他のモデル'],
+      '查询模板应为 JSON 对象，且不超过 16 KB。': ['The query template must be a JSON object of at most 16 KB.', '照会テンプレートは16 KB以下のJSONオブジェクトにしてください。'],
+      '请填写配额查询 URL。': ['Enter a quota query URL.', '利用枠照会のURLを入力してください。'],
+      '查询 URL 格式无效。': ['Invalid query URL.', '照会URLの形式が無効です。'],
+      '查询 URL 需使用 HTTPS；本机供应商可使用 HTTP。': ['Use HTTPS for the query URL. Local providers may use HTTP.', '照会URLにはHTTPSを使用してください。ローカルのプロバイダーはHTTPも使用できます。'],
+      '请使用供应商凭据认证，不要把密钥放入 URL。': ['Use provider credentials; do not put API keys in the URL.', 'プロバイダーの認証情報を使用し、URLにキーを含めないでください。'],
+      '查询方法仅支持 GET 或 POST。': ['Only GET and POST queries are supported.', '照会方法はGETまたはPOSTのみ対応しています。'],
+      'auth 仅支持 provider 或 none。': ['auth must be provider or none.', 'authはproviderまたはnoneにしてください。'],
+      'headers 应为 JSON 对象，最多 20 项。': ['headers must be a JSON object with at most 20 entries.', 'headersは20項目以下のJSONオブジェクトにしてください。'],
+      '认证由供应商凭据提供，请移除模板中的密钥或认证请求头。': ['Authentication uses provider credentials. Remove keys and authentication headers from the template.', '認証にはプロバイダーの認証情報を使用します。テンプレート内のキーや認証ヘッダーを削除してください。'],
+      '请求头值应为单行文本。': ['Header values must be single-line text.', 'ヘッダーの値は1行のテキストにしてください。'],
+      'GET 查询不能包含 body。': ['GET queries cannot include a body.', 'GET照会にbodyは指定できません。'],
+      'POST body 应为 JSON 对象或数组。': ['The POST body must be a JSON object or array.', 'POSTのbodyはJSONオブジェクトまたは配列にしてください。'],
+      '请使用供应商凭据认证，不要在 body 中填写密钥。': ['Use provider credentials; do not put API keys in the body.', 'プロバイダーの認証情報を使用し、bodyにキーを含めないでください。'],
+      '请填写 response 字段映射。': ['Enter response field mappings.', 'responseのフィールドマッピングを入力してください。'],
+      '此供应商没有内置解析器，请使用 response.metrics 映射。': ['This provider has no built-in parser. Use response.metrics mappings.', 'このプロバイダーには標準の解析処理がありません。response.metricsのマッピングを使用してください。'],
+      'response.metrics 需包含 1–20 个指标。': ['response.metrics must contain 1–20 metrics.', 'response.metricsには1～20個の指標を指定してください。'],
+      'response.rows 应为数组字段路径。': ['response.rows must be an array field path.', 'response.rowsには配列のフィールドパスを指定してください。'],
+      '每个指标需填写 label 和 kind（amount 或 window）。': ['Each metric needs label and kind (amount or window).', '各指標にlabelとkind（amountまたはwindow）を指定してください。'],
+      '指标字段路径应为不超过 200 字符的文本。': ['Metric field paths must be text of at most 200 characters.', '指標のフィールドパスは200文字以下にしてください。'],
+      '余额指标需提供 remaining，或 total 与 used 字段路径。': ['Balance metrics need remaining, or both total and used field paths.', '残高指標にはremaining、またはtotalとusedのフィールドパスを指定してください。'],
+      '配额指标需提供百分比或总量与剩余量字段路径。': ['Quota metrics need a percentage, or total and remaining field paths.', '利用枠指標には割合、または総量と残量のフィールドパスを指定してください。'],
+      '查询响应过大（上限 1 MB）。': ['Query response exceeds the 1 MB limit.', '照会の応答が上限の1 MBを超えています。'],
+      '查询未返回 JSON 数据。': ['The query did not return JSON.', '照会結果がJSONではありません。'],
+      '查询响应不是有效 JSON，或读取已超时。': ['The response is invalid JSON or timed out.', '応答のJSONが無効か、読み取りがタイムアウトしました。'],
+      '所选供应商已不存在，请重新选择。': ['The selected provider no longer exists. Select another provider.', '選択したプロバイダーが見つかりません。選択し直してください。'],
+      'HTTP 本机查询地址需与供应商配置地址同源。': ['Local HTTP queries must use the configured provider origin.', 'ローカルHTTP照会にはプロバイダー設定と同じオリジンを使用してください。'],
+      '认证查询地址需与所选供应商的地址或官方配额地址同源。': ['Authenticated queries must use the provider or official quota origin.', '認証付き照会にはプロバイダーまたは公式の利用枠URLと同じオリジンを使用してください。'],
+      '未找到可用的供应商凭据，请先在模型设置中配置或登录。': ['No provider credentials found. Configure them or sign in in model settings.', 'プロバイダーの認証情報がありません。モデル設定で登録するか、ログインしてください。'],
+      '未配置 xAI 管理凭据和团队 ID。': ['xAI management credentials and team ID are not configured.', 'xAIの管理用認証情報とチームIDが設定されていません。'],
+      '查询失败，请检查地址和网络（8 秒超时，不跟随重定向）。': ['Query failed. Check the URL and network (8-second timeout; redirects disabled).', '照会に失敗しました。URLとネットワークを確認してください（8秒でタイムアウト、リダイレクトなし）。'],
+      '查询返回 HTTP {status}，请检查地址和供应商凭据。': ['Query returned HTTP {status}. Check the URL and provider credentials.', '照会結果はHTTP {status}でした。URLとプロバイダーの認証情報を確認してください。'],
+      '响应中未找到有效配额，请检查 response 的字段路径。': ['No valid quota found. Check the response field paths.', '有効な利用枠が見つかりません。responseのフィールドパスを確認してください。'],
+      '未知配额来源。': ['Unknown quota source.', '利用枠の照会元が不明です。'],
+      '此来源使用内置适配器，无需填写 HTTP 查询模板。': ['This source uses a built-in adapter; no HTTP template is needed.', 'この照会元は標準のアダプターを使用します。HTTPテンプレートは不要です。'],
+      '设置应为 JSON 对象。': ['Settings must be a JSON object.', '設定はJSONオブジェクトにしてください。'],
+      '模板已修改或测试已过期，请重新测试后确认。': ['The template changed or the test expired. Test again before confirming.', 'テンプレートが変更されたか、テスト結果の期限が切れました。再テストしてから確定してください。'],
+      '自定义查询最多支持 50 个供应商。': ['Custom queries support up to 50 providers.', 'カスタム照会は最大50プロバイダーまで対応しています。'],
+      '自动查询开关值无效。': ['Invalid automatic query switch value.', '自動照会のスイッチ値が無効です。'],
+      '请先确认自动查询可能会消耗少量余额。': ['Confirm that automatic queries may incur a small charge.', '自動照会で少額の残高が消費される場合があることを確認してください。'],
+      '仅支持 10 分钟、1 小时、5 小时或每天。': ['Supported intervals: 10 minutes, 1 hour, 5 hours or daily.', '間隔は10分、1時間、5時間、または毎日のみ対応しています。'],
+      '模型明细开关值无效。': ['Invalid model details switch value.', 'モデル詳細のスイッチ値が無効です。'],
+      '高级模型选择器开关值无效。': ['Invalid advanced model selector switch value.', '詳細モデル選択のスイッチ値が無効です。'],
+      '未知设置操作。': ['Unknown settings action.', '設定の操作が不明です。'],
+      '设置保存失败，请检查存储目录权限。': ['Failed to save settings. Check storage directory permissions.', '設定を保存できませんでした。保存先フォルダーの権限を確認してください。'],
+      '未知 WorkBuddy 积分来源。': ['Unknown WorkBuddy credit source.', 'WorkBuddyのクレジット取得元が不明です。'],
+      '用量统计暂时不可用，请稍后重试。': ['Usage statistics are temporarily unavailable. Try again later.', '利用状況を現在取得できません。しばらくしてから再試行してください。'],
+      '请求来源不受信任。': ['The request origin is not trusted.', 'リクエストの送信元が信頼されていません。'],
+      '操作失败，请稍后重试。': ['The operation failed. Try again later.', '操作に失敗しました。しばらくしてから再試行してください。'],
+      '该供应商': ['this provider', 'このプロバイダー'],
+      '请帮我为「{name}」写一份 DSH 用量统计插件的余额查询模板（JSON）。': ['Write a balance query template (JSON) for "{name}" for the DSH usage statistics plugin.', 'DSH利用状況プラグイン用に「{name}」の残高照会テンプレート（JSON）を作成してください。'],
+      '【输出要求】': ['[Output requirements]', '【出力要件】'],
+      '只输出一个 JSON 对象，不要解释、不要 markdown 代码块围栏。': ['Output one JSON object only, without explanations or Markdown code fences.', 'JSONオブジェクトを1つだけ出力し、説明やMarkdownのコードフェンスは付けないでください。'],
+      '【获取接口信息的方式】': ['[Finding API details]', '【API情報の調べ方】'],
+      '请先自己联网搜索「{name}」的余额 / 用量查询接口文档，不要一上来就找我要资料。': ['First search online for the balance / usage API documentation for "{name}" before asking me for information.', 'まず「{name}」の残高・使用量照会APIのドキュメントを検索してください。最初から資料を求めないでください。'],
+      '优先按下面的顺序查：官方 API 文档 → 余额或 billing / usage 接口说明 → 社区示例或 SDK 源码。': ['Search in this order: official API docs → balance or billing / usage API docs → community examples or SDK source.', '公式APIドキュメント → 残高・billing / usage APIの説明 → コミュニティの例やSDKソースの順に調べてください。'],
+      '如果能查到明确的接口地址与返回字段，直接据此写出模板。': ['If the endpoint and response fields are documented, use them to write the template.', 'APIのURLと応答フィールドを確認できた場合は、それに基づいてテンプレートを作成してください。'],
+      '只有在确实查不到、或查到多个互相冲突的结果时，才向我提问；提问要具体，一次只问最关键的一点。': ['Ask me only if information is unavailable or contradictory. Ask one specific, essential question at a time.', '情報が見つからないか矛盾する場合にだけ質問してください。一度に最も重要な点を1つ、具体的に尋ねてください。'],
+      '如果你搜索到的是猜测而非确定的字段路径，请在回答里简要注明依据，方便我核对。': ['If a field path is inferred rather than confirmed, briefly state the evidence so I can verify it.', 'フィールドパスが確認済みではなく推測の場合は、確認できるよう根拠を簡潔に示してください。'],
+      '【字段说明】': ['[Fields]', '【フィールドの説明】'],
+      'url：查询地址，必须与下面 auth 所用凭据同源。': ['url: query URL, on the same origin as the credentials used by auth.', 'url：照会URL。authで使用する認証情報と同じオリジンにしてください。'],
+      'method：GET 或 POST。': ['method: GET or POST.', 'method：GETまたはPOST。'],
+      'auth："provider" 表示复用该供应商已保存的凭据；"none" 表示不需要认证。': ['auth: "provider" reuses saved provider credentials; "none" means no authentication.', 'auth："provider"は保存済みの認証情報を使用し、"none"は認証なしを意味します。'],
+      'headers：可选，附加请求头对象。': ['headers: optional additional request headers object.', 'headers：任意。追加のリクエストヘッダーのオブジェクト。'],
+      'body：可选，POST 时发送的请求体对象。': ['body: optional request body object for POST.', 'body：任意。POSTで送信するリクエスト本文のオブジェクト。'],
+      'response.rows：可选。当余额在数组里时填写该数组的字段路径，例如 "data.list"。': ['response.rows: optional array field path when balances are in an array, e.g. "data.list".', 'response.rows：任意。残高が配列にある場合、そのフィールドパスを指定します。例："data.list"。'],
+      'response.metrics：指标数组，每项包含：': ['response.metrics: an array of metrics, each containing:', 'response.metrics：指標の配列。各項目には次のフィールドを含めます：'],
+      '  label：界面显示的名称，例如 "账户可用余额"。': ['  label: display name, e.g. "Available balance".', '  label：画面に表示する名称。例："利用可能な残高"。'],
+      '  kind："amount" 表示金额，"window" 表示带重置时间的额度窗口。': ['  kind: "amount" for balances, "window" for quota windows with reset times.', '  kind："amount"は金額、"window"はリセット日時のある利用枠。'],
+      '  remaining：金额型指标在响应中的字段路径，例如 "data.balance"。': ['  remaining: response field path for an amount metric, e.g. "data.balance".', '  remaining：金額指標の応答フィールドパス。例："data.balance"。'],
+      '  usedPercent / remainingPercent：额度窗口型指标使用，取值为百分比字段路径。': ['  usedPercent / remainingPercent: percentage field paths for quota window metrics.', '  usedPercent / remainingPercent：期間枠指標の割合を示すフィールドパス。'],
+      '  currency：可选，金额单位，如 "CNY" 或 "USD"。': ['  currency: optional currency, e.g. "CNY" or "USD".', '  currency：任意。通貨単位。例："CNY"または"USD"。'],
+      '【取值规则】': ['[Value rules]', '【値の指定方法】'],
+      '字段路径用点号表示层级，例如 data.balance_infos.0.total_balance。': ['Use dot-separated field paths, e.g. data.balance_infos.0.total_balance.', 'フィールドパスの階層はドットで区切ります。例：data.balance_infos.0.total_balance。'],
+      '数字字符串也要能直接使用，不要额外包装。': ['Numeric strings should work directly without extra wrappers.', '数値文字列も追加のラッパーなしでそのまま使用できるようにしてください。'],
+      '【参考格式】': ['[Example format]', '【参考形式】'],
+      '【当前情况】': ['[Current context]', '【現在の状況】'],
+      '供应商 ID：{provider}': ['Provider ID: {provider}', 'プロバイダーID：{provider}'],
+      '（未指定）': ['(not specified)', '（未指定）'],
+      '现有模板（可在此基础上修正）：\n': ['Existing template (you may revise it):\n', '現在のテンプレート（修正の参考にしてください）：\n'],
+      '该供应商目前没有模板，请从零编写。': ['This provider has no template yet. Write one from scratch.', 'このプロバイダーにはまだテンプレートがありません。新規に作成してください。'],
+    }
+
+    function t(text, params) {
+      if (translate) return translate(text, params)
+      return String(text || '').replace(/\{(\w+)\}/g, function (match, key) { return params && key in params ? String(params[key]) : match })
+    }
+
+    function currentLanguage() {
+      return localeService ? String(localeService.getSnapshot().active).toLowerCase().split('-')[0] : 'zh'
+    }
+
+    function useLocaleRevision() {
+      if (localeService && React.useSyncExternalStore) React.useSyncExternalStore(function (listener) { return localeService.subscribe(listener) }, function () { return localeService.getSnapshot() })
+    }
+
+    function quotaLabel(label, custom) {
+      if (custom) return label
+      var hours = /^(.*?)(\d+(?:\.\d+)?) 小时剩余$/.exec(label)
+      if (hours) return hours[1] + t('{hours} 小时剩余', { hours: hours[2] })
+      var period = /^(.*?)(周剩余|月剩余|窗口剩余)$/.exec(label)
+      var window = /^配额窗口 (\d+)$/.exec(label)
+      return period ? period[1] + t(period[2]) : window ? t('配额窗口 {index}', { index: window[1] }) : t(label)
+    }
+
+    function uiError(error) {
+      var http = /^查询返回 HTTP (\d+)，请检查地址和供应商凭据。$/.exec(error)
+      return http ? t('查询返回 HTTP {status}，请检查地址和供应商凭据。', { status: http[1] }) : t(error)
+    }
 
     /* ------------------------------------------------------------------ */
     /* Formatting helpers                                                  */
@@ -35,29 +343,30 @@ window.__ModuleLoader__.load({
 
     function fmt(n) {
       if (typeof n !== 'number' || !Number.isFinite(n)) return '0'
-      if (Math.abs(n) >= 1e8) return Number((n / 1e8).toFixed(2)) + '亿'
+      if (currentLanguage() === 'en' && Math.abs(n) >= 1e9) return Number((n / 1e9).toFixed(2)) + 'B'
+      if (currentLanguage() !== 'en' && Math.abs(n) >= 1e8) return Number((n / 1e8).toFixed(2)) + (currentLanguage() === 'ja' ? '億' : '亿')
       if (Math.abs(n) >= 1e6) return Number((n / 1e6).toFixed(2)) + 'M'
       if (Math.abs(n) >= 1e3) return Number((n / 1e3).toFixed(2)) + 'k'
       return String(Math.round(n))
     }
 
     function fmtExact(n) {
-      return Number(n || 0).toLocaleString('zh-CN')
+      return Number(n || 0).toLocaleString(currentLanguage() === 'zh' ? 'zh-CN' : currentLanguage() === 'ja' ? 'ja-JP' : 'en-US')
     }
 
     /** Human countdown to a quota reset, e.g. "3小时21分后" / "2天后". */
     function fmtReset(iso) {
       if (!iso) return ''
       var ms = new Date(iso).getTime() - Date.now()
-      if (!(ms > 0)) return '即将重置'
+      if (!(ms > 0)) return t('即将重置')
       var totalMin = Math.ceil(ms / 60000)
-      if (totalMin < 60) return totalMin + ' 分钟后'
+      if (totalMin < 60) return t('{minutes} 分钟后重置', { minutes: totalMin })
       var h = Math.floor(totalMin / 60)
       var m = totalMin % 60
-      if (h < 24) return h + ' 小时' + (m > 0 ? ' ' + m + ' 分' : '') + '后'
+      if (h < 24) return t('{hours} 小时{minutes}后重置', { hours: h, minutes: m > 0 ? t(' {minutes} 分', { minutes: m }) : '' })
       var d = Math.floor(h / 24)
       var hr = h % 24
-      return d + ' 天' + (hr > 0 ? ' ' + hr + ' 小时' : '') + '后'
+      return t('{days} 天{hours}后重置', { days: d, hours: hr > 0 ? t(' {hours} 小时', { hours: hr }) : '' })
     }
 
     /** Format a timestamp at a fixed UTC offset (UTC - local minutes). */
@@ -107,8 +416,9 @@ window.__ModuleLoader__.load({
      function monthShort(dateKey) {
       var parts = String(dateKey).split('-')
       if (parts.length !== 3) return ''
-      var months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
-      return months[Number(parts[1]) - 1] || ''
+      var month = Number(parts[1])
+      if (!(month >= 1 && month <= 12)) return ''
+      return new Intl.DateTimeFormat(currentLanguage() === 'en' ? 'en-US' : 'ja-JP', { month: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2000, month - 1, 1)))
     }
 
     function readJson(response) {
@@ -260,7 +570,8 @@ window.__ModuleLoader__.load({
       '.dshus-tab:hover { color: var(--dsw-alias-label-primary, #1f2430); }',
       '.dshus-tab.on { color: var(--dsw-alias-label-primary, #1f2430); border-bottom-color: currentColor; font-weight: 600; }',
       '.dshus-tab:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #3b82f6); outline-offset: -3px; }',
-      '.dshus-quota-panel:empty::before { content: "连接模型服务后，可读取的配额会显示在这里"; display: block; padding: 32px 16px; border: 1px solid var(--dsw-alias-border-l2, #e5e7eb); border-radius: 16px; color: var(--dsw-alias-label-secondary, #6b7280); font-size: 13px; text-align: center; }',
+      '.dshus-quota-panel[hidden] { display: none !important; }',
+      '.dshus-quota-panel:empty::before { content: attr(data-empty-label); display: block; padding: 32px 16px; border: 1px solid var(--dsw-alias-border-l2, #e5e7eb); border-radius: 16px; color: var(--dsw-alias-label-secondary, #6b7280); font-size: 13px; text-align: center; }',
 
       '.dshus-tools { display: flex; align-items: center; flex: none; width: 30px; height: 30px; }',
       '.dshus-range { display: flex; align-items: center; gap: 2px; background: var(--dsw-alias-bg-layer-2, #f2f3f6); border-radius: 10px; padding: 3px; }',
@@ -351,6 +662,7 @@ window.__ModuleLoader__.load({
       '.dshus-module { background: var(--dsw-alias-bg-layer-1, #ffffff); border: 1px solid var(--dsw-alias-border-l2, #e5e7eb); border-radius: 16px; padding: 16px 18px 18px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }',
       '.dshus-module h3 { margin: 0 0 12px; font-size: 15px; font-weight: 600; letter-spacing: 0.02em; color: var(--dsw-alias-label-secondary, #4b5563); display: flex; align-items: center; gap: 8px; }',
       '#dshus-usage-panel .dshus-module h3 { font-weight: 400; }',
+      '@container (max-width: 480px) { #dshus-usage-panel .dshus-module h3 { flex-wrap: wrap; } #dshus-usage-panel .dshus-head-tools { max-width: 100%; flex-wrap: wrap; gap: 8px; } }',
       '.dshus-balance-module { display: flex; align-items: center; gap: 12px; min-height: 62px; padding: 14px 18px; }',
       '.dshus-balance-title { display: flex; align-items: center; gap: 6px; min-width: 0; }',
       '.dshus-balance-module h3 { margin: 0; white-space: nowrap; }',
@@ -497,7 +809,7 @@ window.__ModuleLoader__.load({
       var buttons = document.querySelectorAll('[data-shortcut-modal="settings"] nav button')
       for (var i = 0; i < buttons.length; i++) {
         var label = buttons[i].querySelector('span')
-        if (label && label.textContent.trim() === '用量统计') {
+        if (label && label.textContent.trim() === t('用量统计')) {
           buttons[i].setAttribute('data-dshus-nav-icon', '')
         }
       }
@@ -799,16 +1111,16 @@ window.__ModuleLoader__.load({
           onMouseEnter: clearHideTimer,
           onMouseLeave: hideTip,
         },
-          React.createElement('div', { className: 'dshus-tip-name', title: bucket ? fmtExact(tipValue) + ' tokens' : undefined }, weekly ? weekDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1年$2月$3日起的一周') : tip.cell.date),
-          tipInWindow && React.createElement('div', { className: 'dshus-tip-val', title: bucket ? fmtExact(tipValue) + ' tokens' : undefined }, bucket ? fmt(tipValue) + ' tokens' : '无记录'),
-          !tipInWindow && React.createElement('div', { className: 'dshus-tip-val' }, '不在所选时间范围内'),
+          React.createElement('div', { className: 'dshus-tip-name', title: bucket ? fmtExact(tipValue) + ' tokens' : undefined }, weekly ? weekDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, function (_match, year, month, day) { return t('{year}年{month}月{day}日起的一周', { year: year, month: month, day: day }) }) : tip.cell.date),
+          tipInWindow && React.createElement('div', { className: 'dshus-tip-val', title: bucket ? fmtExact(tipValue) + ' tokens' : undefined }, bucket ? fmt(tipValue) + ' tokens' : t('无记录')),
+          !tipInWindow && React.createElement('div', { className: 'dshus-tip-val' }, t('不在所选时间范围内')),
           tipInWindow && modelRows,
           tipInWindow && bucket && detail.models.length === 0 && !weekly && React.createElement('div', { className: 'dshus-tip-val' },
-            detail.status === 'loading' || detail.status === 'idle' ? '正在读取模型明细…' : '模型明细暂不可用',
+            detail.status === 'loading' || detail.status === 'idle' ? t('正在读取模型明细…') : t('模型明细暂不可用'),
           ),
           tipInWindow && React.createElement('div', { className: 'dshus-tip-row', style: { color: '#60a5fa' } },
-            React.createElement('span', null, '总调用次数'),
-            React.createElement('strong', null, fmtExact(bucket && bucket.calls) + ' 次'),
+            React.createElement('span', null, t('总调用次数')),
+            React.createElement('strong', null, t('{count} 次', { count: fmtExact(bucket && bucket.calls) })),
           ),
         )
       }
@@ -862,7 +1174,7 @@ window.__ModuleLoader__.load({
                 className: 'dshus-cell',
                 key: w + '-' + c,
                 role: 'gridcell',
-                'aria-label': cell.date + '，不在所选时间范围内',
+                'aria-label': cell.date + t('，不在所选时间范围内'),
                 onMouseMove: function (e) { showTip(e, cell) },
                 onClick: function (e) { if (weekly) setSelectedWeek(week.start); if (e) showTip(e, cell) },
                 onMouseLeave: hideTipSoon,
@@ -871,7 +1183,7 @@ window.__ModuleLoader__.load({
             var level = heatLevel(cell.value, heat.max)
             var models = modelResult(cell.date).models
             var filled = weekly && c >= 7 - filledCells
-            var ariaLabel = cell.date + (weekly ? ' 当周' : '') + ': ' + fmtExact(weekly ? weekBucket && weekBucket.billed : cell.value) + ' tokens，' + fmtExact(weekly ? weekBucket && weekBucket.calls : cell.bucket && cell.bucket.calls) + ' 次调用'
+            var ariaLabel = t('{time}: {tokens} tokens，{count} 次调用', { time: weekly ? t('{date} 当周', { date: cell.date }) : cell.date, count: fmtExact(weekly ? weekBucket && weekBucket.calls : cell.bucket && cell.bucket.calls), tokens: fmtExact(weekly ? weekBucket && weekBucket.billed : cell.value) })
             if (models.length > 0) ariaLabel += '；' + models.map(function (m) { return m.model + ' ' + fmtExact(m.billed) }).join('；')
             return React.createElement('div', {
               className: 'dshus-cell' + (filled ? ' weekly-filled' : ''),
@@ -902,7 +1214,7 @@ window.__ModuleLoader__.load({
             'data-page-count': pageCount,
             style: { '--dshus-cell-size': CELL + 'px' },
           },
-            React.createElement('div', { className: 'dshus-heat', key: props.mode + '-' + page + '-' + visibleCount, role: 'grid', 'aria-label': '使用量热力图' }, weekCols),
+            React.createElement('div', { className: 'dshus-heat', key: props.mode + '-' + page + '-' + visibleCount, role: 'grid', 'aria-label': t('使用量热力图') }, weekCols),
             monthRow,
           ),
         ),
@@ -910,11 +1222,11 @@ window.__ModuleLoader__.load({
         // 每周 switch next to it) with the one legend the calendar actually
         // needs: what the shades of blue mean.
         React.createElement('div', { className: 'dshus-heat-legend', 'aria-hidden': 'true' },
-          React.createElement('span', null, '少'),
+          React.createElement('span', null, t('少')),
           [1, 2, 3, 4].map(function (level) {
             return React.createElement('span', { className: 'dshus-heat-legend-cell', key: 'lg' + level, style: { background: cellColor(level) } })
           }),
-          React.createElement('span', null, '多'),
+          React.createElement('span', null, t('多')),
         ),
         tipEl,
       )
@@ -940,20 +1252,20 @@ window.__ModuleLoader__.load({
       return React.createElement('div', {
         className: 'dshus-heat-nav-group' + (info && info.pageCount > 1 ? '' : ' dshus-heat-nav-static'),
         role: 'group',
-        'aria-label': '热力图翻页',
+        'aria-label': t('热力图翻页'),
       },
-        React.createElement('span', { className: 'dshus-heat-nav-label', title: '当前显示的日期范围' }, range),
+        React.createElement('span', { className: 'dshus-heat-nav-label', title: t('当前显示的日期范围') }, range),
         React.createElement('button', {
           type: 'button',
           className: 'dshus-heat-nav',
-          'aria-label': '查看更早日期',
+          'aria-label': t('查看更早日期'),
           disabled: !canOlder,
           onClick: function () { props.onStep(1) },
         }, heatArrow(true)),
         React.createElement('button', {
           type: 'button',
           className: 'dshus-heat-nav',
-          'aria-label': '查看较新日期',
+          'aria-label': t('查看较新日期'),
           disabled: !canNewer,
           onClick: function () { props.onStep(-1) },
         }, heatArrow(false)),
@@ -1096,7 +1408,7 @@ window.__ModuleLoader__.load({
       var tip = tipState[0]
       var setTip = tipState[1]
 
-      if (!hourModels || hourModels.length === 0) return React.createElement('div', { className: 'dshus-muted' }, '窗口内没有记录')
+      if (!hourModels || hourModels.length === 0) return React.createElement('div', { className: 'dshus-muted' }, t('窗口内没有记录'))
 
       var showTip = function (e, index) {
         var x = e.clientX + 14
@@ -1116,13 +1428,13 @@ window.__ModuleLoader__.load({
         var tipTokens = Number(tipBucket.billed) || 0
         var tipModels = tipItem.models || []
         var tipDate = daily ? new Date(tipItem.date + 'T00:00:00Z') : new Date(Date.now() - LOCAL_TZ * 60000)
-        var tipDayLabel = tipDate.getUTCFullYear() + '年' + (tipDate.getUTCMonth() + 1) + '月' + tipDate.getUTCDate() + '日'
+        var tipDayLabel = t('{year}年{month}月{day}日', { year: tipDate.getUTCFullYear(), month: tipDate.getUTCMonth() + 1, day: tipDate.getUTCDate() })
         tipEl = React.createElement('div', { className: 'dshus-tip dshus-chart-tip', style: { left: tip.x, top: tip.y } },
-          React.createElement('div', { className: 'dshus-tip-name' }, fmtExact(tipCalls) + ' 次调用'),
-          React.createElement('div', { className: 'dshus-tip-time' }, tipDayLabel + (daily ? ' · 全天' : ' · ' + String(tipHour).padStart(2, '0') + ':00–' + String(tipHour).padStart(2, '0') + ':59')),
+          React.createElement('div', { className: 'dshus-tip-name' }, t('{count} 次调用', { count: fmtExact(tipCalls) })),
+          React.createElement('div', { className: 'dshus-tip-time' }, tipDayLabel + (daily ? t(' · 全天') : ' · ' + String(tipHour).padStart(2, '0') + ':00–' + String(tipHour).padStart(2, '0') + ':59')),
           React.createElement('div', { className: 'dshus-tip-row' },
             React.createElement('span', { className: 'dshus-tip-swatch', style: { background: '#94a3b8' } }),
-            React.createElement('span', null, 'Token 用量'),
+            React.createElement('span', null, t('Token 用量')),
             React.createElement('strong', null, fmt(tipTokens)),
           ),
           tipModels.filter(function (mm) { return !daily || mm.key !== '__all__' }).map(function (mm) {
@@ -1255,7 +1567,7 @@ window.__ModuleLoader__.load({
           className: 'dshus-hour-hit',
           role: 'gridcell',
           tabIndex: 0,
-          'aria-label': (daily ? item.date : item.hour + '时') + '，' + (bucket.calls || 0) + ' 次调用，' + fmt(bucket.billed || 0) + ' tokens',
+          'aria-label': t('{time}，{count} 次调用，{tokens} tokens', { time: daily ? item.date : t('{hour}时', { hour: item.hour }), count: bucket.calls || 0, tokens: fmt(bucket.billed || 0) }),
           onMouseMove: function (e) { showTip(e, i) },
           onFocus: function (e) {
             var rect = e.currentTarget.getBoundingClientRect()
@@ -1279,16 +1591,16 @@ window.__ModuleLoader__.load({
                 ),
                 callDots,
                 tip !== null && React.createElement('div', { className: 'dshus-hover-line', style: { left: ((tip.index + 0.5) / hourModels.length * 100) + '%' } }),
-                React.createElement('div', { className: 'dshus-hour-hit-area', role: 'grid', 'aria-label': daily ? '每日Token用量与调用次数' : '今日每小时用量与调用次数', onMouseLeave: hideTip }, hitAreas),
+                React.createElement('div', { className: 'dshus-hour-hit-area', role: 'grid', 'aria-label': daily ? t('每日Token用量与调用次数') : t('今日每小时用量与调用次数'), onMouseLeave: hideTip }, hitAreas),
               ),
             ),
           ),
-          React.createElement('div', { className: 'dshus-call-axis', 'aria-label': '调用次数' },
+          React.createElement('div', { className: 'dshus-call-axis', 'aria-label': t('调用次数') },
             React.createElement('span', { style: { top: '0%' } }, callYMax),
             React.createElement('span', { style: { top: '100%' } }, '0'),
           ),
         ),
-        React.createElement('div', { className: 'dshus-call-axis-label' }, '调用次数'),
+        React.createElement('div', { className: 'dshus-call-axis-label' }, t('调用次数')),
         tipEl,
       )
     }
@@ -1307,7 +1619,7 @@ window.__ModuleLoader__.load({
         var bucket = props.dayMap.get(date)
         var value = bucket ? bucket.billed || 0 : 0
         var models = props.dayModelMap.get(date) || []
-        if (!models.length && value > 0) models = [{ key: '__all__', provider: '', model: '全部', billed: value }]
+        if (!models.length && value > 0) models = [{ key: '__all__', provider: '', model: t('全部'), billed: value }]
         // The daily breakdown is keyed by model alone, so the same model served by
         // two providers folds into one row instead of repeating under each provider.
         var merged = groupModelRows(models)
@@ -1349,16 +1661,16 @@ window.__ModuleLoader__.load({
       var tipKey = tipKeyState[0]
       var setTipKey = tipKeyState[1]
 
-      if (byModel.length === 0) return React.createElement('div', { className: 'dshus-muted' }, '没有按模型聚合的数据')
+      if (byModel.length === 0) return React.createElement('div', { className: 'dshus-muted' }, t('没有按模型聚合的数据'))
       var total = 0
       for (var i = 0; i < byModel.length; i++) total += byModel[i].billed
-      if (!(total > 0)) return React.createElement('div', { className: 'dshus-muted' }, '没有按模型聚合的数据')
+      if (!(total > 0)) return React.createElement('div', { className: 'dshus-muted' }, t('没有按模型聚合的数据'))
 
       // Keep the chart readable: top 8 models + "其他" for the rest.
       var show = byModel.slice(0, 8)
       var restBilled = 0
       for (var r = 8; r < byModel.length; r++) restBilled += byModel[r].billed
-      if (restBilled > 0) show.push({ key: '__rest__', provider: '', model: '其他', billed: restBilled })
+      if (restBilled > 0) show.push({ key: '__rest__', provider: '', model: t('其他'), billed: restBilled })
 
       var showTip = function (e, key) {
         setTipKey(key)
@@ -1464,32 +1776,74 @@ window.__ModuleLoader__.load({
         ))
     }
 
-    function ProviderQuotasPanel(props) {
+    // Keep the last successful response during refreshes and transient failures.
+    // Request generations prevent a late background read from replacing a newer snapshot.
+    function quotaFailed(body) { return !body || body.ok === false || body.status === 'error' }
+
+    function useQuotaData(loader, props) {
       var state = React.useState(null)
       var data = state[0]
       var setData = state[1]
       var loadingState = React.useState(false)
       var loading = loadingState[0]
       var setLoading = loadingState[1]
-
+      var errorState = React.useState('')
+      var error = errorState[0], setError = errorState[1]
+      var requestRef = React.useRef(0)
+      var busyRef = React.useRef(false)
+      var loaderRef = React.useRef(loader)
+      var pausedRef = React.useRef(false)
+      loaderRef.current = loader
+      pausedRef.current = props.active === false || props.refreshing === true
       function load(fresh) {
+        if (busyRef.current || pausedRef.current) return
+        var request = ++requestRef.current
+        busyRef.current = true
         setLoading(true)
-        props.api.providerQuotas({ fresh: fresh }).then(function (body) {
+        setError('')
+        return loaderRef.current(fresh).then(function (body) {
+          if (request !== requestRef.current) return
+          if (quotaFailed(body)) throw new Error(body && body.error || '操作失败，请稍后重试。')
           setData(body)
-          setLoading(false)
-        }).catch(function () {
-          setData(null)
+        }).catch(function (err) {
+          if (request === requestRef.current) setError(String(err && err.message || err))
+        }).finally(function () {
+          if (request !== requestRef.current) return
+          busyRef.current = false
           setLoading(false)
         })
       }
-
       React.useEffect(function () {
+        if (props.active === false) return
         load(false)
         var timer = typeof setInterval === 'function' ? setInterval(function () { load(false) }, 30000) : null
-        return function () { if (timer !== null) clearInterval(timer) }
-      }, [])
+        return function () {
+          requestRef.current++
+          busyRef.current = false
+          if (timer !== null) clearInterval(timer)
+        }
+      }, [props.active, props.revision])
+      React.useEffect(function () {
+        if (props.snapshot === undefined) return
+        requestRef.current++
+        busyRef.current = false
+        if (quotaFailed(props.snapshot)) {
+          setError(String(props.snapshot && props.snapshot.error || '操作失败，请稍后重试。'))
+          setLoading(false)
+          return
+        }
+        setData(props.snapshot)
+        setLoading(false)
+        setError('')
+      }, [props.snapshot])
+      return { data: data, loading: loading || props.refreshing === true, error: error, load: load }
+    }
+
+    function ProviderQuotasPanel(props) {
+      var resource = useQuotaData(function (fresh) { return props.api.providerQuotas({ fresh: fresh }) }, props)
+      var data = resource.data, loading = resource.loading, load = resource.load
       var quotas = data && data.ok === true && Array.isArray(data.quotas) ? data.quotas : []
-      if (!quotas.length) return null
+      if (!quotas.length) return resource.error ? React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(resource.error)) : null
 
       function isBalanceOnly(quota) {
         var metrics = Array.isArray(quota.metrics) ? quota.metrics : []
@@ -1497,24 +1851,24 @@ window.__ModuleLoader__.load({
       }
       // Partition a copy so refreshing keeps each group's original provider order.
       quotas = quotas.filter(isBalanceOnly).concat(quotas.filter(function (quota) { return !isBalanceOnly(quota) }))
-      return React.createElement('div', { className: 'dshus-provider-panels' }, quotas.map(function (quota) {
+      return React.createElement('div', { className: 'dshus-provider-panels' }, resource.error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(resource.error)), quotas.map(function (quota) {
         var metrics = Array.isArray(quota.metrics) ? quota.metrics : []
         // 上次获取时间：同一张配额卡片内，所有指标共享同一个获取时刻。
         var fetchedLine = React.createElement('div', { className: 'dshus-fetched' },
-          '上次获取时间：' + fmtFetched(quota.syncedAt))
+          t('上次获取时间：{time}', { time: fmtFetched(quota.syncedAt) }))
         if (!metrics.length) {
           if (quota.status !== 'unqueried' && quota.status !== 'unavailable') return null
-          var statusLabel = quota.status === 'unqueried' ? '未查询' : '未获取'
+          var statusLabel = quota.status === 'unqueried' ? t('未查询') : t('未获取')
           return React.createElement('div', { key: quota.provider, className: 'dshus-module dshus-balance-module' },
             React.createElement('div', { className: 'dshus-balance-title' },
-              React.createElement('h3', null, quota.name),
-              refreshIconButton(function () { load(true) }, loading, '刷新 ' + quota.name + ' 配额', false),
+              React.createElement('h3', null, t(quota.name)),
+              refreshIconButton(function () { load(true) }, loading, t('刷新 {name} 配额', { name: t(quota.name) }), false),
             ),
             React.createElement('div', { className: 'dshus-balance-side' },
               React.createElement('div', {
                 className: 'dshus-balance-value dshus-balance-status',
-                'aria-label': quota.name + ' 配额' + statusLabel,
-                title: quota.status === 'unqueried' ? '已在模型设置中配置，尚未查询配额。' : '尚未获取到有效配额，可刷新重试。',
+                'aria-label': t('{name} 配额{status}', { name: t(quota.name), status: statusLabel }),
+                title: quota.status === 'unqueried' ? t('已在模型设置中配置，尚未查询配额。') : t('尚未获取到有效配额，可刷新重试。'),
               }, statusLabel),
               fetchedLine,
             ),
@@ -1534,53 +1888,53 @@ window.__ModuleLoader__.load({
           var value = isWindow ? Math.round(pct) + '%' : symbol + remaining.toFixed(2)
           var detail = isWindow && Number.isFinite(total) && total > 0 && Number.isFinite(remaining)
             ? fmtExact(remaining) + ' / ' + fmtExact(total)
-            : !isWindow && Number.isFinite(total) && total > 0 ? '上限 ' + symbol + total.toFixed(2) : ''
+            : !isWindow && Number.isFinite(total) && total > 0 ? t('上限 {amount}', { amount: symbol + total.toFixed(2) }) : ''
           if (isWindow) {
-            var reset = metric.resetAt ? fmtReset(metric.resetAt) + '重置' : ''
+            var reset = metric.resetAt ? fmtReset(metric.resetAt) : ''
             windowRows.push(React.createElement('div', { key: metric.label + '-' + index, className: 'dshus-quota-row' },
               React.createElement('div', { className: 'dshus-quota-name' },
-                React.createElement('span', { className: 'dshus-quota-label' }, metric.label),
+                React.createElement('span', { className: 'dshus-quota-label' }, quotaLabel(metric.label, quota.custom)),
                 detail && React.createElement('span', { className: 'dshus-quota-detail' }, detail),
               ),
               React.createElement('div', {
                 className: 'dshus-go-track',
                 role: 'progressbar',
-                'aria-label': metric.label,
+                'aria-label': quotaLabel(metric.label, quota.custom),
                 'aria-valuemin': 0,
                 'aria-valuemax': 100,
                 'aria-valuenow': pct,
-                'aria-valuetext': '剩余 ' + value + (detail ? '，' + detail : '') + (reset ? '，' + reset : ''),
+                'aria-valuetext': t('剩余 {value}', { value: value }) + (detail ? '，' + detail : '') + (reset ? '，' + reset : ''),
               }, React.createElement('div', { className: 'dshus-go-fill', style: { width: pct + '%', background: color } })),
-              React.createElement('span', { className: 'dshus-quota-pct', style: { color: color }, title: '剩余 ' + formatPct(pct) }, value),
-              React.createElement('span', { className: 'dshus-quota-reset', title: metric.resetAt ? '重置时间：' + fmtFetched(metric.resetAt) : undefined }, reset),
+              React.createElement('span', { className: 'dshus-quota-pct', style: { color: color }, title: t('剩余 {value}', { value: formatPct(pct) }) }, value),
+              React.createElement('span', { className: 'dshus-quota-reset', title: metric.resetAt ? t('重置时间：{time}', { time: fmtFetched(metric.resetAt) }) : undefined }, reset),
             ))
             return
           }
           // 余额的多值分栏保留数值、上限和比例。
           cards.push(React.createElement('div', { key: metric.label + '-' + index, className: 'dshus-stat' },
             React.createElement('div', { className: 'v', style: { color: isWindow ? color : undefined } }, value),
-            React.createElement('div', { className: 'k' }, metric.label),
+            React.createElement('div', { className: 'k' }, quotaLabel(metric.label, quota.custom)),
             hasRatio && React.createElement('div', { className: 'dshus-go-track' },
               React.createElement('div', { className: 'dshus-go-fill', style: { width: pct + '%', background: color } }),
             ),
             (detail || metric.resetAt) && React.createElement('div', { className: 'dshus-go-foot' },
               React.createElement('span', null, detail),
-              React.createElement('span', { className: 'dshus-go-reset' }, metric.resetAt ? fmtReset(metric.resetAt) + '重置' : ''),
+              React.createElement('span', { className: 'dshus-go-reset' }, metric.resetAt ? fmtReset(metric.resetAt) : ''),
             ),
           ))
         })
         var balance = metrics.length === 1 && metrics[0].kind === 'amount' && metrics[0].total == null
           ? metrics[0] : null
         if (balance) {
-          var refreshBtn = refreshIconButton(function () { load(true) }, loading, '刷新 ' + quota.name + ' 配额', false)
+          var refreshBtn = refreshIconButton(function () { load(true) }, loading, t('刷新 {name} 配额', { name: t(quota.name) }), false)
           var balanceSymbol = balance.currency === 'CNY' ? '¥' : balance.currency === 'USD' ? '$' : ''
           return React.createElement('div', { key: quota.provider, className: 'dshus-module dshus-balance-module' },
             React.createElement('div', { className: 'dshus-balance-title' },
-              React.createElement('h3', null, quota.name),
+              React.createElement('h3', null, t(quota.name)),
               refreshBtn,
             ),
             React.createElement('div', { className: 'dshus-balance-side' },
-              React.createElement('div', { className: 'dshus-balance-value', 'aria-label': balance.label + ' ' + balanceSymbol + Number(balance.remaining).toFixed(2) },
+              React.createElement('div', { className: 'dshus-balance-value', 'aria-label': quotaLabel(balance.label, quota.custom) + ' ' + balanceSymbol + Number(balance.remaining).toFixed(2) },
                 balanceSymbol + Number(balance.remaining).toFixed(2)),
               fetchedLine,
             ),
@@ -1588,9 +1942,9 @@ window.__ModuleLoader__.load({
         }
         return React.createElement('div', { key: quota.provider, className: 'dshus-module' },
           React.createElement('div', { className: 'dshus-quota-heading' },
-            React.createElement('h3', null, quota.name),
+            React.createElement('h3', null, t(quota.name)),
             fetchedLine,
-            refreshIconButton(function () { load(true) }, loading, '刷新 ' + quota.name + ' 配额', false),
+            refreshIconButton(function () { load(true) }, loading, t('刷新 {name} 配额', { name: t(quota.name) }), false),
           ),
           cards.length > 0 && React.createElement('div', { className: 'dshus-statbar dshus-quota-bar' }, cards),
           windowRows.length > 0 && React.createElement('div', { className: 'dshus-quota-rows' }, windowRows),
@@ -1617,12 +1971,8 @@ window.__ModuleLoader__.load({
 
       // All hooks are declared unconditionally at the top (before any early
       // return below) so React's hook order never breaks.
-      var wbState = React.useState(null)
-      var wbData = wbState[0]
-      var setWbData = wbState[1]
-      var wbLoadingState = React.useState(false)
-      var wbLoading = wbLoadingState[0]
-      var setWbLoading = wbLoadingState[1]
+      var resource = useQuotaData(function (fresh) { return api.workbuddyStatus({ fresh: fresh === true, source: source }) }, props)
+      var wbData = resource.data, wbLoading = resource.loading, load = resource.load
       // Collapsed by default: only the in-use package (+ the next richest one)
       // is shown; the rest hide behind a toggle so a dozen small packages
       // don't stack the board.
@@ -1630,41 +1980,22 @@ window.__ModuleLoader__.load({
       var wbExpanded = wbExpandedState[0]
       var setWbExpanded = wbExpandedState[1]
 
-      function load(fresh) {
-        setWbLoading(true)
-        api.workbuddyStatus({ fresh: fresh === true, source: source })
-          .then(function (body) {
-            setWbData(body)
-            setWbLoading(false)
-          })
-          .catch(function (err) {
-            setWbData({ ok: false, status: 'error', error: String(err && err.message || err) })
-            setWbLoading(false)
-          })
-      }
-
-      React.useEffect(function () {
-        load(false)
-        var timer = typeof setInterval === 'function' ? setInterval(function () { load(false) }, 30000) : null
-        return function () { if (timer !== null) clearInterval(timer) }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [])
-
       var connected = wbData !== null && wbData.ok !== false && wbData.status === 'signed-in' &&
         wbData.credits && Number.isFinite(Number(wbData.credits.total))
       if (!connected) {
-        if (!wbData || wbData.available !== true) return null
-        var statusLabel = wbData.status === 'unqueried' ? '未查询' : wbData.status === 'signed-out' ? '未登录' : '未获取'
+        if (!wbData || wbData.available !== true) return resource.error ? React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(resource.error)) : null
+        var statusLabel = wbData.status === 'unqueried' ? t('未查询') : wbData.status === 'signed-out' ? t('未登录') : t('未获取')
         return React.createElement('div', { className: 'dshus-module dshus-balance-module' },
+          resource.error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(resource.error)),
           React.createElement('div', { className: 'dshus-balance-title' },
             React.createElement('h3', null, name),
-            refreshIconButton(function () { load(true) }, wbLoading, '刷新 ' + name + ' 账号与积分', false)),
+            refreshIconButton(function () { load(true) }, wbLoading, t('刷新 {name} 账号与积分', { name: name }), false)),
           React.createElement('div', { className: 'dshus-balance-side' },
             React.createElement('div', { className: 'dshus-balance-value dshus-balance-status' }, statusLabel),
-            React.createElement('div', { className: 'dshus-fetched' }, '上次获取时间：' + fmtFetched(wbData.syncedAt))))
+            React.createElement('div', { className: 'dshus-fetched' }, t('上次获取时间：{time}', { time: fmtFetched(wbData.syncedAt) }))))
       }
 
-      var refreshBtn = refreshIconButton(function () { load(true) }, wbLoading, '刷新 ' + name + ' 账号与积分', false)
+      var refreshBtn = refreshIconButton(function () { load(true) }, wbLoading, t('刷新 {name} 账号与积分', { name: name }), false)
 
       var contentEl
       {
@@ -1680,12 +2011,12 @@ window.__ModuleLoader__.load({
             className: 'dshus-card dshus-go-card dshus-go-last',
           },
             React.createElement('div', { className: 'dshus-go-head' },
-              React.createElement('div', { className: 'k' }, '剩余积分合计'),
+              React.createElement('div', { className: 'k' }, t('剩余积分合计')),
               React.createElement('div', { className: 'dshus-go-pct dshus-wb-total-value', style: { color: 'var(--dsw-alias-label-primary, #1f2430)' } },
                 fmtExact(credits.total)),
             ),
             React.createElement('div', { className: 'dshus-go-foot' },
-              React.createElement('span', null, '有效套餐 ' + active.length + ' / ' + accounts.length + ' 个'),
+              React.createElement('span', null, t('有效套餐 {active} / {total} 个', { active: active.length, total: accounts.length })),
             ),
           ))
         }
@@ -1717,12 +2048,12 @@ window.__ModuleLoader__.load({
           cards.push(React.createElement('div', {
             key: (acc.packageName || 'package') + '-' + ai,
             role: 'graphics-symbol',
-            'aria-label': (acc.packageName || '套餐') + ' 剩余 ' + remPct + '%',
+            'aria-label': t('{name} 剩余 {percent}%', { name: acc.packageName || t('套餐'), percent: remPct }),
             className: 'dshus-card dshus-go-card',
           },
             React.createElement('div', { className: 'dshus-go-head' },
-              React.createElement('div', { className: 'k dshus-wb-name' }, acc.packageName || '计费套餐'),
-              isPartlyUsed(acc) ? React.createElement('span', { className: 'dshus-wb-inuse' }, '使用中') : null,
+              React.createElement('div', { className: 'k dshus-wb-name' }, acc.packageName || t('计费套餐')),
+              isPartlyUsed(acc) ? React.createElement('span', { className: 'dshus-wb-inuse' }, t('使用中')) : null,
               React.createElement('div', { className: 'dshus-go-pct', style: { color: barColor } }, remPct + '%'),
             ),
             React.createElement('div', { className: 'dshus-go-track' },
@@ -1730,8 +2061,8 @@ window.__ModuleLoader__.load({
             ),
             React.createElement('div', { className: 'dshus-go-foot' },
               React.createElement('span', null, size > 0
-                ? remain.toLocaleString() + ' / ' + size.toLocaleString() + ' 积分'
-                : remain.toLocaleString() + ' 积分'),
+                ? t('{value} 积分', { value: fmtExact(remain) + ' / ' + fmtExact(size) })
+                : t('{value} 积分', { value: fmtExact(remain) })),
             ),
           ))
         }
@@ -1746,7 +2077,7 @@ window.__ModuleLoader__.load({
                 className: 'dshus-btn',
                 onClick: function () { setWbExpanded(!wbExpanded) },
                 style: { fontSize: 12, height: 28, padding: '0 16px', margin: '0 auto' },
-              }, wbExpanded ? '收起其余套餐' : '展开其余 ' + (sorted.length - 2) + ' 个套餐'),
+              }, wbExpanded ? t('收起其余套餐') : t('展开其余 {count} 个套餐', { count: sorted.length - 2 })),
             ))
           }
         }
@@ -1757,16 +2088,16 @@ window.__ModuleLoader__.load({
         if (offers.length > 0) {
           var chips = offers.map(function (m) {
             var tags = []
-            if (m.free === true) tags.push('免费')
-            if (Array.isArray(m.badges)) tags = tags.concat(m.badges)
+            if (m.free === true) tags.push(t('免费'))
+            if (Array.isArray(m.badges)) tags = tags.concat(m.badges.map(function (badge) { return t(badge) }))
             return React.createElement('span', { className: 'dshus-wb-chip', key: m.id || m.name },
               React.createElement('span', null, m.name || m.id),
-              m.credits !== undefined ? React.createElement('span', { className: 'rate' }, String(m.credits) + ' 积分/次') : null,
+              m.credits !== undefined ? React.createElement('span', { className: 'rate' }, t('{value} 积分/次', { value: m.credits })) : null,
               tags.map(function (tg) { return React.createElement('span', { className: 'tag', key: tg }, tg) }),
             )
           })
           body.push(React.createElement('div', { className: 'dshus-wb-chips', key: '__models__' },
-            React.createElement('span', { className: 'dshus-wb-chips-label' }, '模型优惠'),
+            React.createElement('span', { className: 'dshus-wb-chips-label' }, t('模型优惠')),
             chips,
           ))
         }
@@ -1774,9 +2105,10 @@ window.__ModuleLoader__.load({
       }
 
       return React.createElement('div', { className: 'dshus-module dshus-wb-module' },
+        resource.error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(resource.error)),
         React.createElement('div', { className: 'dshus-quota-heading' },
           React.createElement('h3', null, name),
-          React.createElement('div', { className: 'dshus-fetched' }, '上次获取时间：' + fmtFetched(wbData.syncedAt)),
+          React.createElement('div', { className: 'dshus-fetched' }, t('上次获取时间：{time}', { time: fmtFetched(wbData.syncedAt) })),
           refreshBtn,
         ),
         contentEl,
@@ -1909,57 +2241,57 @@ window.__ModuleLoader__.load({
      * without the user having to explain the schema themselves.
      */
     function buildTemplatePrompt(context) {
-      var name = (context && context.name) || '该供应商'
+      var name = (context && context.name) || t('该供应商')
       var key = (context && context.provider) || ''
       var existing = (context && context.template) || null
       return [
-        '请帮我为「' + name + '」写一份 DSH 用量统计插件的余额查询模板（JSON）。',
+        t('请帮我为「{name}」写一份 DSH 用量统计插件的余额查询模板（JSON）。', { name: name }),
         '',
-        '【输出要求】',
-        '只输出一个 JSON 对象，不要解释、不要 markdown 代码块围栏。',
+        t('【输出要求】'),
+        t('只输出一个 JSON 对象，不要解释、不要 markdown 代码块围栏。'),
         '',
-        '【获取接口信息的方式】',
-        '请先自己联网搜索「' + name + '」的余额 / 用量查询接口文档，不要一上来就找我要资料。',
-        '优先按下面的顺序查：官方 API 文档 → 余额或 billing / usage 接口说明 → 社区示例或 SDK 源码。',
-        '如果能查到明确的接口地址与返回字段，直接据此写出模板。',
-        '只有在确实查不到、或查到多个互相冲突的结果时，才向我提问；提问要具体，一次只问最关键的一点。',
-        '如果你搜索到的是猜测而非确定的字段路径，请在回答里简要注明依据，方便我核对。',
+        t('【获取接口信息的方式】'),
+        t('请先自己联网搜索「{name}」的余额 / 用量查询接口文档，不要一上来就找我要资料。', { name: name }),
+        t('优先按下面的顺序查：官方 API 文档 → 余额或 billing / usage 接口说明 → 社区示例或 SDK 源码。'),
+        t('如果能查到明确的接口地址与返回字段，直接据此写出模板。'),
+        t('只有在确实查不到、或查到多个互相冲突的结果时，才向我提问；提问要具体，一次只问最关键的一点。'),
+        t('如果你搜索到的是猜测而非确定的字段路径，请在回答里简要注明依据，方便我核对。'),
         '',
-        '【字段说明】',
-        'url：查询地址，必须与下面 auth 所用凭据同源。',
-        'method：GET 或 POST。',
-        'auth："provider" 表示复用该供应商已保存的凭据；"none" 表示不需要认证。',
-        'headers：可选，附加请求头对象。',
-        'body：可选，POST 时发送的请求体对象。',
-        'response.rows：可选。当余额在数组里时填写该数组的字段路径，例如 "data.list"。',
-        'response.metrics：指标数组，每项包含：',
-        '  label：界面显示的名称，例如 "账户可用余额"。',
-        '  kind："amount" 表示金额，"window" 表示带重置时间的额度窗口。',
-        '  remaining：金额型指标在响应中的字段路径，例如 "data.balance"。',
-        '  usedPercent / remainingPercent：额度窗口型指标使用，取值为百分比字段路径。',
-        '  currency：可选，金额单位，如 "CNY" 或 "USD"。',
+        t('【字段说明】'),
+        t('url：查询地址，必须与下面 auth 所用凭据同源。'),
+        t('method：GET 或 POST。'),
+        t('auth："provider" 表示复用该供应商已保存的凭据；"none" 表示不需要认证。'),
+        t('headers：可选，附加请求头对象。'),
+        t('body：可选，POST 时发送的请求体对象。'),
+        t('response.rows：可选。当余额在数组里时填写该数组的字段路径，例如 "data.list"。'),
+        t('response.metrics：指标数组，每项包含：'),
+        t('  label：界面显示的名称，例如 "账户可用余额"。'),
+        t('  kind："amount" 表示金额，"window" 表示带重置时间的额度窗口。'),
+        t('  remaining：金额型指标在响应中的字段路径，例如 "data.balance"。'),
+        t('  usedPercent / remainingPercent：额度窗口型指标使用，取值为百分比字段路径。'),
+        t('  currency：可选，金额单位，如 "CNY" 或 "USD"。'),
         '',
-        '【取值规则】',
-        '字段路径用点号表示层级，例如 data.balance_infos.0.total_balance。',
-        '数字字符串也要能直接使用，不要额外包装。',
+        t('【取值规则】'),
+        t('字段路径用点号表示层级，例如 data.balance_infos.0.total_balance。'),
+        t('数字字符串也要能直接使用，不要额外包装。'),
         '',
-        '【参考格式】',
+        t('【参考格式】'),
         '{',
         '  "url": "https://api.example.com/user/balance",',
         '  "method": "GET",',
         '  "auth": "provider",',
         '  "response": {',
         '    "metrics": [',
-        '      { "label": "账户可用余额", "kind": "amount", "remaining": "data.balance", "currency": "CNY" }',
+        '      { "label": ' + JSON.stringify(t('账户可用余额')) + ', "kind": "amount", "remaining": "data.balance", "currency": "CNY" }',
         '    ]',
         '  }',
         '}',
         '',
-        '【当前情况】',
-        '供应商 ID：' + (key || '（未指定）'),
+        t('【当前情况】'),
+        t('供应商 ID：{provider}', { provider: key || t('（未指定）') }),
         existing
-          ? '现有模板（可在此基础上修正）：\n' + JSON.stringify(existing, null, 2)
-          : '该供应商目前没有模板，请从零编写。',
+          ? t('现有模板（可在此基础上修正）：\n') + JSON.stringify(existing, null, 2)
+          : t('该供应商目前没有模板，请从零编写。'),
       ].join('\n')
     }
 
@@ -2096,10 +2428,10 @@ window.__ModuleLoader__.load({
       // select reads the same value the selected <option> shows.
       function intervalLabel(minutes) {
         switch (Number(minutes)) {
-          case 10: return '10 分钟'
-          case 300: return '5 小时'
-          case 1440: return '每天'
-          default: return '1 小时'
+          case 10: return t('10 分钟')
+          case 300: return t('5 小时')
+          case 1440: return t('每天')
+          default: return t('1 小时')
         }
       }
       var validPreview = preview && preview.text === templateText && preview.provider === provider
@@ -2114,64 +2446,64 @@ window.__ModuleLoader__.load({
       return React.createElement('div', null,
         // The settings-load failure is not about one query, so it stays above both
         // modules; a query failure is reported inside the query module instead.
-        props.error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, props.error,
-          React.createElement('button', { type: 'button', className: 'dshus-btn', onClick: props.onReload }, '重试')),
+        props.error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(props.error),
+          React.createElement('button', { type: 'button', className: 'dshus-btn', onClick: props.onReload }, t('重试'))),
         React.createElement('div', { className: 'dshus-module' },
           React.createElement('div', { className: 'dshus-setting-row' },
             React.createElement('div', null,
-              React.createElement('span', { className: 'dshus-setting-label' }, '自动获取剩余余额')),
-            switchButton('自动获取剩余余额', settings.autoQuota, function () { if (settings.autoQuota) save({ autoQuota: false }); else setConfirmAuto(true) }),
+              React.createElement('span', { className: 'dshus-setting-label' }, t('自动获取剩余余额'))),
+            switchButton(t('自动获取剩余余额'), settings.autoQuota, function () { if (settings.autoQuota) save({ autoQuota: false }); else setConfirmAuto(true) }),
           ),
-          confirmAuto && React.createElement('div', { className: 'dshus-confirm', role: 'alert', 'aria-label': '自动查询费用提醒' },
-            React.createElement('p', null, '自动查询可能会消耗少量余额，具体取决于供应商的计费规则。确认开启后，将立即获取一次，之后按所选间隔更新。'),
+          confirmAuto && React.createElement('div', { className: 'dshus-confirm', role: 'alert', 'aria-label': t('自动查询费用提醒') },
+            React.createElement('p', null, t('自动查询可能会消耗少量余额，具体取决于供应商的计费规则。确认开启后，将立即获取一次，之后按所选间隔更新。')),
             React.createElement('div', { className: 'dshus-control-actions' },
-              React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving, onClick: function () { save({ autoQuota: true, acknowledgeCost: true }) } }, '确认开启'),
-              React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving, onClick: function () { setConfirmAuto(false) } }, '取消')),
+              React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving, onClick: function () { save({ autoQuota: true, acknowledgeCost: true }) } }, t('确认开启')),
+              React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving, onClick: function () { setConfirmAuto(false) } }, t('取消'))),
           ),
           React.createElement('div', { className: 'dshus-setting-row' },
             React.createElement('label', { id: 'dshus-auto-interval-label', htmlFor: 'dshus-auto-interval' },
-              React.createElement('span', { className: 'dshus-setting-label' }, '自动获取间隔')),
+              React.createElement('span', { className: 'dshus-setting-label' }, t('自动获取间隔'))),
             React.createElement('select', { id: 'dshus-auto-interval', className: 'dshus-field dshus-select', value: settings.intervalMinutes, disabled: saving || !props.ready, 'aria-labelledby': 'dshus-auto-interval-label', onChange: function (event) { save({ intervalMinutes: Number(event.target.value) }) } },
-              [[10, '10 分钟'], [60, '1 小时'], [300, '5 小时'], [1440, '每天']].map(function (option) { return React.createElement('option', { key: option[0], value: option[0] }, option[1]) })),
+              [[10, t('10 分钟')], [60, t('1 小时')], [300, t('5 小时')], [1440, t('每天')]].map(function (option) { return React.createElement('option', { key: option[0], value: option[0] }, option[1]) })),
           ),
           // The select no longer carries a help line, so the row is followed by a
           // single status line: it names the next run once automatic fetching is
           // armed, and reads back the chosen interval otherwise.
           control.nextRefreshAt
-            ? React.createElement('p', { className: 'dshus-control-status', role: 'status' }, '下次获取：' + fmtInTz(control.nextRefreshAt, LOCAL_TZ) + ' · 当前设置：' + intervalLabel(settings.intervalMinutes))
-            : React.createElement('p', { className: 'dshus-control-status', role: 'status' }, '当前设置：' + intervalLabel(settings.intervalMinutes)),
+            ? React.createElement('p', { className: 'dshus-control-status', role: 'status' }, t('下次获取：{time} · 当前设置：{interval}', { time: fmtInTz(control.nextRefreshAt, LOCAL_TZ), interval: intervalLabel(settings.intervalMinutes) }))
+            : React.createElement('p', { className: 'dshus-control-status', role: 'status' }, t('当前设置：{interval}', { interval: intervalLabel(settings.intervalMinutes) })),
           React.createElement('div', { className: 'dshus-setting-row' },
             React.createElement('div', null,
-              React.createElement('span', { className: 'dshus-setting-label' }, '模型明细与分布')),
-            switchButton('模型明细与分布', settings.showModelDetails, function () { save({ showModelDetails: !settings.showModelDetails }) }),
+              React.createElement('span', { className: 'dshus-setting-label' }, t('模型明细与分布'))),
+            switchButton(t('模型明细与分布'), settings.showModelDetails, function () { save({ showModelDetails: !settings.showModelDetails }) }),
           ),
           React.createElement('div', { className: 'dshus-setting-row' },
             React.createElement('div', null,
-              React.createElement('span', { className: 'dshus-setting-label' }, '高级模型选择器')),
-            switchButton('高级模型选择器', advancedModelSelect, function () {
+              React.createElement('span', { className: 'dshus-setting-label' }, t('高级模型选择器'))),
+            switchButton(t('高级模型选择器'), advancedModelSelect, function () {
               save({ advancedModelSelect: !advancedModelSelect }, advancedModelSelect ? '已关闭，已恢复官方模型选择器' : '已开启高级模型选择器')
             }),
           ),
         ),
         React.createElement('div', { className: 'dshus-module' },
-          React.createElement('h3', null, '配额查询', refreshIconButton(loadProviders, providerLoading, '刷新供应商列表', true)),
-          React.createElement('label', { id: 'dshus-query-provider-label', className: 'dshus-setting-label', htmlFor: 'dshus-query-provider' }, '查询来源'),
-          React.createElement(ProviderPicker, { id: 'dshus-query-provider', labelId: 'dshus-query-provider-label', value: provider, disabled: saving || providerLoading || !props.ready, onChange: selectProvider, options: [{ value: '', name: providerLoading ? '正在加载供应商…' : '选择已有供应商' }].concat(providers.map(function (item) {
+          React.createElement('h3', null, t('配额查询'), refreshIconButton(loadProviders, providerLoading, t('刷新供应商列表'), true)),
+          React.createElement('label', { id: 'dshus-query-provider-label', className: 'dshus-setting-label', htmlFor: 'dshus-query-provider' }, t('查询来源')),
+          React.createElement(ProviderPicker, { id: 'dshus-query-provider', labelId: 'dshus-query-provider-label', value: provider, disabled: saving || providerLoading || !props.ready, onChange: selectProvider, options: [{ value: '', name: providerLoading ? t('正在加载供应商…') : t('选择已有供应商') }].concat(providers.map(function (item) {
               var custom = settings.customQueries.some(function (query) { return query.provider === item.provider })
-              var source = custom ? '已保存自定义查询' : item.hasBuiltinQuery === true ? item.queryType === 'adapter' ? '内置扩展查询' : '内置供应商查询' : ''
-              return { value: item.provider, name: item.name, source: source }
+              var source = custom ? t('已保存自定义查询') : item.hasBuiltinQuery === true ? item.queryType === 'adapter' ? t('内置扩展查询') : t('内置供应商查询') : ''
+              return { value: item.provider, name: t(item.name), source: source }
             })) }),
-          !providerLoading && !providers.length && React.createElement('p', { className: 'dshus-setting-help' }, '尚无可选来源，请先添加模型供应商或启用支持的扩展。'),
+          !providerLoading && !providers.length && React.createElement('p', { className: 'dshus-setting-help' }, t('尚无可选来源，请先添加模型供应商或启用支持的扩展。')),
           // With no provider chosen there is still a failure worth showing here,
           // e.g. loading the provider list itself.
-          !provider && error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, error),
+          !provider && error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
           selected && selected.queryType === 'adapter' && React.createElement('div', { className: 'dshus-control-actions' },
-            React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving || testing, onClick: refreshAdapter }, testing ? '正在查询…' : '查询配额'),
-            error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, error)),
+            React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving || testing, onClick: refreshAdapter }, testing ? t('正在查询…') : t('查询配额')),
+            error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error))),
           provider && (!selected || selected.queryType !== 'adapter') && React.createElement(React.Fragment, null,
             React.createElement('div', { className: 'dshus-control-actions' },
-              React.createElement('label', { className: 'dshus-setting-label', htmlFor: 'dshus-query-template' }, '查询模板（JSON）'),
-              selected && React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving, onClick: function () { editTemplate(JSON.stringify(selected.template, null, 2)) } }, '重置模板')),
+              React.createElement('label', { className: 'dshus-setting-label', htmlFor: 'dshus-query-template' }, t('查询模板（JSON）')),
+              selected && React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving, onClick: function () { editTemplate(JSON.stringify(selected.template, null, 2)) } }, t('重置模板'))),
             React.createElement('textarea', { id: 'dshus-query-template', className: 'dshus-field dshus-query-editor', value: templateText, spellCheck: false, disabled: saving, onChange: function (event) { editTemplate(event.target.value) } }),
             // The old one-line schema description told the user what to write but
             // still left them to write it. This hands them a prompt to paste into
@@ -2179,34 +2511,34 @@ window.__ModuleLoader__.load({
             // in, and the text is selectable when the clipboard is unavailable.
             React.createElement('div', { className: 'dshus-prompt' },
               React.createElement('div', { className: 'dshus-prompt-head' },
-                React.createElement('span', { className: 'dshus-prompt-title' }, '用 AI 生成模板'),
-                React.createElement('button', { type: 'button', className: 'dshus-btn dshus-prompt-copy', onClick: copyPrompt }, '复制提示词')),
-              React.createElement('pre', { className: 'dshus-prompt-body', tabIndex: 0, 'aria-label': '可复制的模板生成提示词' }, buildTemplatePrompt({ provider: provider, name: promptProviderName, template: promptTemplate })),
-              copied && React.createElement('p', { className: 'dshus-prompt-note', role: 'status' }, copied)),
+                React.createElement('span', { className: 'dshus-prompt-title' }, t('用 AI 生成模板')),
+                React.createElement('button', { type: 'button', className: 'dshus-btn dshus-prompt-copy', onClick: copyPrompt }, t('复制提示词'))),
+              React.createElement('pre', { className: 'dshus-prompt-body', tabIndex: 0, 'aria-label': t('可复制的模板生成提示词') }, buildTemplatePrompt({ provider: provider, name: promptProviderName, template: promptTemplate })),
+              copied && React.createElement('p', { className: 'dshus-prompt-note', role: 'status' }, t(copied))),
             React.createElement('div', { className: 'dshus-control-actions' },
-              React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving || testing || !templateText.trim(), onClick: testTemplate }, testing ? '正在测试…' : '测试查询'),
-              React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving || testing || !validPreview, onClick: function () { save({ action: 'save-query', provider: provider, template: JSON.parse(templateText), testId: preview.result.testId }, '已保存，可在配额页查看此供应商。') } }, saving ? '正在保存…' : '确认并显示')),
+              React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving || testing || !templateText.trim(), onClick: testTemplate }, testing ? t('正在测试…') : t('测试查询')),
+              React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving || testing || !validPreview, onClick: function () { save({ action: 'save-query', provider: provider, template: JSON.parse(templateText), testId: preview.result.testId }, '已保存，可在配额页查看此供应商。') } }, saving ? t('正在保存…') : t('确认并显示'))),
             // The cost warning stays last, directly under the buttons that can
             // spend balance, so it is read right before the user acts.
-            React.createElement('p', { className: 'dshus-cost-note' }, '测试会发起一次请求，可能消耗少量余额。'),
+            React.createElement('p', { className: 'dshus-cost-note' }, t('测试会发起一次请求，可能消耗少量余额。')),
             // A failed query belongs with the controls that produced it, so the
             // message sits inside this module rather than at the top of the page.
-            error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, error),
+            error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
             validPreview && React.createElement('div', { className: 'dshus-query-preview', role: 'status' },
-              React.createElement('strong', null, '测试成功 · ' + preview.result.quota.name),
+              React.createElement('strong', null, t('测试成功 · {name}', { name: t(preview.result.quota.name) })),
               preview.result.quota.metrics.map(function (metric, index) { return React.createElement('div', { key: index }, metric.label + '：' + (metric.kind === 'window' ? Math.round(metric.remainingPercent * 100) / 100 + '%' : (metric.currency === 'CNY' ? '¥' : metric.currency === 'USD' ? '$' : '') + fmtExact(metric.remaining))) })),
           ),
           settings.customQueries.length > 0 && React.createElement('div', { className: 'dshus-query-preview' },
-            React.createElement('strong', null, '已启用的自定义查询'),
+            React.createElement('strong', null, t('已启用的自定义查询')),
             settings.customQueries.map(function (query) {
               var item = providers.find(function (entry) { return entry.provider === query.provider })
               return React.createElement('div', { key: query.provider, className: 'dshus-saved-query' },
                 React.createElement('span', null, item ? item.name : query.provider),
-                React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving, onClick: function () { selectProvider(query.provider) } }, '编辑'),
-                React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving, onClick: function () { save({ action: 'remove-query', provider: query.provider }, '已移除自定义查询，恢复内置配额查询。') } }, '移除'))
+                React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving, onClick: function () { selectProvider(query.provider) } }, t('编辑')),
+                React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving, onClick: function () { save({ action: 'remove-query', provider: query.provider }, '已移除自定义查询，恢复内置配额查询。') } }, t('移除')))
             })),
         ),
-        React.createElement('div', { className: 'dshus-control-status', role: 'status' }, !props.ready && !props.error ? '正在读取设置…' : status),
+        React.createElement('div', { className: 'dshus-control-status', role: 'status' }, !props.ready && !props.error ? t('正在读取设置…') : t(status)),
       )
     }
 
@@ -2215,6 +2547,7 @@ window.__ModuleLoader__.load({
     /* ------------------------------------------------------------------ */
 
     function UsageStatsSection(props) {
+      useLocaleRevision()
       var api = props.api
       var intl = props.intl
       var modelState = React.useState('')
@@ -2309,6 +2642,10 @@ window.__ModuleLoader__.load({
       var controlError = controlErrorState[0], setControlError = controlErrorState[1]
       var quotaRevisionState = React.useState(0)
       var quotaRevision = quotaRevisionState[0], setQuotaRevision = quotaRevisionState[1]
+      var quotaVisitedState = React.useState(false)
+      var quotaVisited = quotaVisitedState[0], setQuotaVisited = quotaVisitedState[1]
+      var quotaSnapshotsState = React.useState({})
+      var quotaSnapshots = quotaSnapshotsState[0], setQuotaSnapshots = quotaSnapshotsState[1]
       var quotaLoadingState = React.useState(false)
       var quotaLoading = quotaLoadingState[0], setQuotaLoading = quotaLoadingState[1]
       var quotaErrorState = React.useState('')
@@ -2318,6 +2655,7 @@ window.__ModuleLoader__.load({
         if (next === tab) return
         // A short tab must not inherit the long usage page's scroll position.
         if (scrollPortRef.current) scrollPortRef.current.scrollTop = 0
+        if (next === 'quota') setQuotaVisited(true)
         setTab(next)
       }
       function onTabKeyDown(event) {
@@ -2403,16 +2741,24 @@ window.__ModuleLoader__.load({
         return function () { clearInterval(timer) }
       }, [tab])
       function saveControls(patch) {
-        return api.controls(patch).then(function (body) { setControl(body); syncModelSeatFromControls(body); setControlReady(true); return body })
+        return api.controls(patch).then(function (body) {
+          setControl(body); syncModelSeatFromControls(body); setControlReady(true)
+          if (patch.action === 'save-query' || patch.action === 'remove-query') setQuotaRevision(function (value) { return value + 1 })
+          return body
+        })
       }
       function refreshQuotas() {
         setQuotaLoading(true)
         setQuotaError('')
         Promise.allSettled([api.providerQuotas({ fresh: true }), api.workbuddyStatus({ fresh: true }), api.workbuddyStatus({ fresh: true, source: 'workbuddy-ai' })]).then(function (results) {
-          if (results.some(function (result) { return result.status === 'rejected' })) setQuotaError('部分配额未能更新，请稍后刷新重试。')
+          if (results.some(function (result) { return result.status === 'rejected' || quotaFailed(result.value) })) setQuotaError('部分配额未能更新，请稍后刷新重试。')
+          setQuotaSnapshots(function (previous) {
+            var next = Object.assign({}, previous)
+            ;['providers', 'workbuddy', 'workbuddy-ai'].forEach(function (key, index) { if (results[index].status === 'fulfilled' && !quotaFailed(results[index].value)) next[key] = results[index].value })
+            return next
+          })
           setQuotaLoading(false)
-          setQuotaRevision(function (value) { return value + 1 })
-        }).catch(function (err) { setQuotaLoading(false); setQuotaError(String(err.message || err)); setQuotaRevision(function (value) { return value + 1 }) })
+        }).catch(function (err) { setQuotaLoading(false); setQuotaError(String(err.message || err)) })
       }
 
       var changeModel = function (m) {
@@ -2554,7 +2900,7 @@ window.__ModuleLoader__.load({
           hourModels = data.byHourModels
         } else {
           hourModels = data.byHour.map(function (h) {
-            return { hour: h.hour, models: [{ key: '__all__', provider: '', model: '全部', billed: h.billed }] }
+            return { hour: h.hour, models: [{ key: '__all__', provider: '', model: t('全部'), billed: h.billed }] }
           })
         }
         // The chart has its own grouping control, independent of the donut.
@@ -2601,8 +2947,8 @@ window.__ModuleLoader__.load({
       }
 
       var tools = React.createElement('div', { className: 'dshus-tools' },
-        tab === 'usage' && refreshIconButton(refresh, loading, '刷新用量统计', false),
-        tab === 'quota' && refreshIconButton(refreshQuotas, quotaLoading, '刷新全部配额', false),
+        tab === 'usage' && refreshIconButton(refresh, loading, t('刷新用量统计'), false),
+        tab === 'quota' && refreshIconButton(refreshQuotas, quotaLoading, t('刷新全部配额'), false),
       )
 
       var cards
@@ -2621,13 +2967,13 @@ window.__ModuleLoader__.load({
             React.createElement('div', { className: 'k' }, k),
           )
         }
-        cards = React.createElement('div', { className: 'dshus-statbar dshus-overview-bar', role: 'group', 'aria-label': '概览指标' },
-          stat(overview.todayBilled, '今日tokens数'),
-          stat(overview.usedDays, '使用天数', { exact: true }),
-          stat(overview.totalBilled, '累计tokens数'),
+        cards = React.createElement('div', { className: 'dshus-statbar dshus-overview-bar', role: 'group', 'aria-label': t('概览指标') },
+          stat(overview.todayBilled, t('今日tokens数')),
+          stat(overview.usedDays, t('使用天数'), { exact: true }),
+          stat(overview.totalBilled, t('累计tokens数')),
         )
       } else {
-        cards = React.createElement('div', { className: 'dshus-muted' }, '暂无数据')
+        cards = React.createElement('div', { className: 'dshus-muted' }, t('暂无数据'))
       }
 
       // Filter models for the breakdown table
@@ -2666,7 +3012,7 @@ window.__ModuleLoader__.load({
             ),
           ),
           React.createElement('td', { style: { textAlign: 'right', color: 'var(--dsw-alias-label-caption, #9ca3af)', fontSize: 11.5 } },
-            m.lastTime ? fmtInTz(m.lastTime, tz) : (isRest ? '—' : '近期调用'),
+            m.lastTime ? fmtInTz(m.lastTime, tz) : (isRest ? '—' : t('近期调用')),
           ),
         )
       })
@@ -2676,38 +3022,38 @@ window.__ModuleLoader__.load({
         React.createElement('div', { className: 'dshus-head' },
           React.createElement('div', { className: 'dshus-brand' },
             React.createElement('span', { className: 'dshus-brand-icon', 'aria-hidden': 'true' }),
-            React.createElement('h2', { className: 'dshus-title' }, '用量统计'),
-            React.createElement('a', { className: 'dshus-brand-meta dshus-brand-link', href: 'https://github.com/Jockjrop/dsh-usage-stats', target: '_blank', rel: 'noopener noreferrer', title: '在 GitHub 查看 dsh-usage-stats' }, 'dsh-usage-stats'),
-            React.createElement('span', { className: 'dshus-brand-meta' }, 'v0.1.0'),
+            React.createElement('h2', { className: 'dshus-title' }, t('用量统计')),
+            React.createElement('a', { className: 'dshus-brand-meta dshus-brand-link', href: 'https://github.com/Jockjrop/dsh-usage-stats', target: '_blank', rel: 'noopener noreferrer', title: t('在 GitHub 查看 dsh-usage-stats') }, 'dsh-usage-stats'),
+            PLUGIN_VERSION !== '__DSH_USAGE_STATS_VERSION__' && React.createElement('span', { className: 'dshus-brand-meta' }, 'v' + PLUGIN_VERSION),
           ),
           tools,
         ),
-        React.createElement('div', { className: 'dshus-tabs', role: 'tablist', 'aria-label': '用量统计页面' },
-          React.createElement('button', { id: 'dshus-tab-usage', type: 'button', role: 'tab', 'aria-selected': tab === 'usage', 'aria-controls': 'dshus-usage-panel', tabIndex: tab === 'usage' ? 0 : -1, className: 'dshus-tab' + (tab === 'usage' ? ' on' : ''), onClick: function () { changeTab('usage') }, onKeyDown: onTabKeyDown }, '用量'),
-          React.createElement('button', { id: 'dshus-tab-quota', type: 'button', role: 'tab', 'aria-selected': tab === 'quota', 'aria-controls': 'dshus-quota-panel', tabIndex: tab === 'quota' ? 0 : -1, className: 'dshus-tab' + (tab === 'quota' ? ' on' : ''), onClick: function () { changeTab('quota') }, onKeyDown: onTabKeyDown }, '配额'),
-          React.createElement('button', { id: 'dshus-tab-control', type: 'button', role: 'tab', 'aria-selected': tab === 'control', 'aria-controls': 'dshus-control-panel', tabIndex: tab === 'control' ? 0 : -1, className: 'dshus-tab' + (tab === 'control' ? ' on' : ''), onClick: function () { changeTab('control') }, onKeyDown: onTabKeyDown }, '控制'),
+        React.createElement('div', { className: 'dshus-tabs', role: 'tablist', 'aria-label': t('用量统计页面') },
+          React.createElement('button', { id: 'dshus-tab-usage', type: 'button', role: 'tab', 'aria-selected': tab === 'usage', 'aria-controls': 'dshus-usage-panel', tabIndex: tab === 'usage' ? 0 : -1, className: 'dshus-tab' + (tab === 'usage' ? ' on' : ''), onClick: function () { changeTab('usage') }, onKeyDown: onTabKeyDown }, t('用量')),
+          React.createElement('button', { id: 'dshus-tab-quota', type: 'button', role: 'tab', 'aria-selected': tab === 'quota', 'aria-controls': 'dshus-quota-panel', tabIndex: tab === 'quota' ? 0 : -1, className: 'dshus-tab' + (tab === 'quota' ? ' on' : ''), onClick: function () { changeTab('quota') }, onKeyDown: onTabKeyDown }, t('配额')),
+          React.createElement('button', { id: 'dshus-tab-control', type: 'button', role: 'tab', 'aria-selected': tab === 'control', 'aria-controls': 'dshus-control-panel', tabIndex: tab === 'control' ? 0 : -1, className: 'dshus-tab' + (tab === 'control' ? ' on' : ''), onClick: function () { changeTab('control') }, onKeyDown: onTabKeyDown }, t('控制')),
         ),
         ),
         // The size container wraps only the panels, so the sticky header above it
         // is not inside a containment context.
         React.createElement('div', { className: 'dshus-panels' },
         tab === 'usage' && React.createElement('div', { id: 'dshus-usage-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-usage', tabIndex: 0 },
-          error !== null && React.createElement('div', { className: 'dshus-error' }, error),
-          stale && data && data.partial && React.createElement('div', { className: 'dshus-error' }, '部分会话读取失败'),
+          error !== null && React.createElement('div', { className: 'dshus-error' }, uiError(error)),
+          stale && data && data.partial && React.createElement('div', { className: 'dshus-error' }, t('部分会话读取失败')),
 
         /* Area 1: 概览指标 */
         React.createElement('div', { className: 'dshus-module' },
-          React.createElement('h3', null, '概览指标'),
+          React.createElement('h3', null, t('概览指标')),
           cards,
         ),
 
         /* Area 2: 今日Token用量 */
         React.createElement('div', { className: 'dshus-module' },
           React.createElement('h3', null,
-            '今日Token用量',
-            React.createElement('div', { className: 'dshus-range', style: { marginLeft: 'auto' }, 'aria-label': '今日Token用量统计模式' },
-              React.createElement('button', { type: 'button', className: 'dshus-range-btn' + (!chartGroupByModel ? ' on' : ''), onClick: function () { setChartGroupByModel(false) } }, '供应商·模型'),
-              React.createElement('button', { type: 'button', className: 'dshus-range-btn' + (chartGroupByModel ? ' on' : ''), onClick: function () { setChartGroupByModel(true) } }, '按模型'),
+            t('今日Token用量'),
+            React.createElement('div', { className: 'dshus-range', style: { marginLeft: 'auto' }, 'aria-label': t('今日Token用量统计模式') },
+              React.createElement('button', { type: 'button', className: 'dshus-range-btn' + (!chartGroupByModel ? ' on' : ''), onClick: function () { setChartGroupByModel(false) } }, t('供应商·模型')),
+              React.createElement('button', { type: 'button', className: 'dshus-range-btn' + (chartGroupByModel ? ' on' : ''), onClick: function () { setChartGroupByModel(true) } }, t('按模型')),
             ),
           ),
           React.createElement(Bars, { hourModels: hourModels, byHour: data ? data.byHour : [], colorOf: chartColorFor }),
@@ -2716,15 +3062,15 @@ window.__ModuleLoader__.load({
         /* Area 3: 使用量热力图 */
         React.createElement('div', { className: 'dshus-module' },
           React.createElement('h3', null,
-            '使用量热力图',
+            t('使用量热力图'),
             React.createElement('div', { className: 'dshus-head-tools' },
               React.createElement(HeatPager, {
                 info: heatInfo,
                 onStep: stepHeatPage,
               }),
-              React.createElement('div', { className: 'dshus-range dshus-heat-modes', 'aria-label': '热力图时长' },
-                React.createElement('button', { type: 'button', className: 'dshus-range-btn' + (heatMode === 'daily' ? ' on' : ''), onClick: function () { setHeatNav({ mode: 'daily', index: 0 }); setHeatInfo(null); setHeatMode('daily') } }, '每日'),
-                React.createElement('button', { type: 'button', className: 'dshus-range-btn' + (heatMode === 'weekly' ? ' on' : ''), onClick: function () { setHeatNav({ mode: 'weekly', index: 0 }); setHeatInfo(null); setHeatMode('weekly') } }, '每周'),
+              React.createElement('div', { className: 'dshus-range dshus-heat-modes', 'aria-label': t('热力图时长') },
+                React.createElement('button', { type: 'button', className: 'dshus-range-btn' + (heatMode === 'daily' ? ' on' : ''), onClick: function () { setHeatNav({ mode: 'daily', index: 0 }); setHeatInfo(null); setHeatMode('daily') } }, t('每日')),
+                React.createElement('button', { type: 'button', className: 'dshus-range-btn' + (heatMode === 'weekly' ? ' on' : ''), onClick: function () { setHeatNav({ mode: 'weekly', index: 0 }); setHeatInfo(null); setHeatMode('weekly') } }, t('每周')),
               ),
             ),
           ),
@@ -2734,10 +3080,10 @@ window.__ModuleLoader__.load({
         /* Area 4: 每日Token趋势图 */
         React.createElement('div', { className: 'dshus-module' },
           React.createElement('h3', null,
-            '每日Token趋势图',
-            React.createElement('div', { className: 'dshus-range', style: { marginLeft: 'auto' }, 'aria-label': '每日Token趋势时长' },
-              React.createElement('button', { type: 'button', className: 'dshus-range-btn' + (trendPeriod === 'week' ? ' on' : ''), onClick: function () { setTrendPeriod('week') } }, '7天'),
-              React.createElement('button', { type: 'button', className: 'dshus-range-btn' + (trendPeriod === 'month' ? ' on' : ''), onClick: function () { setTrendPeriod('month') } }, '30天'),
+            t('每日Token趋势图'),
+            React.createElement('div', { className: 'dshus-range', style: { marginLeft: 'auto' }, 'aria-label': t('每日Token趋势时长') },
+              React.createElement('button', { type: 'button', className: 'dshus-range-btn' + (trendPeriod === 'week' ? ' on' : ''), onClick: function () { setTrendPeriod('week') } }, t('7天')),
+              React.createElement('button', { type: 'button', className: 'dshus-range-btn' + (trendPeriod === 'month' ? ' on' : ''), onClick: function () { setTrendPeriod('month') } }, t('30天')),
             ),
           ),
           React.createElement(DailyTrend, { dayMap: dayMap, dayModelMap: dayModelMap, colorOf: colorOf, tz: tz, period: trendPeriod }),
@@ -2746,20 +3092,20 @@ window.__ModuleLoader__.load({
         /* Area 5: 模型明细 */
         control.settings.showModelDetails && React.createElement('div', { className: 'dshus-module' },
           React.createElement('h3', null,
-            '模型明细与分布',
+            t('模型明细与分布'),
             React.createElement('div', { className: 'dshus-range', style: { marginLeft: 'auto' } },
               React.createElement('button', {
                 type: 'button',
                 className: 'dshus-range-btn' + (!groupByModel ? ' on' : ''),
                 onClick: function () { setGroupByModel(false); setTableExpanded(false) },
-                title: '每个供应商 · 模型组合单独统计',
-              }, '供应商·模型'),
+                title: t('每个供应商 · 模型组合单独统计'),
+              }, t('供应商·模型')),
               React.createElement('button', {
                 type: 'button',
                 className: 'dshus-range-btn' + (groupByModel ? ' on' : ''),
                 onClick: function () { setGroupByModel(true); setTableExpanded(false) },
-                title: '合并同名模型，不区分供应商',
-              }, '按模型'),
+                title: t('合并同名模型，不区分供应商'),
+              }, t('按模型')),
             ),
           ),
           React.createElement(Donut, {
@@ -2769,12 +3115,12 @@ window.__ModuleLoader__.load({
           }),
           React.createElement('div', { className: 'dshus-model-toolbar' },
             React.createElement('span', { style: { fontSize: 13, fontWeight: 400, color: 'var(--dsw-alias-label-secondary, #4b5563)' } },
-              '模型用量清单 (' + tableModels.length + ')',
+              t('模型用量清单 ({count})', { count: tableModels.length }),
             ),
             React.createElement('input', {
               type: 'text',
               className: 'dshus-search-input',
-              placeholder: '搜索模型或供应商名称…',
+              placeholder: t('搜索模型或供应商名称…'),
               value: searchQuery,
               onChange: function (e) { setSearchQuery(e.target.value) },
             }),
@@ -2783,16 +3129,16 @@ window.__ModuleLoader__.load({
             React.createElement('table', { className: 'dshus-table' },
               React.createElement('thead', null,
                 React.createElement('tr', null,
-                  React.createElement('th', null, '模型名称'),
-                  React.createElement('th', { style: { textAlign: 'right' } }, '用量 Tokens'),
-                  React.createElement('th', { style: { textAlign: 'right' } }, '占比'),
-                  React.createElement('th', { className: 'dshus-table-bar-cell' }, '分布条'),
-                  React.createElement('th', { style: { textAlign: 'right' } }, '最后活跃时间'),
+                  React.createElement('th', null, t('模型名称')),
+                  React.createElement('th', { style: { textAlign: 'right' } }, t('用量 Tokens')),
+                  React.createElement('th', { style: { textAlign: 'right' } }, t('占比')),
+                  React.createElement('th', { className: 'dshus-table-bar-cell' }, t('分布条')),
+                  React.createElement('th', { style: { textAlign: 'right' } }, t('最后活跃时间')),
                 ),
               ),
               React.createElement('tbody', null,
                 tableRows.length > 0 ? tableRows : React.createElement('tr', null,
-                  React.createElement('td', { colSpan: 5, style: { textAlign: 'center', color: 'var(--dsw-alias-label-tertiary, #6b7280)', padding: '16px 0' } }, '没有找到匹配的模型'),
+                  React.createElement('td', { colSpan: 5, style: { textAlign: 'center', color: 'var(--dsw-alias-label-tertiary, #6b7280)', padding: '16px 0' } }, t('没有找到匹配的模型')),
                 ),
               ),
             ),
@@ -2803,16 +3149,16 @@ window.__ModuleLoader__.load({
               className: 'dshus-btn',
               onClick: function () { setTableExpanded(!tableExpanded) },
               style: { fontSize: 12, height: 28, padding: '0 16px', margin: '0 auto' }
-            }, tableExpanded ? '收起清单' : '展开其余 ' + (tableModels.length - 1) + ' 个模型')
+            }, tableExpanded ? t('收起清单') : t('展开其余 {count} 个模型', { count: tableModels.length - 1 }))
           ),
         ),
 
         ),
-        tab === 'quota' && React.createElement('div', { id: 'dshus-quota-panel', className: 'dshus-quota-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-quota', tabIndex: 0 },
-          quotaError && React.createElement('div', { className: 'dshus-error', role: 'alert' }, quotaError),
-          React.createElement(ProviderQuotasPanel, { api: api, key: 'providers-' + quotaRevision }),
-          React.createElement(WorkBuddyPanel, { api: api, key: 'workbuddy-' + quotaRevision }),
-          React.createElement(WorkBuddyPanel, { api: api, source: 'workbuddy-ai', key: 'workbuddy-ai-' + quotaRevision }),
+        quotaVisited && React.createElement('div', { id: 'dshus-quota-panel', className: 'dshus-quota-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-quota', tabIndex: 0, hidden: tab !== 'quota', 'data-empty-label': t('连接模型服务后，可读取的配额会显示在这里') },
+          quotaError && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(quotaError)),
+          React.createElement(ProviderQuotasPanel, { api: api, key: 'providers', active: tab === 'quota', revision: quotaRevision, refreshing: quotaLoading, snapshot: quotaSnapshots.providers }),
+          React.createElement(WorkBuddyPanel, { api: api, key: 'workbuddy', active: tab === 'quota', revision: quotaRevision, refreshing: quotaLoading, snapshot: quotaSnapshots.workbuddy }),
+          React.createElement(WorkBuddyPanel, { api: api, source: 'workbuddy-ai', key: 'workbuddy-ai', active: tab === 'quota', revision: quotaRevision, refreshing: quotaLoading, snapshot: quotaSnapshots['workbuddy-ai'] }),
         ),
         tab === 'control' && React.createElement('div', { id: 'dshus-control-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-control', tabIndex: 0 },
           React.createElement(ControlsPanel, { api: api, control: control, ready: controlReady, error: controlError, onReload: loadControls, onSave: saveControls }),
@@ -2845,7 +3191,7 @@ window.__ModuleLoader__.load({
      * Registering the seat is guarded by typeof checks, so a host that
      * provides none of these still runs the usage page normally.
      */
-    var inject = ['slots', 'modelDirectories', 'sessions', 'remote', 'remote.session', 'timer']
+    var inject = ['slots', 'locale', 'modelDirectories', 'sessions', 'remote', 'remote.session', 'timer']
 
     /* ------------------------------------------------------------------ */
     /* Advanced model selector — optional rs2 slider seat (高级模型选择器)  */
@@ -3129,13 +3475,13 @@ window.__ModuleLoader__.load({
     function seatEffortZh(id, name) {
       if (id !== undefined) {
         var key = String(id).toLowerCase()
-        if (SEAT_EFFORT_ZH[key]) return SEAT_EFFORT_ZH[key]
+        if (SEAT_EFFORT_ZH[key]) return t(SEAT_EFFORT_ZH[key])
       }
       if (name) {
         var key2 = String(name).toLowerCase()
-        if (SEAT_EFFORT_ZH[key2]) return SEAT_EFFORT_ZH[key2]
+        if (SEAT_EFFORT_ZH[key2]) return t(SEAT_EFFORT_ZH[key2])
       }
-      return name ? String(name) : (id === undefined ? '自动' : String(id))
+      return name ? String(name) : (id === undefined ? t('自动') : String(id))
     }
 
     function seatEffortStops(reasoning) {
@@ -3143,7 +3489,7 @@ window.__ModuleLoader__.load({
       // Keep the selectable unspecified effort even when an adapter reports
       // the current selection as a concrete effort.
       if (reasoning.defaultEffort === undefined) {
-        stops.push({ id: undefined, label: '自动' })
+        stops.push({ id: undefined, label: t('自动') })
       }
       for (var i = 0; i < reasoning.efforts.length; i++) {
         stops.push({ id: reasoning.efforts[i].id, label: seatEffortZh(reasoning.efforts[i].id, reasoning.efforts[i].name) })
@@ -3216,7 +3562,7 @@ window.__ModuleLoader__.load({
         ref: trackRef,
         className: 'rs2-track' + (isMax ? ' rs2-max' : ''),
         role: 'slider',
-        'aria-label': '推理强度',
+        'aria-label': t('推理强度'),
         'aria-valuemin': 0,
         'aria-valuemax': max,
         'aria-valuenow': value,
@@ -3249,6 +3595,7 @@ window.__ModuleLoader__.load({
      * { available, store, load, select }.
      */
     function ModelSeat(props) {
+      useLocaleRevision()
       var store = props.store
       var state = React.useSyncExternalStore(
         function (onChange) { return store ? store.subscribe(onChange) : function () {} },
@@ -3342,7 +3689,7 @@ window.__ModuleLoader__.load({
       var effLabel
       if (reasoning) {
         var eff = current.reasoningEffort !== undefined ? current.reasoningEffort : reasoning.defaultEffort
-        effLabel = eff === undefined ? '自动' : seatEffortZh(eff, (reasoning.efforts.find(function (x) { return x.id === eff }) || {}).name || eff)
+        effLabel = eff === undefined ? t('自动') : seatEffortZh(eff, (reasoning.efforts.find(function (x) { return x.id === eff }) || {}).name || eff)
       }
       function commitSelection(selection) {
         selectingRef.current = true
@@ -3390,9 +3737,9 @@ window.__ModuleLoader__.load({
       var body
       if (mode === 'models') {
         body = React.createElement(React.Fragment, null,
-          React.createElement('button', { type: 'button', className: 'rs2-back', onClick: function () { setMode('advanced') } }, '‹ 模型'),
+          React.createElement('button', { type: 'button', className: 'rs2-back', onClick: function () { setMode('advanced') } }, t('‹ 模型')),
           React.createElement('div', { className: 'rs2-list', ref: listRef },
-            groups.length === 0 ? React.createElement('div', { className: 'rs2-grouptitle' }, state.status === 'error' ? '模型目录加载失败' : '加载中…') : null,
+            groups.length === 0 ? React.createElement('div', { className: 'rs2-grouptitle' }, state.status === 'error' ? t('模型目录加载失败') : t('加载中…')) : null,
             groups.map(function (group) {
               return React.createElement('div', { key: group.id },
                 React.createElement('div', { className: 'rs2-grouptitle' }, group.name || group.id),
@@ -3417,7 +3764,7 @@ window.__ModuleLoader__.load({
         body = React.createElement(React.Fragment, null,
           React.createElement('div', { className: 'rs2-advhead' },
             React.createElement('button', { type: 'button', className: 'rs2-modeljump', onClick: function () { setMode('models') } },
-              React.createElement('span', { className: 'rs2-modeljump-name' }, current ? displayName : '选择模型'),
+              React.createElement('span', { className: 'rs2-modeljump-name' }, current ? displayName : t('选择模型')),
               React.createElement(SeatChevron, { open: false })),
             React.createElement('div', { className: 'rs2-curlevel' + (stops.length > 1 && value === stops.length - 1 ? ' rs2-curlevel-max' : '') }, (stops[value] || {}).label || effLabel)),
           React.createElement('div', { className: 'rs2-sliderbox' },
@@ -3448,7 +3795,7 @@ window.__ModuleLoader__.load({
           // row toggles the two display variables defined above, so this icon
           // appears only when the composer cannot fit the text.
           React.createElement('span', { className: 'rs2-trigger-icon', 'aria-hidden': true }, React.createElement(SeatDataIcon, null)),
-          React.createElement('span', { className: 'rs2-trigger-name' }, current ? displayName : '选择模型'),
+          React.createElement('span', { className: 'rs2-trigger-name' }, current ? displayName : t('选择模型')),
           reasoning ? React.createElement('span', { className: 'rs2-trigger-effort' }, effLabel) : null,
           React.createElement(SeatChevron, { open: open })),
         open && React.createElement('div', { className: 'rs2-menu' }, body))
@@ -3669,6 +4016,18 @@ window.__ModuleLoader__.load({
         console.warn('[dsh-usage-stats] slots service unavailable')
         return
       }
+      var hostLocale = ctx.get('locale')
+      if (hostLocale && typeof hostLocale.register === 'function' && typeof hostLocale.bind === 'function') {
+        var dictionaries = { zh: {}, en: {}, ja: {} }
+        Object.keys(messages).forEach(function (key) {
+          dictionaries.zh[key] = key
+          dictionaries.en[key] = messages[key][0]
+          dictionaries.ja[key] = messages[key][1]
+        })
+        ctx.effect(function () { return hostLocale.register(SECTION_ID, dictionaries) }, 'dsh-usage-stats: translations')
+        localeService = hostLocale
+        translate = hostLocale.bind(SECTION_ID)
+      }
       var api = new UsageApi()
       setModelSeatSync(function (enabled) { return syncModelSeat(ctx, enabled) })
       // A cached true avoids showing the official seat while the controls
@@ -3685,7 +4044,8 @@ window.__ModuleLoader__.load({
                 name: 'settings.section',
                 id: SECTION_ID,
                 order: 32,
-                label: function () { return '用量统计' },
+                locale: SECTION_ID,
+                label: function () { return t('用量统计') },
               },
               function (slotProps) {
                 return React.createElement(UsageStatsSection, { api: api, intl: (slotProps && slotProps.intl !== undefined) ? slotProps.intl : true })

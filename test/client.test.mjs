@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 
 const desktopBridge = { protocolVersion: 1, deviceInfo() {} }
+const fallbackTranslation = (text, params) => text.replace(/\{(\w+)\}/g, (match, key) => params && key in params ? String(params[key]) : match)
 
 function walk(node, predicate) {
   if (Array.isArray(node)) {
@@ -430,7 +431,7 @@ test('the template editor offers a copyable AI prompt and keeps the cost warning
   const start = source.indexOf('function buildTemplatePrompt(')
   const end = source.indexOf('\n    }', start)
   assert.ok(start >= 0 && end > start, 'the prompt builder must exist')
-  const buildTemplatePrompt = new Function(source.slice(start, end + 6) + '; return buildTemplatePrompt')()
+  const buildTemplatePrompt = new Function('t', source.slice(start, end + 6) + '; return buildTemplatePrompt')(fallbackTranslation)
 
   // The prompt has to describe the schema the host actually validates, or the
   // assistant produces a template that the 测试查询 button then rejects.
@@ -458,7 +459,8 @@ test('the template editor offers a copyable AI prompt and keeps the cost warning
 
   // The warning must sit after the buttons, since those are what spend balance.
   // Scope to the template block: both labels appear elsewhere in the file first.
-  const block = source.slice(source.indexOf('dshus-query-template'), source.indexOf('已启用的自定义查询'))
+  const templateStart = source.indexOf('dshus-query-template')
+  const block = source.slice(templateStart, source.indexOf('已启用的自定义查询', templateStart))
   const testButton = block.indexOf("'测试查询'")
   const confirmButton = block.indexOf("'确认并显示'")
   const costNote = block.indexOf('dshus-cost-note')
@@ -1415,8 +1417,9 @@ test('usage page keeps chart controls independent and shows only connected panel
   page = render(section.type, section.props)
   assert.equal(walk(page, (node) => node.props && node.props.id === 'dshus-tab-usage').props['aria-selected'], true)
   assert.equal(walk(page, (node) => node.type && node.type.name === 'OpencodePanel'), null)
-  assert.equal(walk(page, (node) => node.type && node.type.name === 'ProviderQuotasPanel'), null)
-  assert.equal(walk(page, (node) => node.type && node.type.name === 'WorkBuddyPanel'), null)
+  assert.equal(walk(page, (node) => node.props?.id === 'dshus-quota-panel').props.hidden, true)
+  assert.equal(walk(page, (node) => node.type && node.type.name === 'ProviderQuotasPanel').props.active, false)
+  assert.equal(walk(page, (node) => node.type && node.type.name === 'WorkBuddyPanel').props.active, false)
   assert.equal(walk(page, (node) => node.type && node.type.name === 'Heatmap').props.mode, 'daily')
   const barsElement = walk(page, (node) => node.type && node.type.name === 'Bars')
   hookValues = []
@@ -1633,7 +1636,7 @@ test('the slider keeps auto as the lowest stop when a model has no default effor
   const at = source.indexOf('function seatEffortStops(')
   const end = source.indexOf('\n    }', at)
   assert.ok(at >= 0 && end > at)
-  const stopsFor = new Function('seatEffortZh', source.slice(at, end + 6) + '; return seatEffortStops')((id) => id)
+  const stopsFor = new Function('seatEffortZh', 't', source.slice(at, end + 6) + '; return seatEffortStops')((id) => id, fallbackTranslation)
   const reasoning = { efforts: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }] }
 
   assert.deepEqual(stopsFor(reasoning).map((stop) => stop.id), [undefined, 'low', 'medium', 'high'])
@@ -1650,7 +1653,7 @@ test('ordinary efforts keep their dots while the highest effort releases them an
     createElement(type, props, ...children) { return { type, props: { ...props, children } } },
     useRef(value) { return { current: value } },
   }
-  const SeatSlider = new Function('React', 'seatPrand', source.slice(start, end) + '; return SeatSlider')(React, (i, salt) => ((i * 37 + salt * 13) % 97) / 97)
+  const SeatSlider = new Function('React', 'seatPrand', 't', source.slice(start, end) + '; return SeatSlider')(React, (i, salt) => ((i * 37 + salt * 13) % 97) / 97, fallbackTranslation)
   const render = (value) => SeatSlider({ count: 5, value, onPreview() {}, onCommit() {} })
   const marks = (tree) => walkAll(tree, (node) => node.props?.className?.split(' ').includes('rs2-tick'))
   const shells = (tree) => walkAll(tree, (node) => node.props?.className === 'rs2-tick-shell')
