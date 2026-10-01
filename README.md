@@ -1,91 +1,158 @@
-# dsh-usage-stats
+<p align="center">
+  <img src="screenshots/icon.svg" alt="dsh-usage-stats" width="80" height="80">
+</p>
 
-[English](README.md) | [中文](README.zh-CN.md)
+<h1 align="center">dsh-usage-stats</h1>
 
-A token usage and quota dashboard for [DeepSeek Harness Desktop](https://github.com/deepseek-ai/deepseek-harness). Open **Settings → 用量统计** to view usage history, connected account quotas, and query controls.
+<p align="center">
+  <strong>See your token usage, balances, and quotas inside DSH.</strong><br>
+  A local usage dashboard for <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness Desktop</a>.
+</p>
 
-The plugin loads through an external bundle patch without DSH source changes. It supports the desktop profile and Electron main window.
+<p align="center">
+  <a href="#installation"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH Desktop"></a>
+  <img src="https://img.shields.io/badge/version-0.1.0-64748b?style=flat-square" alt="Version 0.1.0">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 license"></a>
+</p>
 
-## Screenshots
+<p align="center">
+  English · <a href="README.zh-CN.md">简体中文</a><br>
+  <a href="#features">Features</a> ·
+  <a href="#installation">Installation</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#faq">FAQ</a> ·
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/issues">Feedback</a>
+</p>
 
-### Usage · 用量
+<p align="center">
+  <a href="screenshots/usage.png"><img src="screenshots/usage.png" alt="Usage dashboard with totals, hourly tokens and a calendar heatmap" width="800"></a>
+</p>
 
-Today's tokens, active days, lifetime tokens, hourly tokens/calls, and a daily or weekly heatmap.
-
-![Usage overview, hourly chart and heatmap](screenshots/usage.png)
-
-### Quotas · 配额
-
-Provider balances, subscription windows, and optional WorkBuddy credits. Visible cards depend on your configured providers and successful queries.
-
-![Provider balances and WorkBuddy credits](screenshots/quotas.png)
-
-### Controls · 控制
-
-Automatic quota refresh, interval, model details, advanced model selector, and custom queries.
-
-![Refresh controls and custom quota queries](screenshots/controls.png)
+<p align="center"><sub>Today's usage, lifetime totals, and the patterns behind them.</sub></p>
 
 ## Features
 
-- Daily/weekly heatmap with paging; today's 24-hour token chart and call-count line.
-- Model distribution and details; historical filters for 7 / 30 / 365 days or all history. Overview cards retain their day/lifetime meanings.
-- Compact token totals with exact values in tooltips and integer call counts. Statistics follow the desktop system timezone.
-- Built-in quota readers for Claude, DeepSeek, StepFun, Codex, Copilot, OpenRouter, Moonshot, Kimi Coding, MiniMax, Z.AI / GLM Coding, Alibaba Cloud Token Plan China, xAI, and OpenCode Go. Availability depends on credentials, permissions and upstream APIs.
-- Separate WorkBuddy / WorkBuddy AI panels when the optional `dsh-workbuddy-connect` adapter is enabled. Other features do not require it.
-- Custom JSON quota queries: select a configured provider, edit, test, then confirm. Confirmed queries override the provider's built-in reader; removal restores it.
-- Optional model/reasoning popup with an effort slider. Turning it off restores DSH's official selector immediately.
-- DSH light/dark themes, responsive charts, keyboard-operable provider picker, and pinned tabs.
+| Tab | What you can do |
+| --- | --- |
+| **Usage · 用量** | View today's and lifetime tokens, active days, hourly calls, a daily/weekly heatmap, and model breakdowns. |
+| **Quotas · 配额** | Check configured account balances, subscription windows, and optional WorkBuddy / WorkBuddy AI credits. |
+| **Controls · 控制** | Choose a refresh interval, configure custom quota queries, and enable model details or the advanced model selector. |
 
-Automatic quota refresh and the advanced selector are **off by default**; model details are **on by default**. Intervals are 10 minutes, 1 hour (default), 5 hours, or daily. Automatic refresh requires acknowledging possible query costs and continues while settings are closed. Normal quota-page reads use cached data; refresh buttons request new data.
+- **Follow your usage:** filter historical charts by 7 / 30 / 365 days or all history, and compare providers and models.
+- **Keep quotas together:** use built-in readers or map a custom provider's JSON response.
+- **Refresh on your terms:** fetch manually or enable scheduled queries. Automatic quota refresh is off by default.
+- **Choose models faster:** opt into a model/reasoning panel with an effort slider; disabling it restores the official selector.
+- **Fit the desktop:** light/dark themes, responsive charts, pinned tabs, and a keyboard-operable provider picker.
 
-## Install
+<details>
+<summary><strong>View the Quotas and Controls screenshots</strong></summary>
 
-You need DSH Desktop and Node.js for the build commands. Development is verified with Node.js 24. SQLite fingerprints require `node:sqlite` in the host runtime; otherwise sessions are reread.
+### Quotas
+
+![Provider balances and WorkBuddy credits](screenshots/quotas.png)
+
+### Controls
+
+![Refresh settings and custom quota queries](screenshots/controls.png)
+
+</details>
+
+## Installation
+
+**Requirements:** DSH Desktop, Git, Node.js, and pnpm. The commands below are verified on Windows with Node.js 24.
+
+### 1. Get the plugin
 
 ```sh
 git clone https://github.com/Jockjrop/dsh-usage-stats.git
 cd dsh-usage-stats
 npm ci
 npm run build
-npm test
 ```
 
-Install the package into the **desktop** profile. The current DSH CLI reserves that profile for Electron, so `dsh plugin --profile desktop` cannot manage it.
+Keep the clone in a permanent location; DSH will link to it.
 
-Manual installation on Windows:
+### 2. Link it to DSH Desktop
 
-1. Fully exit DSH Desktop. Keep the clone in a permanent location.
-2. Back up `<DSH_HOME>/profiles/desktop/package.json`. Add `dsh-usage-stats` to its existing dependencies as `link:<absolute-clone-directory>`, and append `dsh-usage-stats` to its existing `dsh.profile.bundles` array. Preserve other entries; use forward slashes in the link.
-3. Run `pnpm install` in that desktop profile directory.
-4. Start DSH Desktop and open **Settings → 用量统计**.
+Fully exit DSH Desktop and back up its profile's `package.json`. Then run this in **PowerShell from the cloned directory**:
 
-This fragment shows the two entries to merge. Replace the link placeholder with your clone path; do not overwrite the existing profile:
-
-```json
-{
-  "dependencies": {
-    "dsh-usage-stats": "link:<absolute-clone-directory>"
-  },
-  "dsh": {
-    "profile": {
-      "bundles": ["dsh-usage-stats"]
-    }
-  }
-}
+```powershell
+$pluginDir = (Get-Location).Path.Replace('\', '/')
+$dshDataDir = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $env:USERPROFILE '.dsh' }
+$profileDir = Join-Path $dshDataDir 'profiles/desktop'
+pnpm --dir $profileDir add "link:$pluginDir"
 ```
 
-`DSH_HOME` is DSH's data directory; when unset, the plugin uses `.dsh` under the current user's home. The clone can live anywhere and has no machine-specific absolute paths.
+Open `$profileDir/package.json` and append `"dsh-usage-stats"` to its existing `dsh.profile.bundles` array. Keep the other bundle entries.
 
-To update, pull this repository, run `npm ci`, `npm run build` and `npm test`, then restart DSH Desktop. To uninstall, exit the app, remove only this dependency and bundle entry, run `pnpm install` in the desktop profile, and restart.
+> DSH Desktop manages its own profile. The CLI command `dsh plugin --profile desktop` cannot be used for this installation.
 
-## Quota queries
+### 3. Open the dashboard
 
-A configured balance may show **未查询** before its first query. Missing permissions, expired logins, unavailable endpoints or invalid responses can hide a card or mark it unavailable. Panels report API data; token totals are not converted into estimated account charges.
+Start DSH Desktop and open **Settings → 用量统计**.
 
-Open **控制 → 配额查询**, select a provider, edit the template, **test**, then **confirm**. Changes invalidate the test; successful tests expire after 15 minutes.
+Usage statistics load from your local DSH sessions. Open **配额** and click a refresh button to query an account.
 
-Example for an API returning `{ "data": { "balance": 12.34 } }`:
+<details>
+<summary>Updating or uninstalling</summary>
+
+**Update:** fully exit DSH Desktop, then run these commands in the clone and restart the app:
+
+```sh
+git pull --ff-only
+npm ci
+npm run build
+```
+
+**Uninstall:** exit DSH Desktop, remove only the `dsh-usage-stats` dependency and bundle entry from the desktop profile, run `pnpm install` in that profile, then restart the app.
+
+</details>
+
+## Usage
+
+**用量** shows how much you use and when. Hover a chart or heatmap cell for its breakdown. The overview cards retain their today/lifetime meanings when you change a historical filter.
+
+**配额** shows data returned by connected platforms. Configured balances may show **未查询** until their first query; available cards depend on credentials and account permissions.
+
+**控制** lets you change display and refresh settings:
+
+| Setting | Default |
+| --- | --- |
+| Automatic quota refresh | Off |
+| Refresh interval | 1 hour; also supports 10 minutes, 5 hours, or daily |
+| Model details | On |
+| Advanced model selector | Off |
+
+Enabling automatic queries asks you to acknowledge possible query costs. The schedule continues while the settings page is closed. Opening the quota page normally reads cached results.
+
+<details>
+<summary><strong>Supported providers and credentials</strong></summary>
+
+Built-in readers cover Claude, DeepSeek, StepFun, Codex, GitHub Copilot, OpenRouter, Moonshot China/global, Kimi Coding, MiniMax China/global, Z.AI, GLM Coding, Alibaba Cloud Token Plan China, xAI, and OpenCode Go.
+
+The corresponding provider must be configured in DSH. Supported OAuth readers use existing unexpired grants; this plugin does not refresh or modify logins.
+
+| Optional reader | Host credential references |
+| --- | --- |
+| OpenRouter account credits | `OPENROUTER_MANAGEMENT_API_KEY` |
+| xAI prepaid balance | `XAI_MANAGEMENT_API_KEY`, `XAI_TEAM_ID` |
+| Alibaba Cloud Token Plan China | `ALIBABA_CLOUD_ACCESS_KEY_ID`, `ALIBABA_CLOUD_ACCESS_KEY_SECRET`; optional `ALIBABA_CLOUD_SECURITY_TOKEN` |
+
+OpenCode Go uses only its own configured DSH credential. Zen has no built-in wallet balance reader, but supports custom queries. Alibaba Cloud's international Token Plan is not queried.
+
+WorkBuddy and WorkBuddy AI require the optional `dsh-workbuddy-connect` adapter. Their quotas are cached and refreshed separately.
+
+</details>
+
+<details>
+<summary><strong>Set up a custom quota query</strong></summary>
+
+1. Open **控制 → 配额查询** and select an existing provider.
+2. Enter the query URL and response mapping.
+3. Click **测试** and check the parsed result.
+4. Confirm the query to show it in **配额**.
+
+For an endpoint returning `{ "data": { "balance": 12.34 } }`:
 
 ```json
 {
@@ -95,84 +162,104 @@ Example for an API returning `{ "data": { "balance": 12.34 } }`:
   "headers": { "accept": "application/json" },
   "response": {
     "metrics": [
-      { "label": "Account balance", "kind": "amount", "remaining": "data.balance", "currency": "USD" }
+      {
+        "label": "Account balance",
+        "kind": "amount",
+        "remaining": "data.balance",
+        "currency": "USD"
+      }
     ]
   }
 }
 ```
 
-Replace the example URL with a working endpoint. Templates support GET/POST, JSON bodies, amount/window metrics, and paths such as `data.items[0].balance`. Windows accept `remainingPercent`, `usedPercent`, or `total` with `remaining` / `used`; `response.rows` selects an array. Use `auth: "none"` for unauthenticated endpoints. A prefilled `/balance` is an editable example for an unknown gateway.
+Replace the example URL with the provider's working endpoint. `auth: "provider"` uses its configured DSH credential; authenticated URLs must share the configured or official quota origin.
 
-Optional host credential references:
+Templates support GET/POST, JSON bodies, amount/window metrics, and paths such as `data.items[0].balance`. Window metrics accept percentage fields or `total` with `remaining`/`used`; `response.rows` selects an array. Use `auth: "none"` for unauthenticated endpoints.
 
-| Reader | Credentials |
-| --- | --- |
-| OpenRouter account credits | `OPENROUTER_MANAGEMENT_API_KEY` |
-| xAI prepaid balance | `XAI_MANAGEMENT_API_KEY`, `XAI_TEAM_ID` |
-| Alibaba Cloud Token Plan China | `ALIBABA_CLOUD_ACCESS_KEY_ID`, `ALIBABA_CLOUD_ACCESS_KEY_SECRET`; optional `ALIBABA_CLOUD_SECURITY_TOKEN` |
+Editing invalidates the test; successful tests expire after 15 minutes. A confirmed query overrides the built-in reader for that provider. Removing it restores the built-in reader.
 
-Other readers use the corresponding DSH provider credential or supported existing OAuth grant. Claude, Codex and Copilot do not refresh or modify logins. OpenCode Go uses only its own configured DSH credential; Zen has no built-in wallet reader but accepts custom queries. Alibaba Cloud's international Token Plan is not queried.
+</details>
 
-## Privacy and local storage
+## Privacy
 
-- Usage is aggregated on the host. The corpus stores counts, model identifiers and compact usage timestamps, without conversation text.
-- Credentials are resolved on the host and used for the relevant quota endpoint. API keys, OAuth tokens and raw upstream responses are not returned to the renderer.
-- Authenticated custom queries must match the provider's configured origin or official quota origin. Templates reject credential-bearing URL parameters, authentication headers and common credential fields in bodies. Requests do not follow redirects; custom HTTP queries have an 8-second timeout and a 1 MB response limit.
-- Local APIs check socket address, Host, Origin and cross-site requests. Responses use `Cache-Control: no-store`; unexpected host exceptions return generic errors.
-- WorkBuddy adapters use the active host port and retain quota display fields.
-- No analytics or telemetry endpoint is included. Quota tests, manual refreshes and automatic refreshes after opt-in access the relevant quota services.
+Usage aggregation runs locally. The plugin saves counts, model identifiers and usage timestamps, without conversation text. Credentials are resolved on the host and are not returned to the renderer.
 
-| File under `<DSH_HOME>/storages/` | Contents |
+Quota tests and refreshes contact the selected platform. There is no analytics or telemetry endpoint.
+
+<details>
+<summary>Storage and request safeguards</summary>
+
+Both files live under `<DSH_HOME>/storages/`, or the current user's `.dsh/storages/` when `DSH_HOME` is unset:
+
+| File | Contents |
 | --- | --- |
 | `usage-stats-corpus.json` | Per-session usage contributions |
 | `usage-stats-controls.json` | Controls, custom templates and quota snapshots |
 
-These files contain private usage/account information, with paths resolved at runtime. Runtime data, environment files, credentials, databases, logs, backups and previews are excluded from Git. The npm package uses an explicit file allowlist. Supplied showcase screenshots contain the figures displayed at capture time.
+These are private local files, excluded from Git along with credentials, environment files, databases, logs, backups and previews.
 
-The loopback API assumes a trusted local host; another process under your account can access local data.
+The API checks loopback addresses, Host, Origin and cross-site requests, sends `Cache-Control: no-store`, and hides unexpected host exception details. Another process under your account can access local data.
 
-## Development
+Custom queries reject authentication headers and common credential fields in templates, require the appropriate origin for provider authentication, and do not follow redirects. They have an 8-second timeout and a 1 MB response limit. WorkBuddy adapters retain quota display fields only.
 
-Edit **`src/`**. `npm run build` synchronizes modules to `lib/` and root compatibility copies; package exports load `lib/`.
+</details>
 
-```text
-src/                  canonical host, client, quota readers and controls
-lib/                  generated package entry points
-test/                 isolated behavior, privacy and consistency tests
-test/fixtures/        portable DSH theme alias contract
-scripts/              build and synthetic heatmap checks
-screenshots/          usage, quotas and controls showcase
-cordis.patch.yml       desktop-only bundle registration
-```
+## FAQ
 
-Tests use synthetic data and temporary DSH homes, with no live credentials, paid calls or installed DSH instance. The theme test uses the checked-in contract; set `DSH_THEME_CLIENT` to validate an installed theme client file.
+**Does it work in DSH Web?**
+
+This version loads only in the desktop profile and Electron main window.
+
+**Why is a quota card missing or unavailable?**
+
+Check that the provider is configured, its credential is usable, and the account supports the quota API. A model API key may not have billing permissions.
+
+**Are displayed token totals a bill?**
+
+No. Usage totals sum input, output, cache-read and cache-write tokens. Account balances come from platform APIs.
+
+**Will it change DSH's files?**
+
+It registers an external bundle. The optional model selector takes over a UI slot while enabled; disabling it restores the official selector without changing DSH source files.
+
+## Contributing
+
+Bug reports and pull requests are welcome. For a bug, include your DSH version, plugin version, steps to reproduce, and a screenshot with private account details removed.
+
+<details>
+<summary><strong>Development and local API</strong></summary>
+
+Edit `src/`. `npm run build` synchronizes modules to `lib/` and root compatibility copies; package exports load `lib/`.
 
 ```sh
+npm run build
+npm test
 node scripts/render-heatmap-check.mjs
 node scripts/check-heat-tip-placement.mjs
 npm run preview:heatmap
 npm pack --dry-run
 ```
 
-The preview writes an ignored `preview-heatmap.html`. Consistency tests ensure source, package and compatibility copies match.
+Tests use synthetic data and temporary DSH homes; no live credentials or paid calls are required. Set `DSH_THEME_CLIENT` to validate an installed theme client instead of the checked-in alias contract. The synthetic preview writes an ignored `preview-heatmap.html`.
 
-`platform: "web"` is DSH Desktop's renderer transport. Both plugin halves require the desktop profile; the client also requires the native `dshDesktop.deviceInfo` bridge. Ordinary web/browser profiles do not start this plugin.
-
-## Local API
-
-Routes use the `/api/dsh-usage-stats/` prefix and loopback trust checks.
+Routes use the `/api/dsh-usage-stats/` prefix:
 
 | Route | Method | Purpose |
 | --- | --- | --- |
 | `stats` | GET | Usage; `days`, `tz`, `model`, optional `fresh=1` |
 | `provider-quotas` | GET | Cached quotas; `fresh=1` refreshes |
-| `workbuddy`, `workbuddy-ai` | GET | Optional adapter caches; support `fresh=1` |
+| `workbuddy`, `workbuddy-ai` | GET | Adapter caches; support `fresh=1` |
 | `controls` | GET / POST | Read/update controls; writes require JSON |
 | `quota-providers` | GET | Configured providers and credential-free templates |
 | `quota-test` | POST | Test a template and return an expiring confirmation ID |
 
-`stats.billed` is input + output + cache-read + cache-write tokens. The corpus refreshes every 30 seconds; requests wait up to 1500 ms and can return `stale: true` / `partial: true`. Timezone changes re-bucket stored events; old retained hourly aggregates may be approximate at fractional-hour boundaries.
+The corpus refreshes every 30 seconds. Requests wait up to 1500 ms and may return `stale: true`/`partial: true`. SQLite fingerprints require `node:sqlite`; otherwise sessions are reread. Timezone changes re-bucket stored events, with possible approximation for old hourly-only history at fractional-hour boundaries.
+
+The `platform: "web"` declaration is DSH Desktop's renderer transport; both halves still require the desktop profile and the renderer's native bridge.
+
+</details>
 
 ## License
 
-[Apache-2.0](LICENSE)
+[Apache-2.0](LICENSE).
