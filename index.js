@@ -29,6 +29,8 @@ import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { createProviderQuotaReader } from './provider-quotas.js'
 import { createQuotaControls, workBuddyQuotaSource, QuotaControlError } from './quota-controls.js'
+import { captureModelEvidence, normalizeEvidence, analyzeModelEvidence, createModelMatchRunner, ModelMatchError, modelSelection } from './model-match.js'
+import { createModelTestHistory } from './model-test-history.js'
 
 /** Stable cordis plugin name (row id `usage-stats`). */
 export const name = 'usage-stats'
@@ -46,6 +48,8 @@ const MAX_WAIT_MS = 1500
 const SCAN_CONCURRENCY = 6
 /** Persisted corpus file name under <DSH_HOME>/storages. */
 const STORE_FILE = 'usage-stats-corpus.json'
+/** Rescan live logs when persisted speed timing fields change. */
+const SPEED_VERSION = 2
 
 /** Fallback for requests without a desktop timezone. */
 const SYSTEM_TZ = new Date().getTimezoneOffset()
@@ -220,6 +224,38 @@ function putBucket(map, key, usage) {
   addUsage(b, usage)
 }
 
+/** Mirror dsh-llm's assistantStreamFirstTokenTime for packed and raw records.
+ * Empty deltas do not start decoding; a tool name does. Never retain text. */
+function firstOutputTime(stream) {
+  if (!Array.isArray(stream)) return null
+  for (const item of stream) {
+    if (!item) continue
+    if (item.type === 'chunk') {
+      const chunk = item.chunk
+      const hasToken = chunk && (['text-delta', 'reasoning-delta'].includes(chunk.type)
+        ? typeof chunk.text === 'string' && chunk.text !== ''
+        : chunk.type === 'tool-call-delta' && (typeof chunk.argumentsDelta === 'string' && chunk.argumentsDelta !== '' || chunk.name !== undefined))
+      if (hasToken) return Number.isFinite(item.time) && item.time > 0 ? item.time : null
+      continue
+    }
+    if (!['text-chunks', 'reasoning-chunks', 'tool-call-chunks'].includes(item.type)) continue
+    const parts = item.type === 'tool-call-chunks' ? item.args : item.texts
+    if (!Array.isArray(parts) || !parts.length) continue
+    if (!Number.isFinite(item.time0) || item.time0 <= 0 || !Array.isArray(item.dt) || item.dt.length !== parts.length - 1) return null
+    let time = item.time0
+    if (item.type === 'tool-call-chunks' && item.name !== undefined) return time
+    for (let i = 0; i < parts.length; i++) {
+      if (i > 0) {
+        const delta = item.dt[i - 1]
+        if (!Number.isFinite(delta) || delta < 0) return null
+        time += delta
+      }
+      if (typeof parts[i] === 'string' && parts[i] !== '') return Number.isFinite(time) ? time : null
+    }
+  }
+  return null
+}
+
 /**
  * Fold one session's events into a per-session contribution keyed by local
  * date (day/week), date|modelKey, and modelKey. Uses plain object maps so the
@@ -227,8 +263,14 @@ function putBucket(map, key, usage) {
  * @param events - the session's raw event log.
  * @param tz - UTC offset (minutes) used for day/week keys.
  */
-export function scanSessionEvents(events, tz) {
+export function scanSessionEvents(events, tz, inheritedEventCount = 0) {
   const s = {
+    detailsVersion: 1,
+    ownUsageVersion: 1,
+    speedVersion: SPEED_VERSION,
+    taskVersion: 1,
+    longestTaskMs: null,
+    evidence: captureModelEvidence(events, inheritedEventCount),
     messages: 0,
     withUsage: false,
     totals: emptyBucket(),
@@ -240,9 +282,47 @@ export function scanSessionEvents(events, tz) {
     byHourModel: Object.create(null),
     byModel: Object.create(null),
     usageEvents: [],
+    ttftEvents: [],
   }
-  for (const ev of events || []) {
-    if (!ev || ev.type !== 'assistant/message') continue
+  let openStep = null
+  const turns = new Map()
+  const inherited = Number.isInteger(inheritedEventCount) && inheritedEventCount > 0 ? inheritedEventCount : 0
+  for (const [index, ev] of (events || []).entries()) {
+    // A fork borrows history; only its child-owned events incurred new spend.
+    if (!ev || index < inherited) continue
+    if (ev.type === 'turn/start' && ev.data?.turn !== undefined && Number.isFinite(ev.time) && ev.time > 0) {
+      // One processing round; idle gaps between user messages never enter it.
+      if (!turns.has(ev.data.turn)) turns.set(ev.data.turn, ev.time)
+    }
+    if (ev.type === 'turn/end') {
+      const start = turns.get(ev.data?.turn)
+      if (Number.isFinite(start) && Number.isFinite(ev.time) && ev.time >= start) s.longestTaskMs = Math.max(s.longestTaskMs ?? 0, ev.time - start)
+      turns.delete(ev.data?.turn)
+    }
+    if (ev.type === 'step/start') {
+      openStep = { turn: ev.data?.turn, step: ev.data?.step, startTime: ev.time, firstTokenTime: null }
+      continue
+    }
+    if (ev.type === 'step/end' || ev.type === 'turn/end') { openStep = null; continue }
+    const sameStep = openStep && openStep.turn === ev.data?.turn && openStep.step === ev.data?.step
+    if (ev.type === 'assistant/attempt') {
+      if (sameStep && openStep.firstTokenTime === null) openStep.firstTokenTime = firstOutputTime(ev.data?.stream)
+      continue
+    }
+    if (ev.type !== 'assistant/message') continue
+    // DSH's sessionStats projection decodes from the first non-empty token to
+    // the assembled message, retaining an earlier attempt's first token on retry.
+    const firstToken = sameStep ? (openStep.firstTokenTime ?? firstOutputTime(ev.data?.stream)) : null
+    const hasTiming = sameStep && Number.isFinite(openStep.startTime) && Number.isFinite(ev.time) && ev.time > 0
+      && firstToken !== null && firstToken >= openStep.startTime && firstToken <= ev.time
+    const outputMs = hasTiming && Number.isFinite(ev.data?.usage?.outputTokens) && ev.data.usage.outputTokens >= 0 ? ev.time - firstToken : 0
+    const source = ev.data?.message?.source
+    const provider = source && source.provider ? String(source.provider) : 'unknown'
+    const model = source && source.model ? String(source.model) : 'unknown'
+    // DSH counts TTFT for completed, timed messages even without token usage.
+    // Keep these samples separate from TPS and never retain stream content.
+    if (hasTiming) s.ttftEvents.push([ev.time, provider, model, firstToken - openStep.startTime])
+    if (sameStep) openStep = null
     const usage = ev.data && ev.data.usage
     if (!usage) continue
     const time = ev.time
@@ -250,16 +330,13 @@ export function scanSessionEvents(events, tz) {
     s.withUsage = true
     s.messages += 1
 
-    const source = ev.data.message && ev.data.message.source
-    const provider = source && source.provider ? String(source.provider) : 'unknown'
-    const model = source && source.model ? String(source.model) : 'unknown'
     const modelKey = provider + '/' + model
 
     // Persist only the fields needed to re-bucket retained sessions exactly.
     s.usageEvents.push([time, provider, model,
       Number(usage.inputTokens) || 0, Number(usage.outputTokens) || 0,
       Number(usage.cacheReadTokens) || 0, Number(usage.cacheWriteTokens) || 0,
-      Number(usage.reasoningTokens) || 0])
+      Number(usage.reasoningTokens) || 0, outputMs])
 
     const dayKey = localDayKey(time, tz)
     const hour = localHourKey(time, tz)
@@ -334,6 +411,15 @@ function normalizeSession(s) {
   }
   void base
   const norm = {
+    detailsVersion: s.detailsVersion === 1 ? 1 : 0,
+    ownUsageVersion: s.ownUsageVersion === 1 ? 1 : 0,
+    speedVersion: s.speedVersion === SPEED_VERSION ? SPEED_VERSION : s.speedVersion === 1 ? 1 : 0,
+    taskVersion: s.taskVersion === 1 ? 1 : 0,
+    longestTaskMs: s.taskVersion === 1 && Number.isFinite(s.longestTaskMs) && s.longestTaskMs >= 0 ? s.longestTaskMs : null,
+    title: safeSessionText(s.title, 300),
+    cwd: safeSessionText(s.cwd, 1024),
+    createdAt: Number.isFinite(s.createdAt) ? s.createdAt : 0,
+    evidence: normalizeEvidence(s.evidence),
     fp: (s.fp && Number.isFinite(s.fp.size) && Number.isFinite(s.fp.mtimeMs)) ? { size: s.fp.size, mtimeMs: s.fp.mtimeMs } : null,
     retained: !!s.retained,
     syncedAt: Number.isFinite(s.syncedAt) ? s.syncedAt : 0,
@@ -347,7 +433,10 @@ function normalizeSession(s) {
     byWeekModel: s.byWeekModel && typeof s.byWeekModel === 'object' ? s.byWeekModel : {},
     byHourModel: s.byHourModel && typeof s.byHourModel === 'object' ? s.byHourModel : {},
     byModel: s.byModel && typeof s.byModel === 'object' ? s.byModel : {},
-    usageEvents: Array.isArray(s.usageEvents) ? s.usageEvents.filter((e) => Array.isArray(e) && e.length === 8 && Number.isFinite(e[0])) : null,
+    usageEvents: Array.isArray(s.usageEvents) ? s.usageEvents.filter((e) => Array.isArray(e) && (e.length === 8 || e.length === 9) && Number.isFinite(e[0])) : null,
+    ttftEvents: Array.isArray(s.ttftEvents) ? s.ttftEvents.filter((e) => Array.isArray(e) && e.length === 4
+      && Number.isFinite(e[0]) && e[0] > 0 && typeof e[1] === 'string' && typeof e[2] === 'string'
+      && Number.isFinite(e[3]) && e[3] >= 0) : [],
   }
   // Recompute per-session totals from day buckets if they are missing (older snapshots).
   if (!(s.totals && typeof s.totals === 'object' && 'billed' in s.totals)) {
@@ -488,7 +577,11 @@ function rekeyLegacySession(s, fromTz, toTz) {
       data: { message: { source: { provider: e[1], model: e[2] } },
         usage: { inputTokens: e[3], outputTokens: e[4], cacheReadTokens: e[5], cacheWriteTokens: e[6], reasoningTokens: e[7] } },
     }))
-    return { ...scanSessionEvents(events, toTz), fp: s.fp, retained: s.retained, syncedAt: s.syncedAt }
+    return { ...s, ...scanSessionEvents(events, toTz), detailsVersion: s.detailsVersion, evidence: s.evidence,
+      ownUsageVersion: s.ownUsageVersion,
+      speedVersion: s.speedVersion, usageEvents: s.usageEvents, ttftEvents: s.ttftEvents,
+      taskVersion: s.taskVersion, longestTaskMs: s.longestTaskMs,
+      fp: s.fp, retained: s.retained, syncedAt: s.syncedAt }
   }
 
   const next = {
@@ -577,7 +670,7 @@ export async function syncCorpus(ctx, reqTz, state) {
       toRead.push(id)
       continue
     }
-    if (prev === undefined) {
+    if (prev === undefined || prev.detailsVersion !== 1 || prev.ownUsageVersion !== 1 || prev.speedVersion !== SPEED_VERSION || prev.taskVersion !== 1) {
       toRead.push(id)
       continue
     }
@@ -593,7 +686,15 @@ export async function syncCorpus(ctx, reqTz, state) {
     await mapLimit(toRead, SCAN_CONCURRENCY, async (id) => {
       try {
         const snap = await query.readSession(id)
-        const contribution = scanSessionEvents(snap && snap.events ? snap.events : [], tz)
+        const contribution = scanSessionEvents(snap && snap.events ? snap.events : [], tz, snap?.inheritedEventCount)
+        contribution.evidence = captureModelEvidence(snap?.events || [], snap?.inheritedEventCount)
+        const header = snap?.header || snap?.session || records.find(rec => rec?.header?.id === id)?.header
+        contribution.cwd = safeSessionText(header?.cwd, 1024)
+        contribution.createdAt = Number.isFinite(header?.createdAt) ? header.createdAt : 0
+        contribution.title = ''
+        for (const event of snap?.events || []) {
+          if (event?.type === 'session/title') contribution.title = safeSessionText(event.data?.title, 300) || contribution.title
+        }
         contribution.fp = fps.get(id) || null
         contribution.syncedAt = Date.now()
         nextSessions[id] = contribution
@@ -618,11 +719,22 @@ export async function syncCorpus(ctx, reqTz, state) {
  * (windowed by `days`, optionally filtered to one `modelKey`). Pure and cheap:
  * O(number of distinct usage dates / models), no I/O.
  */
-export function foldResponse(state, days, modelKey, tz, now) {
+export function modelTestContribution(history, tz) {
+  const rows = history.usage().filter(r => r.time > 0 && r.selection)
+  const reported = rows.filter(r => r.usageReported)
+  const contribution = scanSessionEvents(reported.map(r => ({ type: 'assistant/message', time: r.time, data: { usage: r.usage, message: { source: r.selection } } })), tz)
+  contribution.audit = true
+  reported.forEach((r, i) => { contribution.usageEvents[i][8] = r.decodeMs > 0 && ['stop', 'max-tokens'].includes(r.stop) ? r.decodeMs : 0 })
+  contribution.ttftEvents = rows.filter(r => r.ttftMs !== null && ['stop', 'max-tokens'].includes(r.stop)).map(r => [r.time, r.selection.provider, r.selection.model, r.ttftMs])
+  return contribution
+}
+
+export function foldResponse(state, days, modelKey, tz, now, additional = []) {
   // syncCorpus has already re-keyed all contributions to the requested offset.
   const bucketTz = state.tz
   void tz
   const filterModel = modelKey
+  const contributions = [...Object.values(state.sessions), ...additional]
   const fromKey = (() => {
     if (!(days > 0)) return null
     const fromMidnight = now - (days - 1) * 86400000
@@ -638,10 +750,15 @@ export function foldResponse(state, days, modelKey, tz, now) {
   const weekSum = new Map()
   const hourSum = new Map()
   const modelSum = new Map()
+  const speedSum = new Map()
+  const ttftSum = new Map()
   const totals = emptyBucket()
   const overviewTotals = emptyBucket()
   const overviewDays = new Set()
   const overviewModels = new Map()
+  const overviewDaily = new Map(), recentModels = new Map()
+  const recentFrom = localDayKey(now - 6 * 86400000, bucketTz)
+  let longestTaskMs = null
   let overviewTodayBilled = 0
   let messages = 0
   let sessionsWithUsage = 0
@@ -670,14 +787,48 @@ export function foldResponse(state, days, modelKey, tz, now) {
     }
   }
 
-  for (const sid of Object.keys(state.sessions)) {
-    const s = state.sessions[sid]
+  for (const s of contributions) {
     if (!s) continue
+    for (const event of s.usageEvents || []) {
+      const outputTokens = event[4], outputMs = event[8]
+      if (!Number.isFinite(outputTokens) || outputTokens < 0 || !Number.isFinite(outputMs) || outputMs <= 0) continue
+      const key = event[1] + '/' + event[2]
+      if (filterModel && key !== filterModel || fromKey && localDayKey(event[0], bucketTz) < fromKey) continue
+      let speed = speedSum.get(key)
+      if (!speed) {
+        speed = { key, provider: event[1], model: event[2], outputTokens: 0, outputMs: 0, samples: 0 }
+        speedSum.set(key, speed)
+      }
+      speed.outputTokens += outputTokens
+      speed.outputMs += outputMs
+      speed.samples++
+    }
+    for (const event of s.ttftEvents || []) {
+      if (!Number.isFinite(event[3]) || event[3] < 0) continue
+      const key = event[1] + '/' + event[2]
+      if (filterModel && key !== filterModel || fromKey && localDayKey(event[0], bucketTz) < fromKey) continue
+      let timing = ttftSum.get(key)
+      if (!timing) { timing = { ttftMs: 0, ttftSamples: 0 }; ttftSum.set(key, timing) }
+      timing.ttftMs += event[3]
+      timing.ttftSamples++
+    }
     mergeBucket(overviewTotals, s.totals || emptyBucket())
+    if (Number.isFinite(s.longestTaskMs) && s.longestTaskMs >= 0) longestTaskMs = Math.max(longestTaskMs ?? 0, s.longestTaskMs)
     for (const date of Object.keys(s.byDay || {})) {
       const bucket = s.byDay[date]
       if ((bucket.calls || 0) > 0) overviewDays.add(date)
       if (date === todayKey) overviewTodayBilled += bucket.billed || 0
+      if (date <= todayKey) bucketInto(overviewDaily, date, bucket)
+    }
+    for (const [key, bucket] of Object.entries(s.byDayModel || {})) {
+      const sep = key.indexOf('|'), date = key.slice(0, sep)
+      if (sep < 0 || date < recentFrom || date > todayKey || !(bucket.calls > 0)) continue
+      const mk = key.slice(sep + 1), meta = s.byModel?.[mk], slash = mk.indexOf('/')
+      const model = (meta?.model || mk.slice(slash + 1)).split('/').pop(), id = model.toLowerCase()
+      let row = recentModels.get(id)
+      if (!row) { row = { model, calls: 0, providers: new Set() }; recentModels.set(id, row) }
+      row.calls += bucket.calls
+      row.providers.add(meta?.provider || mk.slice(0, slash))
     }
     for (const mk of Object.keys(s.byModel || {})) {
       const model = s.byModel[mk]
@@ -719,7 +870,7 @@ export function foldResponse(state, days, modelKey, tz, now) {
       bucketInto(perDay, mk, s.byDayModel[key])
     }
     messages += sessionMessages
-    if (sessionMessages > 0) sessionsWithUsage += 1
+    if (sessionMessages > 0 && !s.audit) sessionsWithUsage += 1
 
     if (fromKey === null) {
       for (const mk of Object.keys(s.byModel || {})) {
@@ -795,8 +946,7 @@ export function foldResponse(state, days, modelKey, tz, now) {
   // assigned client-side per model and persisted (localStorage), so a model
   // keeps one fixed colour across the donut and the bars regardless of rank.
   const hourModelSum = new Map() // hour -> Map(modelKey -> bucket)
-  for (const sid of Object.keys(state.sessions)) {
-    const s = state.sessions[sid]
+  for (const s of contributions) {
     if (!s) continue
     const hm = s.byHourModel || {}
     for (const key of Object.keys(hm)) {
@@ -844,27 +994,105 @@ export function foldResponse(state, days, modelKey, tz, now) {
   for (const [key, m] of modelSum) byModel.push({ key, provider: m.provider, model: m.model, lastTime: m.lastTime, bucket: m.bucket })
   byModel.sort((a, b) => b.bucket.billed - a.bucket.billed)
 
+  // Compare calendar dates rather than elapsed local hours (DST and leap days).
+  const activeDays = [...overviewDays].filter(d => d <= todayKey).map(d => Date.parse(d + 'T00:00:00Z') / 86400000).filter(Number.isFinite).sort((a, b) => a - b)
+  let longestStreak = 0, streak = 0, previousDay = null
+  for (const day of activeDays) { streak = day === previousDay + 1 ? streak + 1 : 1; longestStreak = Math.max(longestStreak, streak); previousDay = day }
+  const activeSet = new Set(activeDays), todayOrdinal = Date.parse(todayKey + 'T00:00:00Z') / 86400000
+  let currentStreak = 0, day = activeSet.has(todayOrdinal) ? todayOrdinal : todayOrdinal - 1
+  while (activeSet.has(day)) { currentStreak++; day-- }
+  let peakDailyBilled = 0, peakDay = null
+  for (const [date, bucket] of [...overviewDaily.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (bucket.calls > 0 && bucket.billed >= peakDailyBilled) { peakDailyBilled = bucket.billed; peakDay = date }
+  }
+  const recentModel = [...recentModels.values()].sort((a, b) => b.calls - a.calls || a.model.localeCompare(b.model))[0]
+  const allInput = overviewTotals.inputTokens + overviewTotals.cacheReadTokens + overviewTotals.cacheWriteTokens
   const overview = {
     todayBilled: overviewTodayBilled,
     usedDays: overviewDays.size,
     totalBilled: overviewTotals.billed,
+    totals: serializeBucket(overviewTotals),
     models: [...overviewModels.values()].sort((a, b) => b.billed - a.billed),
+    cacheHitRate: allInput > 0 ? overviewTotals.cacheReadTokens / allInput : null,
+    peakDailyBilled, peakDay, longestTaskMs, currentStreak, longestStreak,
+    recentModel: recentModel ? { ...recentModel, providers: [...recentModel.providers].sort(), days: 7 } : null,
   }
-  return { totals, messages, sessionsWithUsage, byDay, byDayModels, byWeek, byHour, byHourModels, byModel, overview, firstTime, lastTime }
+  const tokenSpeeds = [...speedSum.values()].map((speed) => {
+    const timing = ttftSum.get(speed.key) || { ttftMs: 0, ttftSamples: 0 }
+    return { ...speed, tokensPerSecond: speed.outputTokens * 1000 / speed.outputMs, ...timing,
+      averageTtftMs: timing.ttftSamples ? timing.ttftMs / timing.ttftSamples : null }
+  })
+    .sort((a, b) => b.tokensPerSecond - a.tokensPerSecond || b.samples - a.samples || a.key.localeCompare(b.key))
+  return { totals, messages, sessionsWithUsage, byDay, byDayModels, byWeek, byHour, byHourModels, byModel, tokenSpeeds, overview, firstTime, lastTime }
 }
 
 /* ------------------------------------------------------------------ */
 /* Cordis plugin `apply`                                               */
 /* ------------------------------------------------------------------ */
 
+function safeSessionText(value, max) {
+  return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, max) : ''
+}
+
+/** Session-level totals obey the same date/model filters as usage buckets.
+ * Only explicit title/path metadata and measured amounts reach the renderer. */
+export function foldSessionRows(state, options = {}, now = Date.now()) {
+  const days = Math.max(0, Math.min(3650, Math.round(Number(options.days) || 0)))
+  const from = days ? localDayKey(now - (days - 1) * 86400000, state.tz) : ''
+  const query = safeSessionText(options.q, 200).toLowerCase()
+  const model = options.model || ''
+  const selectedDay = /^\d{4}-\d{2}-\d{2}$/.test(options.day || '') ? options.day : ''
+  const projects = new Set(), rows = []
+  for (const [id, session] of Object.entries(state.sessions)) {
+    if (!session.withUsage) continue
+    const cwd = safeSessionText(session.cwd, 1024)
+    if (cwd) projects.add(cwd)
+    if (options.project && options.project !== cwd) continue
+    const title = safeSessionText(session.title, 300)
+    if (query && !(title + ' ' + cwd + ' ' + id).toLowerCase().includes(query)) continue
+    const totals = emptyBucket()
+    if (from || selectedDay) {
+      const buckets = model ? session.byDayModel : session.byDay
+      for (const [key, bucket] of Object.entries(buckets || {})) {
+        const date = key.slice(0, 10)
+        if (from && date < from || selectedDay && date !== selectedDay || model && key.slice(11) !== model) continue
+        mergeBucket(totals, bucket)
+      }
+    } else if (model) mergeBucket(totals, session.byModel?.[model]?.bucket || emptyBucket())
+    else mergeBucket(totals, session.totals)
+    if (!totals.calls) continue
+    const models = Object.entries(session.byModel || {}).filter(([key]) => !model || key === model)
+      .map(([key, value]) => ({ key, provider: value.provider, model: value.model }))
+    let lastTime = Math.max(0, ...Object.entries(session.byModel || {}).filter(([key]) => !model || key === model).map(([, value]) => value.lastTime || 0))
+    if (Array.isArray(session.usageEvents)) {
+      lastTime = 0
+      for (const event of session.usageEvents) {
+        const day = localDayKey(event[0], state.tz)
+        if ((!from || day >= from) && (!selectedDay || day === selectedDay) && (!model || event[1] + '/' + event[2] === model)) lastTime = Math.max(lastTime, event[0])
+      }
+    }
+    rows.push({ id, title, cwd, createdAt: session.createdAt || 0, lastTime,
+      retained: !!session.retained, models, ...serializeBucket(totals) })
+  }
+  const sort = options.sort === 'tokens' ? 'tokens' : 'recent'
+  rows.sort((a, b) => (sort === 'tokens' ? b.billed - a.billed : b.lastTime - a.lastTime) || a.id.localeCompare(b.id))
+  const pageSize = Math.min(100, Math.max(1, Math.round(Number(options.pageSize) || 20)))
+  const pages = Math.max(1, Math.ceil(rows.length / pageSize))
+  const page = Math.min(pages, Math.max(1, Math.round(Number(options.page) || 1)))
+  return { rows: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length, page, pageSize, pages,
+    projects: [...projects].sort(), sort, model: model || null, day: selectedDay || null }
+}
+
 export function apply(ctx) {
   if (ctx.get('profileContext')?.name !== 'desktop') return
 
   const readProviderQuotas = createProviderQuotaReader(ctx)
+  const modelTestHistory = createModelTestHistory(join(resolveHome(), 'storages', 'usage-stats-model-tests.json'))
+  const modelMatchRunner = createModelMatchRunner(ctx, { path: join(resolveHome(), 'storages', 'usage-stats-model-baselines.json'), onUpdate: job => modelTestHistory.record(job) })
   const quotaControls = createQuotaControls(ctx, {
     path: join(resolveHome(), 'storages', 'usage-stats-controls.json'),
     sources: {
-      providers: (excluded) => readProviderQuotas(true, excluded),
+      providers: (excluded, provider) => readProviderQuotas(true, excluded, provider),
       workbuddy: workBuddyQuotaSource(ctx),
       'workbuddy-ai': workBuddyQuotaSource(ctx, undefined, 'workbuddy-ai'),
     },
@@ -980,7 +1208,7 @@ export function apply(ctx) {
           }
           if (state.tz !== requestedTz) throw new Error('requested timezone is not ready')
           const now = Date.now()
-          const data = foldResponse(state, days, modelKey, state.tz, now)
+          const data = foldResponse(state, days, modelKey, state.tz, now, [modelTestContribution(modelTestHistory, state.tz)])
           const stale = syncPromise !== null || state.partial || now - (state.syncedAt || 0) > CACHE_TTL_MS
           writeJson(res, 200, {
             ok: true,
@@ -1000,9 +1228,11 @@ export function apply(ctx) {
             byHour: data.byHour.map((h) => ({ hour: h.hour, ...serializeBucket(h.bucket) })),
             byHourModels: data.byHourModels,
             byModel: data.byModel.map((m) => ({ key: m.key, provider: m.provider, model: m.model, lastTime: m.lastTime, ...serializeBucket(m.bucket) })),
+            tokenSpeeds: data.tokenSpeeds,
             syncedAt: state.syncedAt || 0,
             stale,
             partial: state.partial,
+            auditUsageWarning: modelTestHistory.warning(),
             scanMs: Date.now() - t0,
           })
         } catch {
@@ -1021,10 +1251,10 @@ export function apply(ctx) {
         if (!guard(req, res, 'GET')) return
         const fresh = readQuery(req).get('fresh') === '1'
         try {
-          writeJson(res, 200, await quotaControls.read('providers', fresh))
-        } catch {
+          writeJson(res, 200, await quotaControls.read('providers', fresh, readQuery(req).get('provider')))
+        } catch (error) {
           // This route never sends credential or upstream error text to the renderer.
-          writeJson(res, 200, { ok: true, quotas: [] })
+          writeJson(res, error instanceof QuotaControlError ? 400 : 500, { ok: false, error: error instanceof QuotaControlError ? error.message : '配额查询暂时不可用，请稍后重试。' })
         }
       },
     }),
@@ -1041,13 +1271,13 @@ export function apply(ctx) {
     } catch { writeJson(res, 403, { ok: false, error: '请求来源不受信任。' }); return false }
     return true
   }
-  const readControlBody = async (req) => {
+  const readControlBody = async (req, limit = 32_768) => {
     if (!String(req.headers['content-type'] || '').startsWith('application/json')) throw new QuotaControlError('请使用 JSON 请求。')
     let bytes = 0
     const chunks = []
     for await (const chunk of req) {
       bytes += Buffer.byteLength(chunk)
-      if (bytes > 32_768) throw new QuotaControlError('请求内容超过 32 KB。')
+      if (bytes > limit) throw new QuotaControlError(limit === 32_768 ? '请求内容超过 32 KB。' : '基线文件超过 1 MB。')
       chunks.push(Buffer.from(chunk))
     }
     try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw new QuotaControlError('请求内容不是有效 JSON。') }
@@ -1056,7 +1286,10 @@ export function apply(ctx) {
     kind: 'exact', path: '/api/dsh-usage-stats/' + path,
     handler: async (req, res) => {
       if (!trustedControlRequest(req, res)) return
-      try { await handler(req, res) } catch (error) { writeJson(res, error instanceof QuotaControlError ? 400 : 500, { ok: false, error: error instanceof QuotaControlError ? error.message : '操作失败，请稍后重试。' }) }
+      try { await handler(req, res) } catch (error) {
+        const expected = error instanceof QuotaControlError || error instanceof ModelMatchError
+        writeJson(res, expected ? 400 : 500, { ok: false, error: expected ? error.message : '操作失败，请稍后重试。' })
+      }
     },
   }), 'dsh-usage-stats: ' + path)
   registerControl('controls', async (req, res) => {
@@ -1071,6 +1304,67 @@ export function apply(ctx) {
     const body = await readControlBody(req)
     writeJson(res, 200, await quotaControls.test(body.provider, body.template))
   })
+  registerControl('sessions', async (req, res) => {
+    if (!guard(req, res, 'GET')) return
+    const params = readQuery(req), tzParam = params.get('tz')
+    const tz = tzParam === null ? SYSTEM_TZ : clampTz(tzParam)
+    await ensureLoaded()
+    if (state.tz !== tz) await sync(tz)
+    else if (params.get('fresh') === '1' || state.partial || Date.now() - state.syncedAt > CACHE_TTL_MS) await syncWithBudget(tz)
+    writeJson(res, 200, { ok: true, ...foldSessionRows(state, Object.fromEntries(params)), syncedAt: state.syncedAt,
+      stale: syncPromise !== null || state.partial || Date.now() - state.syncedAt > CACHE_TTL_MS, partial: state.partial })
+  })
+  registerControl('model-match', async (req, res) => {
+    if (!guard(req, res, 'GET')) return
+    const params = readQuery(req), sessionId = params.get('session') || ''
+    const latestJob = () => {
+      const id = params.get('job') || undefined
+      try {
+        return modelMatchRunner.status(id, sessionId) || modelTestHistory.latest(sessionId)
+          || (!id && (modelMatchRunner.status() || modelTestHistory.latest())) || null
+      }
+      catch (error) { const stored = id && modelTestHistory.get(id); if (stored) return stored; throw error }
+    }
+    if (params.get('jobOnly') === '1') { writeJson(res, 200, { ok: true, job: latestJob() }); return }
+    await ensureLoaded()
+    // Analyze a fresh local snapshot for this one session. No inference calls.
+    if (sessionId && !state.sessions[sessionId]?.retained) {
+      try {
+        const snapshot = await ctx.get('sessionQuery').readSession(sessionId)
+        const evidence = captureModelEvidence(snapshot?.events || [], snapshot?.inheritedEventCount)
+        const requested = modelSelection({ provider: params.get('provider'), model: params.get('model'), reasoningEffort: params.get('reasoningEffort') })
+        writeJson(res, 200, { ok: true, sessionId, analysis: analyzeModelEvidence(evidence, requested), job: latestJob() })
+        return
+      } catch (error) { if (error instanceof ModelMatchError) throw error }
+    }
+    const requested = modelSelection({ provider: params.get('provider'), model: params.get('model'), reasoningEffort: params.get('reasoningEffort') })
+    writeJson(res, 200, { ok: true, sessionId, retained: !!state.sessions[sessionId]?.retained,
+      analysis: analyzeModelEvidence(state.sessions[sessionId]?.evidence, requested), job: latestJob() })
+  })
+  registerControl('model-test', async (req, res) => {
+    if (!guard(req, res, 'POST')) return
+    const body = await readControlBody(req)
+    // Starting requires a real readable session; cancel never sends a request.
+    if (body.action === 'cancel') { writeJson(res, 200, { ok: true, job: modelMatchRunner.cancel(body.id) }); return }
+    const records = await ctx.get('sessionQuery').listSessions()
+    if (!(records || []).some(rec => rec?.header?.id === body.sessionId)) throw new ModelMatchError('会话已不可用，请重新选择。')
+    if (body.action === 'plan') { writeJson(res, 200, { ok: true, quote: await modelMatchRunner.plan(body) }); return }
+    writeJson(res, 200, { ok: true, job: modelMatchRunner.start(body) })
+  })
+  registerControl('model-baselines', async (req, res) => {
+    if (req.method === 'GET') {
+      const id = readQuery(req).get('export')
+      writeJson(res, 200, id ? { ok: true, reference: modelMatchRunner.exportReference(id) } : { ok: true, ...modelMatchRunner.catalog() })
+      return
+    }
+    if (!guard(req, res, 'POST')) return
+    const body = await readControlBody(req, 1_048_576)
+    if (body.action === 'remove') await modelMatchRunner.removeReference(body.id)
+    else if (body.action === 'import') await modelMatchRunner.importReference(body.reference)
+    else throw new ModelMatchError('请选择导入或移除基线。')
+    writeJson(res, 200, { ok: true, ...modelMatchRunner.catalog() })
+  })
+  ctx.effect(() => () => modelMatchRunner.dispose(), 'dsh-usage-stats: model test cleanup')
   for (const source of ['workbuddy', 'workbuddy-ai']) {
     registerControl(source, async (req, res) => {
       if (guard(req, res, 'GET')) writeJson(res, 200, await quotaControls.read(source, readQuery(req).get('fresh') === '1'))

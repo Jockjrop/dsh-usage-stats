@@ -2,7 +2,7 @@
 import { readFile, mkdir, writeFile, rename } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { quotaTemplate, hasBuiltinQuotaQuery, officialQuotaSpec, customQuotaAuth } from './provider-quotas.js'
+import { quotaTemplate, hasBuiltinQuotaQuery, officialQuotaSpec, customQuotaAuth, quotaErrorCode } from './provider-quotas.js'
 
 export const QUOTA_INTERVALS = [10, 60, 300, 1440]
 const MAX_BYTES = 1_048_576
@@ -10,15 +10,17 @@ const plain = (value) => value !== null && typeof value === 'object' && !Array.i
 const clone = (value) => structuredClone(value)
 /** Only deliberate, credential-free validation messages may reach the renderer. */
 export class QuotaControlError extends Error {
-  constructor(message) {
+  constructor(message, code = 'invalid', httpStatus) {
     super(message)
     this.name = 'QuotaControlError'
+    this.code = code
+    if (Number.isInteger(httpStatus)) this.httpStatus = httpStatus
   }
 }
-const fail = (message) => { throw new QuotaControlError(message) }
+const fail = (message, code, status) => { throw new QuotaControlError(message, code, status) }
 
 function defaults() {
-  return { autoQuota: false, intervalMinutes: 60, showModelDetails: true, advancedModelSelect: false, customQueries: [] }
+  return { autoQuota: false, intervalMinutes: 60, showModelDetails: true, showModelMatch: false, showTokenSpeed: true, advancedModelSelect: false, customQueries: [] }
 }
 
 /**
@@ -189,7 +191,7 @@ export async function executeQuotaQuery(ctx, provider, rawTemplate, request = fe
   if (template.auth === 'provider') {
     if (!allowedOrigins(entry.profile, spec).has(target.origin)) fail('认证查询地址需与所选供应商的地址或官方配额地址同源。')
     const auth = await customQuotaAuth(ctx, entry.profile, provider, url, template.method, template.body == null ? '' : JSON.stringify(template.body)).catch(() => null)
-    if (!auth) fail('未找到可用的供应商凭据，请先在模型设置中配置或登录。')
+    if (!auth) fail('未找到可用的供应商凭据，请先在模型设置中配置或登录。', 'authentication')
     if (url.includes('{{teamId}}')) url = auth.url || fail('未配置 xAI 管理凭据和团队 ID。')
     headers = { ...headers, ...auth.headers }
   }
@@ -197,16 +199,16 @@ export async function executeQuotaQuery(ctx, provider, rawTemplate, request = fe
   let response
   try {
     response = await request(url, { method: template.method, headers, ...(template.body == null ? {} : { body: JSON.stringify(template.body) }), redirect: 'error', signal: AbortSignal.timeout(8000) })
-  } catch {
-    fail('查询失败，请检查地址和网络（8 秒超时，不跟随重定向）。')
+  } catch (error) {
+    fail('查询失败，请检查地址和网络（8 秒超时，不跟随重定向）。', quotaErrorCode(error))
   }
   if (!response.ok) {
     await response.body?.cancel().catch(() => {})
-    fail('查询返回 HTTP ' + response.status + '，请检查地址和供应商凭据。')
+    fail('查询返回 HTTP ' + response.status + '，请检查地址和供应商凭据。', quotaErrorCode(null, response.status), response.status)
   }
   const body = await readBoundedJson(response)
   const metrics = template.response.format === 'official' ? spec.parse(body) : mappedMetrics(body, template.response)
-  if (!metrics.length) fail('响应中未找到有效配额，请检查 response 的字段路径。')
+  if (!metrics.length) fail('响应中未找到有效配额，请检查 response 的字段路径。', 'parse')
   return { provider, name: entry.name, metrics, syncedAt: Date.now(), custom: true }
 }
 
@@ -221,6 +223,8 @@ export function createQuotaControls(ctx, { path, sources, request = fetch, now =
   let allFlight = null
   const flights = new Map()
   const tests = new Map()
+  const providerTickets = new Map()
+  let readTicket = 0
   let queryRevision = 0
   let disposed = false
 
@@ -247,6 +251,8 @@ export function createQuotaControls(ctx, { path, sources, request = fetch, now =
       if (plain(saved)) {
         settings.autoQuota = saved.autoQuota === true
         settings.showModelDetails = saved.showModelDetails !== false
+        settings.showModelMatch = saved.showModelMatch === true
+        settings.showTokenSpeed = saved.showTokenSpeed !== false
         settings.advancedModelSelect = saved.advancedModelSelect === true
         if (QUOTA_INTERVALS.includes(saved.intervalMinutes)) settings.intervalMinutes = saved.intervalMinutes
         if (Array.isArray(saved.customQueries)) {
@@ -308,38 +314,65 @@ export function createQuotaControls(ctx, { path, sources, request = fetch, now =
       const balance = mapping && mapping.format !== 'official' ? mapping.metrics.every((metric) => metric.kind === 'amount') : spec?.kind === 'balance'
       quotas.push({ provider: entry.provider, name: entry.name, kind: balance ? 'balance' : 'subscription', status: queried.has(entry.provider) ? 'unavailable' : 'unqueried', metrics: [] })
     }
-    return clone({ ...body, quotas })
+    return clone({ ...body, quotas, partial: quotas.some((row) => !!row.refreshError) })
   }
 
-  const read = async (key, fresh = false) => {
+  const read = async (key, fresh = false, provider = null) => {
     await load()
     if (!Object.hasOwn(sources, key)) fail('未知配额来源。')
     const source = sources[key]
     const adapter = plain(source)
+    if (provider && (key !== 'providers' || !directory(ctx).some((entry) => entry.provider === provider))) fail('所选供应商已不存在，请重新选择。')
     if (!sourceEnabled(key)) return { ok: true, available: false, status: 'not-configured', cached: true }
     if (!fresh) {
       const body = snapshots[key] || (key === 'providers' ? { ok: true, quotas: [], cached: true } : { ok: true, available: adapter, status: adapter ? 'unqueried' : 'unavailable', cached: true })
       return displaySnapshot(key, adapter ? { ...body, available: true } : body)
     }
-    if (flights.has(key)) return flights.get(key)
+    const flightKey = key + ':' + (provider || '*')
+    if (flights.has(flightKey)) return flights.get(flightKey)
     const revision = queryRevision
     const queries = clone(settings.customQueries)
-    const queriedProviders = key === 'providers' ? configuredQuotaEntries().map((entry) => entry.provider) : []
+    const targeted = key === 'providers' ? directory(ctx).filter((entry) => !adapterFor(entry.provider) && (!provider || entry.provider === provider)).map((entry) => entry.provider) : []
+    const ticket = ++readTicket
+    for (const id of targeted) providerTickets.set(id, ticket)
     const flight = (async () => {
-      let body = await (adapter ? source.read() : source(queries.map((query) => query.provider)))
+      let body = await (adapter ? source.read() : source(queries.map((query) => query.provider), provider))
       if (key === 'providers') {
-        const custom = await Promise.all(queries.filter((query) => !adapterFor(query.provider)).map(async (query) => {
-          try { return await executeQuotaQuery(ctx, query.provider, query.template, request) } catch { return null }
+        const custom = await Promise.all(queries.filter((query) => !adapterFor(query.provider) && (!provider || query.provider === provider)).map(async (query) => {
+          try { return await executeQuotaQuery(ctx, query.provider, query.template, request) } catch (error) {
+            return { provider: query.provider, name: directory(ctx).find((entry) => entry.provider === query.provider)?.name || query.provider, metrics: [], status: 'unavailable', refreshError: { code: error instanceof QuotaControlError ? error.code : 'network', ...(error instanceof QuotaControlError && error.httpStatus ? { httpStatus: error.httpStatus } : {}) }, lastAttemptAt: now(), custom: true }
+          }
         }))
-        body = { ok: true, quotas: (body?.quotas || []).concat(custom.filter(Boolean)), queriedProviders }
+        const incoming = (body?.quotas || []).concat(custom)
+        const previous = snapshots.providers || {}
+        const rows = new Map((previous.quotas || []).map((row) => [row.provider, row]))
+        const attempted = new Set(targeted)
+        for (const row of incoming) {
+          if (provider && row.provider !== provider) continue
+          // A newer single-provider read wins over an older full refresh.
+          if (targeted.includes(row.provider) && providerTickets.get(row.provider) !== ticket) continue
+          attempted.delete(row.provider)
+          const prior = rows.get(row.provider)
+          rows.set(row.provider, row.refreshError && prior?.metrics?.length
+            ? { ...prior, stale: true, refreshError: row.refreshError, lastAttemptAt: row.lastAttemptAt || now() }
+            : row)
+        }
+        for (const id of attempted) {
+          if (providerTickets.get(id) !== ticket) continue
+          const prior = rows.get(id)
+          if (prior?.metrics?.length) rows.set(id, { ...prior, stale: true, refreshError: { code: 'authentication' }, lastAttemptAt: now() })
+        }
+        body = { ok: true, quotas: [...rows.values()], queriedProviders: [...new Set([...(previous.queriedProviders || []), ...targeted])] }
+      } else if (['unavailable', 'error'].includes(body?.status) && snapshots[key]?.status === 'signed-in') {
+        body = { ...snapshots[key], stale: true, refreshError: { code: 'service' }, lastAttemptAt: now() }
       }
       if (key !== 'providers' || revision === queryRevision) {
         snapshots[key] = body
         await persist()
       }
       return displaySnapshot(key, snapshots[key] || body)
-    })().finally(() => { if (flights.get(key) === flight) flights.delete(key) })
-    flights.set(key, flight)
+    })().finally(() => { if (flights.get(flightKey) === flight) flights.delete(flightKey) })
+    flights.set(flightKey, flight)
     return flight
   }
 
@@ -396,6 +429,14 @@ export function createQuotaControls(ctx, { path, sources, request = fetch, now =
         if (patch.showModelDetails != null) {
           if (typeof patch.showModelDetails !== 'boolean') fail('模型明细开关值无效。')
           next.showModelDetails = patch.showModelDetails
+        }
+        if (patch.showModelMatch != null) {
+          if (typeof patch.showModelMatch !== 'boolean') fail('检测模型匹配开关值无效。')
+          next.showModelMatch = patch.showModelMatch
+        }
+        if (patch.showTokenSpeed != null) {
+          if (typeof patch.showTokenSpeed !== 'boolean') fail('Token 输出速度开关值无效。')
+          next.showTokenSpeed = patch.showTokenSpeed
         }
         if (patch.advancedModelSelect != null) {
           if (typeof patch.advancedModelSelect !== 'boolean') fail('高级模型选择器开关值无效。')

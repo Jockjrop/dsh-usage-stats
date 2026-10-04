@@ -30,7 +30,7 @@ const libQuotasHash = sha256(path.join(root, 'lib', 'provider-quotas.js'));
 const rootQuotasHash = sha256(path.join(root, 'provider-quotas.js'));
 
 let failed = false;
-for (const file of ['quota-controls.js']) {
+for (const file of ['quota-controls.js', 'model-match.js', 'model-fingerprints.js', 'model-capabilities.js', 'model-test-history.js', 'fingerprints/kbf-202609.json', 'fingerprints/KBF-LICENSE.txt', 'fingerprints/NOTICE.txt']) {
   const hash = sha256(path.join(root, 'src', file));
   if (hash !== sha256(path.join(root, 'lib', file)) || hash !== sha256(path.join(root, file))) {
     console.error('Mismatch across src, lib, and root:', file);

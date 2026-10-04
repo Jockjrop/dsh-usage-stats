@@ -69,7 +69,7 @@ test('control page confirms automatic billing, persists visibility and validates
       ] }
       else if (url.endsWith('/quota-test')) body = { ok: true, testId: 'success', quota: { name: 'DeepSeek', metrics: [{ label: '余额', kind: 'amount', remaining: 3.5, currency: 'CNY' }] } }
       else if (url.endsWith('/workbuddy?fresh=1')) body = { ok: true, available: true, status: 'signed-in', credits: { total: 8 } }
-      else body = { ok: true, totals: null, byDay: [], byModel: [] }
+      else body = { ok: true, totals: null, byDay: [], byHour: [], byModel: [] }
       return { ok: true, json: async () => body }
     },
   }
@@ -607,15 +607,22 @@ test('usage page keeps chart controls independent and shows only connected panel
   let hookIndex = 0
   let effects = []
   const requests = []
-  const tz = new Date().getTimezoneOffset()
-  const today = new Date(Date.now() - tz * 60000).toISOString().slice(0, 10)
-  const olderDay = new Date(Date.now() - tz * 60000 - 200 * 86400000).toISOString().slice(0, 10)
+  // Keep calendar and pager assertions stable across week/month boundaries.
+  const now = Date.parse('2026-10-03T12:00:00Z')
+  class FixtureDate extends Date {
+    constructor(...args) { super(...(args.length ? args : [now])) }
+    static now() { return now }
+  }
+  const tz = new FixtureDate().getTimezoneOffset()
+  const today = new Date(now - tz * 60000).toISOString().slice(0, 10)
+  const olderDay = new Date(now - tz * 60000 - 200 * 86400000).toISOString().slice(0, 10)
   const olderOrdinal = Date.parse(olderDay + 'T00:00:00Z') / 86400000
   const olderWeekMate = new Date((olderOrdinal + (new Date(olderOrdinal * 86400000).getUTCDay() === 1 ? 1 : -1)) * 86400000).toISOString().slice(0, 10)
   const statsBody = {
     ok: true, stale: false, tz, days: 0,
     totals: { billed: 140 },
-    overview: { todayBilled: 30, usedDays: 12, totalBilled: 427684351, models: [
+    overview: { todayBilled: 30, usedDays: 12, totalBilled: 427684351,
+      totals: { inputTokens: 427684321, outputTokens: 30, calls: 3 }, models: [
       { key: 'a/model-one', provider: 'a', model: 'model-one', billed: 800 },
       { key: 'b/model-one', provider: 'b', model: 'model-one', billed: 500 },
       { key: 'c/model-two', provider: 'c', model: 'model-two', billed: 300 },
@@ -667,6 +674,7 @@ test('usage page keeps chart controls independent and shows only connected panel
     useEffect(callback) { effects.push(callback) },
   }
   const context = {
+    Date: FixtureDate,
     window: {
       dshDesktop: desktopBridge,
       innerWidth: 1200,
@@ -719,7 +727,7 @@ test('usage page keeps chart controls independent and shows only connected panel
   effects[0]()
   await new Promise((resolve) => setImmediate(resolve))
   const firstStatsRequest = requests.find((url) => url.includes('/stats'))
-  assert.equal(new URL(firstStatsRequest, 'http://localhost').searchParams.get('tz'), String(new Date().getTimezoneOffset()))
+  assert.equal(new URL(firstStatsRequest, 'http://localhost').searchParams.get('tz'), String(tz))
   assert.equal(new URL(firstStatsRequest, 'http://localhost').searchParams.get('days'), null) // API default is all history
   page = render(section.type, section.props)
   const topHeader = walk(page, (node) => node.props && node.props.className === 'dshus-head')
@@ -742,6 +750,22 @@ test('usage page keeps chart controls independent and shows only connected panel
     ['今日tokens数', '使用天数', '累计tokens数'])
   assert.match(textOf(overviewCards), /30 今日tokens数.*12 使用天数.*4\.28亿 累计tokens数/s)
   assert.doesNotMatch(textOf(overviewCards), /最常使用模型/)
+  const overviewDetails = walk(page, (node) => node.props?.id === 'dshus-overview-details')
+  assert.equal(overviewDetails.props.hidden, true)
+  const toggleOverview = () => walk(page, (node) => node.props?.['aria-controls'] === 'dshus-overview-details')
+  assert.equal(toggleOverview().props['aria-expanded'], false)
+  toggleOverview().props.onClick()
+  page = render(section.type, section.props)
+  assert.equal(walk(page, (node) => node.props?.id === 'dshus-overview-details').props.hidden, false)
+  assert.equal(toggleOverview().props['aria-expanded'], true)
+  assert.equal(walk(page, node => node.props?.id === 'dshus-token-details'), null)
+  assert.doesNotMatch(textOf(page), /Token 分项/)
+  assert.ok(walk(page, node => node.type?.name === 'OverviewDetails'))
+  toggleOverview().props.onClick()
+  page = render(section.type, section.props)
+  assert.equal(walk(page, (node) => node.props?.id === 'dshus-overview-details').props.hidden, true)
+  assert.ok(walk(page, (node) => node.props?.className === 'dshus-statbar dshus-overview-bar'))
+  assert.equal(walk(page, (node) => node.type?.name === 'SessionDetailsPanel'), null)
   // The overview is no longer a grid of small cards.
   assert.equal(walk(page, (node) => node.props && node.props.className === 'dshus-cards'), null)
   const modules = walkAll(page, (node) => node.props && node.props.className === 'dshus-module')

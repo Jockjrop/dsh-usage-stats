@@ -83,7 +83,7 @@ test('failed statistics serialization returns an opaque error instead of excepti
 
 test('all usage and quota routes reject external origins and disable HTTP caching', async () => {
   await withHost({}, async (root) => {
-    for (const route of ['stats', 'provider-quotas', 'controls', 'quota-providers', 'quota-test', 'workbuddy', 'workbuddy-ai']) {
+    for (const route of ['stats', 'sessions', 'model-match', 'model-test', 'model-baselines', 'provider-quotas', 'controls', 'quota-providers', 'quota-test', 'workbuddy', 'workbuddy-ai']) {
       const denied = await fetch(root + route, { headers: { origin: 'https://outside.example' } })
       assert.equal(denied.status, 403, route)
       assert.equal(denied.headers.get('cache-control'), 'no-store', route)
@@ -94,5 +94,29 @@ test('all usage and quota routes reject external origins and disable HTTP cachin
     assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
     assert.equal(await requestStatus(root + 'controls', { host: 'outside.example' }), 403)
     assert.equal(await requestStatus(root + 'controls', { 'sec-fetch-site': 'cross-site' }), 403)
+  })
+})
+
+test('host includes restored audit spend and result without adding a session or re-running a model', async () => {
+  // The fixture home is available while apply() loads its independent history.
+  await withHost({ sessionQuery: { listSessions: async () => [] }, llm: { stream() { assert.fail('restoring results must not run a model') } } }, async (root) => {
+    const { createModelTestHistory } = await import('../src/model-test-history.js')
+    await createModelTestHistory(join(process.env.DSH_HOME, 'storages', 'usage-stats-model-tests.json')).record({ id: 'restored', sessionId: 'former', mode: 'audit', status: 'complete', selection: { provider: 'gateway', model: 'requested' }, startedAt: Date.now(), finishedAt: Date.now(),
+      usage: { inputTokens: 12, outputTokens: 3 }, identity: { verdict: 'no-significant-difference', count: 128, valid: 128, mismatches: 0, pValue: 1 }, plan: { requests: 1 }, results: [{ time: Date.now(), outcome: 'scored', stop: 'stop', usageReported: true, usage: { inputTokens: 12, outputTokens: 3 } }] })
+    // Start another plugin context to verify its actual boot/HTTP path.
+    const routes = new Map()
+    apply({ get: name => ({ profileContext: { name: 'desktop' }, sessionQuery: { listSessions: async () => [] }, webServer: { register(route) { routes.set(route.path, route.handler); return () => {} } } })[name], effect: callback => callback(), interval: () => () => {} })
+    const server = createServer((req, res) => routes.get(new URL(req.url, 'http://local').pathname)(req, res))
+    try {
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+      const base = 'http://127.0.0.1:' + server.address().port + '/api/dsh-usage-stats/'
+      const stats = await (await fetch(base + 'stats')).json(), match = await (await fetch(base + 'model-match?session=former')).json()
+      assert.equal(stats.ok, true); assert.equal(stats.overview.totalBilled, 15); assert.equal(stats.totals.calls, 1); assert.equal(stats.sessions, 0)
+      assert.equal(match.job.conclusion.verdict, 'no-anomaly'); assert.equal(match.job.usageSaved, true)
+      // Deleting/switching the former conversation must not hide its result.
+      const previous = await (await fetch(base + 'model-match?session=another')).json()
+      assert.equal(previous.job.id, 'restored'); assert.equal(previous.job.sessionId, 'former')
+      assert.equal(previous.analysis.counts.samples, 0)
+    } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
   })
 })

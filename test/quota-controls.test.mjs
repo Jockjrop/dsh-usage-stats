@@ -39,11 +39,66 @@ const waitFor = async (predicate) => {
   assert.fail('operation did not finish')
 }
 
+test('failed provider refresh preserves the last success, bounded reason and timestamp across restart', async () => temporary(async (path) => {
+  let offline = false
+  const reader = createProviderQuotaReader(configuredContext(), async () => offline
+    ? json({ secret: 'must-not-leak' }, 503)
+    : json({ balance_infos: [{ currency: 'CNY', total_balance: '12.34' }] }))
+  const options = { path, sources: { providers: (excluded, provider) => reader(true, excluded, provider) } }
+  const controls = createQuotaControls(configuredContext(), options)
+  const first = (await controls.read('providers', true)).quotas.find((row) => row.provider === 'deepseek')
+  offline = true
+  const failed = await controls.read('providers', true)
+  const row = failed.quotas.find((item) => item.provider === 'deepseek')
+  assert.equal(failed.partial, true)
+  assert.equal(row.metrics[0].remaining, 12.34)
+  assert.equal(row.syncedAt, first.syncedAt)
+  assert.equal(row.stale, true)
+  assert.deepEqual(row.refreshError, { code: 'service', httpStatus: 503 })
+  assert.doesNotMatch(JSON.stringify(failed), /must-not-leak|provider-secret/)
+  const saved = (await createQuotaControls(configuredContext(), options).read('providers')).quotas[0]
+  assert.equal(saved.metrics[0].remaining, 12.34)
+  assert.equal(saved.stale, true)
+  offline = false
+  const recovered = (await controls.read('providers', true)).quotas[0]
+  assert.equal(recovered.stale, undefined)
+  assert.equal(recovered.refreshError, undefined)
+}))
+
+test('single-provider refresh skips other custom queries and retains unrelated cached rows', async () => temporary(async (path) => {
+  const requested = []
+  const options = { path, sources: { providers: async (_excluded, provider) => {
+    requested.push(provider)
+    return { ok: true, quotas: [{ provider: provider || 'deepseek', name: 'DeepSeek', metrics: [{ kind: 'amount', remaining: 10 }] }] }
+  } }, request: async () => { assert.fail('a different provider custom query must not run') } }
+  const controls = createQuotaControls(configuredContext(), options)
+  await controls.read('providers', true)
+  await controls.read('providers', true, 'gateway')
+  assert.deepEqual(requested, [null, 'gateway'])
+  assert.deepEqual((await controls.read('providers')).quotas.map((row) => row.provider), ['deepseek', 'gateway'])
+  await assert.rejects(controls.read('providers', true, 'removed'), /不存在/)
+}))
+
+test('late full refresh cannot overwrite a newer single-provider refresh', async () => temporary(async (path) => {
+  let releaseFull
+  const options = { path, sources: { providers: async (_excluded, provider) => {
+    if (!provider) await new Promise((resolve) => { releaseFull = resolve })
+    return { ok: true, quotas: [{ provider: 'deepseek', metrics: [{ kind: 'amount', remaining: provider ? 20 : 1 }] }] }
+  } } }
+  const controls = createQuotaControls(configuredContext(), options)
+  const full = controls.read('providers', true)
+  await waitFor(() => !!releaseFull)
+  await controls.read('providers', true, 'deepseek')
+  releaseFull()
+  await full
+  assert.equal((await controls.read('providers')).quotas[0].metrics[0].remaining, 20)
+}))
+
 test('default-off reads never query; explicit refresh caches and survives restart without credentials', async () => temporary(async (path) => {
   let calls = 0
   const options = { path, sources: { providers: async () => { calls++; return { ok: true, quotas: [{ provider: 'deepseek', name: 'DeepSeek', metrics: [{ kind: 'amount', remaining: 10, currency: 'CNY' }] }] } } } }
   const controller = createQuotaControls(context(), options)
-  assert.deepEqual((await controller.get()).settings, { autoQuota: false, intervalMinutes: 60, showModelDetails: true, advancedModelSelect: false, customQueries: [] })
+  assert.deepEqual((await controller.get()).settings, { autoQuota: false, intervalMinutes: 60, showModelDetails: true, showModelMatch: false, showTokenSpeed: true, advancedModelSelect: false, customQueries: [] })
   await controller.tick()
   assert.deepEqual((await controller.read('providers')).quotas, [])
   assert.equal(calls, 0)
@@ -55,6 +110,27 @@ test('default-off reads never query; explicit refresh caches and survives restar
   const persisted = createQuotaControls(context(), options)
   assert.equal((await persisted.get()).settings.showModelDetails, false)
   assert.equal((await persisted.get()).settings.intervalMinutes, 1440)
+}))
+
+test('match and token-speed visibility defaults migrate, persist and reject invalid switches atomically', async () => temporary(async (path) => {
+  const options = { path, sources: {} }
+  await writeFile(path, JSON.stringify({ settings: { showModelDetails: false, advancedModelSelect: true } }), 'utf8')
+  const controls = createQuotaControls(context(), options)
+  const legacy = (await controls.get()).settings
+  assert.equal(legacy.showModelMatch, false)
+  assert.equal(legacy.showTokenSpeed, true)
+  assert.equal(legacy.advancedModelSelect, true)
+  await controls.update({ showModelMatch: true, showTokenSpeed: false })
+  const restarted = createQuotaControls(context(), options)
+  assert.equal((await restarted.get()).settings.showModelMatch, true)
+  assert.equal((await restarted.get()).settings.showTokenSpeed, false)
+  await assert.rejects(restarted.update({ showModelMatch: false, showTokenSpeed: 'true' }), /Token 输出速度开关值无效/)
+  await assert.rejects(restarted.update({ showModelMatch: 1 }), /检测模型匹配开关值无效/)
+  assert.equal((await restarted.get()).settings.showModelMatch, true)
+  await restarted.update({ showModelMatch: false, showTokenSpeed: true })
+  const final = (await createQuotaControls(context(), options).get()).settings
+  assert.equal(final.showModelMatch, false)
+  assert.equal(final.showTokenSpeed, true)
 }))
 
 test('configured balances appear unqueried without a probe, including custom StepFun ids', async () => temporary(async (path) => {
@@ -370,7 +446,11 @@ test('WorkBuddy joins the query registry, shares persistent caching and skips re
   assert.equal(calls, prior)
   enabled = true
   offline = true
-  assert.equal((await restarted.read('workbuddy', true)).status, 'unavailable')
+  const failed = await restarted.read('workbuddy', true)
+  assert.equal(failed.status, 'signed-in')
+  assert.equal(failed.credits.total, 8)
+  assert.equal(failed.stale, true)
+  assert.equal(failed.refreshError.code, 'service')
 }))
 
 test('configured OpenCode Go uses common unqueried rows and discards removed legacy sources', async () => temporary(async (path) => {

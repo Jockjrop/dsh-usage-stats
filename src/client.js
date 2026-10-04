@@ -36,15 +36,219 @@ window.__ModuleLoader__.load({
     // Chinese is also the fallback for standalone checks without the host service.
     // Each entry supplies the English and Japanese dictionaries for DSH's locale registry.
     var messages = {
+      "对照参考模型的回答指纹，分别检查行为一致性、能力变化与通道表现。": ["Compare response fingerprints with a reference, and assess behavior, capabilities and channel performance separately.","参考モデルの回答指紋と比較し、動作・能力・接続性能を個別に確認します。"],
+      "独立检测": ["Independent audit","独立検証"],
+      "检测方式": ["Audit method","検証方法"],
+      "行为指纹检测": ["Behavioral fingerprint","動作指紋の検証"],
+      "能力测试": ["Capability test","能力テスト"],
+      "建立可信参考": ["Create trusted reference","信頼できる基準を作成"],
+      "参考基线": ["Reference baseline","比較基準"],
+      "当前模型尚无参考基线": ["No reference for this model","このモデルの比較基準はありません"],
+      "可信参考通道": ["Trusted reference channel","信頼できる参照先"],
+      "选择可信供应商与模型": ["Choose a trusted provider and model","信頼できるプロバイダーとモデルを選択"],
+      "参考推理强度": ["Reference reasoning effort","参照側の推論強度"],
+      "关闭推理": ["Reasoning off","推論オフ"],
+      "探针题量": ["Probe count","検証問題数"],
+      "{count} 个候选探针": ["{count} candidate probes","候補問題 {count} 個"],
+      "完整参考集（{count} 题）": ["Full reference ({count} probes)","基準全体（{count} 問）"],
+      "随机抽样 128 题": ["Random sample of 128 probes","128 問を無作為抽出"],
+      "已上报 Token 预算": ["Reported-token budget","報告済みトークンの予算"],
+      "我确认此通道可作为当前模型的可信参考": ["I trust this channel as a reference for the current model","この接続先を現在のモデルの比較基準として信頼します"],
+      "同时运行 16 项能力测试": ["Also run 16 capability tasks","16 項目の能力テストも実行"],
+      "论文公开参考": ["Published research reference","論文の公開比較基準"],
+      "本地导入": ["Imported reference","インポートした比較基準"],
+      "自建参考": ["Custom reference","独自の比較基準"],
+      "探针 {count} · 参考自测 {selfMismatches} / {selfTotal} 次不一致": ["{count} probes · Reference self-test: {selfMismatches} / {selfTotal} disagreements","{count} 問 · 参照の自己検証：{selfTotal} 回中 {selfMismatches} 回不一致"],
+      "查看参考来源": ["View reference source","参照元を表示"],
+      "请导入该模型的 KBF 基线，或选择可信通道建立本地参考。": ["Import a KBF baseline for this model, or create one using a trusted channel.","このモデルの KBF 基準をインポートするか、信頼できる接続先で作成してください。"],
+      "三轮筛选稳定回答，再独立自测校准；同时保存 16 项能力测试作为后续对照。": ["Filter stable answers over three passes, then calibrate with an independent self-test. Save 16 capability results for later comparisons.","3 回で安定回答を選び、独立した自己検証で校正します。16 項目の能力結果も保存します。"],
+      "测试代码推演、路径推理、上下文检索与约束优化。没有能力基线时仅展示本次成绩。": ["Test code tracing, path reasoning, context retrieval and constraint optimization. Without a capability baseline, show this run's scores only.","コード追跡・経路推論・文脈検索・制約最適化をテストします。能力基準がない場合は今回の成績のみ表示します。"],
+      "正在处理…": ["Processing…","処理中…"],
+      "查看测试预算": ["Preview test budget","テスト予算を確認"],
+      "开始检测（会消耗 Token）": ["Start audit (uses tokens)","検証開始（トークンを消費）"],
+      "请求最多 {requests} 次 · 输入约 {estimatedInputTokens} Token · 输出上限 {maxOutputTokens} Token": ["Up to {requests} calls · About {estimatedInputTokens} input tokens · Output limit {maxOutputTokens} tokens","最大 {requests} 回 · 入力約 {estimatedInputTokens} トークン · 出力上限 {maxOutputTokens} トークン"],
+      "预算按已上报用量检查；推理、未上报用量及供应商重试按通道规则计费。": ["The budget uses reported usage. Reasoning, unreported usage and provider retries follow the channel's billing rules.","予算は報告済み使用量で確認します。推論・未報告使用量・再試行の料金は接続先の規則に従います。"],
+      "管理参考基线": ["Manage references","比較基準を管理"],
+      "导入基线 JSON": ["Import reference JSON","比較基準 JSON をインポート"],
+      "导出基线": ["Export reference","比較基準をエクスポート"],
+      "移除当前基线": ["Remove current reference","現在の比較基準を削除"],
+      "行为一致性": ["Behavioral consistency","動作の一致性"],
+      "发现显著差异": ["Significant difference detected","有意差を検出"],
+      "未发现显著差异": ["No significant difference detected","有意差は検出されませんでした"],
+      "样本不足或测试未完成": ["Insufficient samples or incomplete test","サンプル不足またはテスト未完了"],
+      "有效回答 {valid} / {count} · 与参考不一致 {mismatches}": ["Valid answers {valid} / {count} · {mismatches} reference disagreements","有効回答 {valid} / {count} · 参照との不一致 {mismatches}"],
+      "统计 p 值 {p}；阈值 0.05。": ["Statistical p-value {p}; threshold 0.05.","統計的 p 値 {p}、しきい値 0.05。"],
+      "有效回答至少 64 个，覆盖率至少 80%，才能作出统计判断。": ["Statistical decisions require at least 64 valid answers and 80% coverage.","統計判定には有効回答 64 個以上、回答率 80% 以上が必要です。"],
+      "响应声明存在名称差异": ["Response declarations contain name differences","応答のモデル名に差異があります"],
+      "响应声明名称一致": ["Response-declared names agree","応答のモデル名は一致しています"],
+      "响应未声明模型名称": ["Responses did not declare a model name","応答にモデル名の宣言がありません"],
+      "当前能力样本": ["Current capability sample","今回の能力サンプル"],
+      "发现显著能力下降": ["Significant capability decline detected","有意な能力低下を検出"],
+      "未发现显著能力下降": ["No significant capability decline detected","有意な能力低下は検出されませんでした"],
+      "已达到测试预算": ["Test budget reached","テスト予算に達しました"],
+      "行为检测推理强度：{effort}": ["Fingerprint reasoning effort: {effort}","指紋検証の推論強度：{effort}"],
+      "已完成 {progress} 次请求，上限 {requests} 次": ["Finished {progress} calls; limit {requests}","完了 {progress} 回、上限 {requests} 回"],
+      "参考基线已保存，可用于同模型的后续检测。": ["Reference saved for future audits of the same model.","同モデルの今後の検証に使う基準を保存しました。"],
+      "正在筛选并校准参考探针。": ["Selecting and calibrating reference probes.","参照問題を選択・校正中です。"],
+      "参考基线未保存。": ["Reference was not saved.","比較基準は保存されませんでした。"],
+      "能力变化": ["Capability changes","能力の変化"],
+      "检测结果": ["Audit result","検証結果"],
+      "上次检测结果": ["Previous audit result","前回の検証結果"],
+      "参考接近度": ["Reference similarity","参照一致度"],
+      "无法评分": ["Not scored","採点できません"],
+      "检测详情": ["Audit details","検証の詳細"],
+      "一致答案 {matched} / {valid}；分数为有效回答的一致率。": ["Matching answers: {matched} / {valid}; the score is agreement among valid answers.","一致回答 {matched} / {valid}。スコアは有効回答の一致率です。"],
+      "能力样本 {passed}/{valid} · 暂无能力基线": ["Capability sample {passed}/{valid} · No capability baseline","能力サンプル {passed}/{valid} · 能力基準なし"],
+      "本次消耗 {tokens} Token · 已计入统计": ["{tokens} tokens used · Included in statistics","使用量 {tokens} Token · 統計に計上済み"],
+      "本次已上报消耗 {tokens} Token": ["Reported usage: {tokens} tokens","報告済み使用量 {tokens} Token"],
+      "缓存命中率": ["Cache hit rate","キャッシュヒット率"],
+      "Token 使用峰值": ["Peak daily tokens","1日の最大 Token 使用量"],
+      "最长任务时长": ["Longest task","最長タスク時間"],
+      "当前连续天数": ["Current streak","現在の連続利用日数"],
+      "最长使用天数": ["Longest streak","最長連続利用日数"],
+      "最近常使用模型": ["Recent favorite model","最近よく使うモデル"],
+      "缓存读取占全部输入的比例": ["Cache reads as a share of all input","全入力に占めるキャッシュ読み取りの割合"],
+      "有完整起止记录的已结束单轮任务，包含工具调用和等待。": ["Ended processing rounds with complete timestamps, including tools and waits.","開始・終了時刻がある終了済みの1ラウンド。ツール実行と待機を含みます。"],
+      "今日尚未使用时，延续至昨日的连续记录。": ["If unused today, continue the streak ending yesterday.","本日未利用の場合は昨日までの連続記録を表示します。"],
+      "历史最长连续使用天数": ["Longest consecutive usage streak across history","履歴中の最長連続利用日数"],
+      "近 7 天调用 {calls} 次 · {providers}": ["{calls} calls in the last 7 days · {providers}","直近7日間 {calls} 回 · {providers}"],
+      "{days} 天": ["{days} days","{days} 日"],
+      "{days}天 {hours}小时": ["{days}d {hours}h","{days}日 {hours}時間"],
+      "{hours}小时 {minutes}分": ["{hours}h {minutes}m","{hours}時間 {minutes}分"],
+      "{minutes}分 {seconds}秒": ["{minutes}m {seconds}s","{minutes}分 {seconds}秒"],
+      "{seconds}秒": ["{seconds}s","{seconds}秒"],
+      "历史结果，仅对应下方列出的模型和参数。": ["This saved result applies to the model and settings listed below.","この保存済み結果は、下記のモデルと設定にのみ対応します。"],
+      "名称与速度提供辅助提示；行为差异也可能来自版本或配置变化。检测用量计入用量统计。": ["Names and speed are supporting hints; behavior changes may also reflect versions or configuration. Audit usage is included in usage statistics.","名称と速度は補助情報です。動作の差はバージョンや設定変更でも生じます。検証の使用量は統計に計上されます。"],
+      "疑似能力下降": ["Suspected capability decline","能力低下の疑い"],
+      "无法判定": ["Inconclusive","判定できません"],
+      "参考基线已建立": ["Reference created","比較基準を作成しました"],
+      "能力测试完成": ["Capability test complete","能力テスト完了"],
+      "未发现明显能力下降": ["No capability decline detected","明確な能力低下は検出されませんでした"],
+      "本次行为与参考基线没有显著差异，未发现换模迹象。": ["This run has no significant behavioral difference from the reference; no substitution signal was found.","今回の動作と比較基準に有意差はなく、モデル置換の兆候は見つかりませんでした。"],
+      "本次行为与参考基线存在显著差异，疑似换模或版本、配置发生变化。": ["Behavior differs significantly from the reference. Model substitution, version or configuration changes may explain it.","比較基準と動作に有意差があります。モデル置換・バージョン・設定変更が考えられます。"],
+      "与相同推理参数的能力基线相比，发现显著能力下降。": ["Capabilities declined significantly against a baseline with the same reasoning settings.","同じ推論設定の能力基準と比べ、有意な低下が見つかりました。"],
+      "尚无能力基线，无法判断是否降级；本次通过 {passed} / {valid} 项。": ["No capability baseline exists, so a downgrade cannot be judged; this run passed {passed} / {valid} tasks.","能力基準がないため低下は判定できません。今回は {valid} 項目中 {passed} 項目成功しました。"],
+      "有效回答 {valid} / {count}，覆盖率 {coverage}%；至少需要 {required} 个有效回答。": ["Valid answers: {valid} / {count} ({coverage}% coverage); at least {required} are required.","有効回答 {valid} / {count}（{coverage}%）。少なくとも {required} 件必要です。"],
+      "部分输出被截断，未形成足够的有效答案。": ["Some outputs were truncated, leaving too few valid answers.","一部出力が途中で切れ、有効回答が不足しています。"],
+      "部分响应不符合答题格式，无法完成统计判断。": ["Some responses do not follow the answer format, preventing a statistical verdict.","一部の回答形式が不正なため、統計判定できません。"],
+      "通道未遵守测试参数，本次无法对照参考。": ["The channel ignored test parameters, so this run is not comparable to the reference.","接続先がテスト設定に従わず、比較基準と対照できません。"],
+      "请求超时，检测未完成。": ["A request timed out; the audit is incomplete.","リクエストがタイムアウトし、検証は未完了です。"],
+      "通道请求失败，检测未完成。": ["A channel request failed; the audit is incomplete.","接続先へのリクエストが失敗し、検証は未完了です。"],
+      "检测已取消，已发生的用量仍会统计。": ["Audit cancelled; incurred usage is still counted.","検証をキャンセルしました。発生した使用量は集計されます。"],
+      "宿主重启时检测尚未完成，请重新检测。": ["The audit was unfinished when the host restarted. Run it again.","ホスト再起動時に検証が未完了でした。再実行してください。"],
+      "已达到 Token 预算，检测未完成。": ["The token budget was reached; the audit is incomplete.","トークン予算に達し、検証は未完了です。"],
+      "参考基线未建立，无法用于模型判断。": ["No reference was created; model comparison is unavailable.","比較基準を作成できず、モデル判定には使えません。"],
+      "尚未取得足够证据，无法判断模型是否匹配。": ["There is not enough evidence to judge model matching.","モデル一致を判断する証拠が不足しています。"],
+      "本次检测用量已计入用量统计：{tokens} Token": ["Audit usage included in usage statistics: {tokens} tokens","検証使用量を統計に計上しました：{tokens} Token"],
+      "检测用量保存失败，已停止后续请求；请检查本地存储。": ["Audit usage could not be saved; further calls stopped. Check local storage.","検証使用量を保存できず、後続の呼び出しを停止しました。ローカル保存先を確認してください。"],
+      "检测记录无法读取，请检查本地记录后重新加载插件。": ["Audit history could not be read. Check local records and reload the plugin.","検証履歴を読めません。ローカル記録を確認し、プラグインを再読み込みしてください。"],
+      "通过 {passed} / {valid} · 共 {count} 项任务": ["Passed {passed} / {valid} · {count} tasks total","成功 {passed} / {valid} · 全 {count} 項目"],
+      "成对对照 {paired} 项 · 下降 {losses} 项 · 提升 {gains} 项": ["{paired} paired tasks · {losses} losses · {gains} gains","対照 {paired} 項目 · 低下 {losses} · 改善 {gains}"],
+      "本次通道表现": ["Channel performance this run","今回の接続性能"],
+      "已有响应提示": ["Existing response hints","既存応答の参考情報"],
+      "名称与速度提供辅助提示；行为差异也可能来自版本或配置变化。测试用量单列，不加入会话汇总。": ["Names and speed provide supporting hints; behavior can vary with versions or configuration. Test usage is separate from session totals.","名前と速度は補助情報です。動作の差はバージョンや設定変更でも生じます。テスト使用量はセッション集計と分けます。"],
+      "基线文件超过 1 MB。": ["Reference file exceeds 1 MB.","比較基準ファイルが 1 MB を超えています。"],
+      "测试预算已过期，请刷新预算后开始。": ["The quote expired. Preview the budget again before starting.","見積もりが失効しました。予算を再確認してください。"],
+      "模型信息无法读取，请检查供应商配置后重试。": ["Model information is unavailable. Check provider settings and retry.","モデル情報を読み取れません。設定を確認して再試行してください。"],
+      "参考基线与当前模型不同，请选择对应基线或建立本地参考。": ["The baseline is for a different model. Choose a matching reference or create one.","基準のモデルが異なります。一致する基準を選ぶか作成してください。"],
+      "该模型无法关闭推理，不能使用关闭推理的公开基线。请建立相同推理强度的本地参考。": ["This model cannot disable reasoning. Create a reference using the same reasoning effort.","このモデルは推論を無効にできません。同じ推論強度で比較基準を作成してください。"],
+      "参考与目标的推理强度不兼容，请重新校准。": ["Reference and target reasoning settings are incompatible. Recalibrate.","参照側と検証側の推論設定に互換性がありません。再校正してください。"],
+      "能力基线的推理强度与当前模型不同，请选择相同档位或重新校准。": ["Capability baseline reasoning differs from the current model. Use the same effort or recalibrate.","能力基準の推論強度が異なります。同じ強度を選ぶか再校正してください。"],
+      "Token 预算应为 1,024–500,000 的整数。": ["The token budget must be an integer from 1,024 to 500,000.","予算は 1,024–500,000 の整数にしてください。"],
+      "请确认所选通道可作为可信参考。": ["Confirm that you trust the selected reference channel.","参照先を信頼できることを確認してください。"],
+      "请求未完成，已停止后续请求；检查通道后可重新测试。": ["A request did not complete. Further calls stopped; check the channel and retry.","リクエストが完了せず、後続を停止しました。接続先を確認してください。"],
+      "已达到已上报 Token 预算，后续请求已停止。": ["Reported usage reached the token budget. Further calls stopped.","報告済み使用量が予算に達したため、後続を停止しました。"],
+      "稳定探针少于 64 个，未保存基线；可提高校准题量后重试。": ["Fewer than 64 stable probes; no reference was saved. Increase candidate count and retry.","安定した問題が 64 個未満のため保存しませんでした。問題数を増やして再試行してください。"],
+      "参考自测覆盖不足或波动过大，未保存基线。": ["Reference calibration has insufficient coverage or excessive variation. No baseline saved.","参照検証の回答率が不足するか変動が大きいため、保存しませんでした。"],
+      "参考自测覆盖不足或波动过大，请重新校准后检测。": ["Reference calibration has insufficient coverage or excessive variation. Recalibrate before auditing.","参照検証の回答率が不足するか変動が大きいため、再校正してから検証してください。"],
+      "通道未遵守关闭推理的测试参数，请重新校准。": ["The channel did not honor reasoning-off parameters. Recalibrate.","接続先が推論オフ設定に従いませんでした。再校正してください。"],
+      "基线保存失败，请检查本地存储后重新校准。": ["Could not save the baseline. Check local storage and recalibrate.","基準を保存できません。ローカル保存先を確認して再校正してください。"],
+      "测试未完成，请检查通道或重新生成预算。": ["The test did not complete. Check the channel or preview a new budget.","テストが未完了です。接続先を確認するか予算を再確認してください。"],
       '用量统计': ['Usage statistics', '利用状況'],
       '用量统计页面': ['Usage statistics tabs', '利用状況のタブ'],
       '用量': ['Usage', '使用量'],
       '配额': ['Quota', '利用枠'],
       '控制': ['Controls', '設定'],
+      '匹配': ['Match', '照合'],
+      '输入': ['Input', '入力'],
+      '输出': ['Output', '出力'],
+      '缓存读取': ['Cache read', 'キャッシュ読み取り'],
+      '缓存写入': ['Cache write', 'キャッシュ書き込み'],
+      '推理': ['Reasoning', '推論'],
+      '调用次数': ['Calls', '呼び出し回数'],
+      '模型匹配': ['Model match', 'モデルの照合'],
+      '匹配服务已停止。': ['The match service has stopped.', '照合サービスは停止しています。'],
+      '请确认测试会消耗 Token 后再开始。': ['Confirm that the test uses tokens before starting.', '開始前にトークン消費を確認してください。'],
+      '请先选择当前会话与模型。': ['Select a current session and model first.', '先に現在のセッションとモデルを選択してください。'],
+      '当前宿主不支持独立测试。': ['This host does not support independent tests.', 'このホストは独立テストに対応していません。'],
+      '已有测试正在运行，请先等待或取消。': ['A test is running. Wait or cancel it first.', 'テストが実行中です。完了を待つか、キャンセルしてください。'],
+      '测试记录已过期。': ['The test record has expired.', 'テスト記録の期限が切れています。'],
+      '会话已不可用，请重新选择。': ['The session is unavailable. Select it again.', 'セッションを利用できません。選択し直してください。'],
+      '当前 DSH 会话': ['Current DSH session', '現在の DSH セッション'],
+      '尚无当前会话，请先打开一个 DSH 会话。': ['Open a DSH session to analyze its current model.', 'DSH セッションを開くと現在のモデルを分析できます。'],
+      '正在读取当前模型…': ['Loading the current model…', '現在のモデルを読み込み中…'],
+      '供应商': ['Provider', 'プロバイダー'],
+      '请求模型': ['Requested model', 'リクエストしたモデル'],
+      '推理强度': ['Reasoning effort', '推論の強度'],
+      '供应商默认': ['Provider default', 'プロバイダーの既定値'],
+      '已有响应分析': ['Existing response analysis', '既存の応答を分析'],
+      '分析已有日志，不消耗额外 Token。': ['Analyzes existing logs without additional token usage.', '既存のログを分析するため、追加のトークンは消費しません。'],
+      '刷新分析': ['Refresh analysis', '分析を更新'],
+      '未发现明显异常': ['No obvious anomaly', '明らかな異常なし'],
+      '疑似不匹配': ['Suspected mismatch', '不一致の疑い'],
+      '证据不足': ['Insufficient evidence', '証拠不足'],
+      '弱证据': ['Weak evidence', '弱い証拠'],
+      '中等证据': ['Moderate evidence', '中程度の証拠'],
+      '样本 {samples} · 同名 {exact} · 版本近似 {compatible} · 名称差异 {different} · 未上报 {missing}': ['Samples {samples} · Same name {exact} · Similar version {compatible} · Different name {different} · Not reported {missing}', '標本 {samples} · 同名 {exact} · 近似版 {compatible} · 名前の相違 {different} · 未報告 {missing}'],
+      '响应声明模型': ['Response-declared model', '応答が申告したモデル'],
+      '未上报': ['Not reported', '未報告'],
+      '同名、版本后缀、推理用量或答题表现都不能证明真实模型身份。名称差异可能来自别名或中转配置。': ['Names, version suffixes, reasoning usage and task results cannot prove a model identity. Name differences may come from aliases or gateway configuration.', 'モデル名、版番号、推論使用量、課題の結果では実際のモデルを証明できません。名前の違いは別名や中継設定が原因の場合があります。'],
+      '存在开启推理但未上报推理用量的响应，不能据此判定降配。': ['Some responses have reasoning enabled without reported reasoning usage. This does not establish a downgrade.', '推論が有効でも推論使用量が報告されていない応答があります。これだけでは性能の低下を判断できません。'],
+      '独立测试': ['Independent test', '独立テスト'],
+      '使用当前供应商、模型和推理强度，运行 3 个固定任务；不使用会话内容。': ['Runs 3 fixed tasks with the current provider, model and reasoning effort, without using conversation content.', '現在のプロバイダー、モデル、推論強度で固定の課題を 3 件実行します。会話内容は使用しません。'],
+      '会产生费用：3 次请求，每次最大输出 1,024 Token；输入及推理计费按供应商规则。': ['Incurs charges: 3 requests, each with a 1,024-token output limit. Input and reasoning billing follows provider rules.', '費用が発生します。3 件のリクエスト、それぞれ出力上限 1,024 トークンです。入力と推論の課金はプロバイダーの規則に従います。'],
+      '开始测试（会消耗 Token）': ['Start test (uses tokens)', 'テスト開始（トークンを消費）'],
+      '取消测试': ['Cancel test', 'テストをキャンセル'],
+      '正在取消…': ['Cancelling…', 'キャンセル中…'],
+      '正在分析…': ['Analyzing…', '分析中…'],
+      '测试运行中': ['Test running', 'テスト実行中'],
+      '测试完成': ['Test complete', 'テスト完了'],
+      '测试已取消': ['Test cancelled', 'テストをキャンセルしました'],
+      '测试未完成': ['Test did not complete', 'テストは完了しませんでした'],
+      '固定任务通过 {passed} / {checked} · 已完成 {progress} / 3': ['Fixed tasks passed {passed} / {checked} · Finished {progress} / 3', '固定課題の成功 {passed} / {checked} · 完了 {progress} / 3'],
+      '已上报测试用量：{tokens} Token': ['Reported test usage: {tokens} tokens', '報告済みテスト使用量：{tokens} トークン'],
+      '部分测试用量尚未上报，可能已产生费用。': ['Some test usage has not been reported; charges may have occurred.', 'テスト使用量の一部は未報告です。費用が発生している場合があります。'],
+      '算术': ['Arithmetic', '算術'],
+      '排序与格式': ['Ordering and format', '並び替えと形式'],
+      '约束推理': ['Constraint reasoning', '制約の推論'],
+      '通过': ['Passed', '成功'],
+      '答案或格式不符': ['Answer or format differed', '回答または形式が不一致'],
+      '达到输出上限，结果不完整': ['Output limit reached; incomplete', '出力上限に達したため不完全です'],
+      '超时': ['Timed out', 'タイムアウト'],
+      '已取消': ['Cancelled', 'キャンセル済み'],
+      '通道暂时不可用': ['Channel temporarily unavailable', '接続を一時的に利用できません'],
+      '测试结果反映这次通道表现，不构成模型身份认证。测试用量单列，不加入会话汇总。': ['Results describe this channel run and do not authenticate model identity. Test usage is shown separately from session totals.', '結果は今回の接続の動作を示すもので、モデルの身元を認証するものではありません。テスト使用量はセッション集計と分けて表示します。'],
       '刷新用量统计': ['Refresh usage statistics', '利用状況を更新'],
       '刷新全部配额': ['Refresh all quotas', 'すべての利用枠を更新'],
       '部分配额未能更新，请稍后刷新重试。': ['Some quotas could not be updated. Try refreshing again later.', '一部の利用枠を更新できませんでした。しばらくしてから再試行してください。'],
       '部分会话读取失败': ['Some sessions could not be read', '一部のセッションを読み込めませんでした'],
+      '草稿已保留，测试并确认后生效。': ['Draft retained. Test and confirm to apply it.', '下書きを保持しています。テストして確定すると有効になります。'],
+      '恢复已保存模板': ['Restore saved template', '保存済みテンプレートを復元'],
+      '本地会话统计': ['Local session statistics', 'ローカルセッションの統計'],
+      '上次同步：{time}': ['Last synced: {time}', '前回の同期：{time}'],
+      '后台同步中，当前显示上次数据。': ['Syncing in the background; showing the previous data.', 'バックグラウンドで同期中です。前回のデータを表示しています。'],
+      '当前模型筛选：{model}': ['Model filter: {model}', '現在のモデルフィルター：{model}'],
+      '清除筛选': ['Clear filter', 'フィルターを解除'],
+      '概览为全部历史；图表按当前模型筛选。': ['Overview covers all history; charts follow the model filter.', '概要は全履歴です。グラフにはモデルフィルターを適用します。'],
+      '保留上次成功数据': ['Showing the last successful data', '前回取得したデータを表示しています'],
+      '凭据无效或已过期，请在模型设置中重新登录。': ['Credentials are invalid or expired. Sign in again in model settings.', '認証情報が無効か期限切れです。モデル設定で再ログインしてください。'],
+      '账户没有配额查询权限。': ['This account cannot read quota information.', 'このアカウントには利用枠を照会する権限がありません。'],
+      '查询受到限流，请稍后重试。': ['The query was rate limited. Try again later.', '照会回数が制限されています。後で再試行してください。'],
+      '查询超时，请检查网络后重试。': ['The query timed out. Check your connection and retry.', '照会がタイムアウトしました。接続を確認して再試行してください。'],
+      '供应商服务暂时不可用。': ['The provider service is temporarily unavailable.', 'プロバイダーのサービスを一時的に利用できません。'],
+      '响应无法解析，请检查查询字段映射。': ['The response could not be parsed. Check the field mapping.', '応答を解析できません。フィールドの対応を確認してください。'],
+      '查询失败，请检查地址和网络。': ['The query failed. Check the URL and your connection.', '照会に失敗しました。URLと接続を確認してください。'],
+      '配额查询暂时不可用，请稍后重试。': ['Quota queries are temporarily unavailable. Try again later.', '利用枠の照会を一時的に利用できません。後で再試行してください。'],
       '在 GitHub 查看 dsh-usage-stats': ['View dsh-usage-stats on GitHub', 'GitHub で dsh-usage-stats を表示'],
       '概览指标': ['Overview', '概要'],
       '今日tokens数': ["Today's tokens", '今日のトークン数'],
@@ -64,6 +268,14 @@ window.__ModuleLoader__.load({
       '7天': ['7 days', '7日間'],
       '30天': ['30 days', '30日間'],
       '模型明细与分布': ['Model details and distribution', 'モデル別の詳細と分布'],
+      '检测模型匹配': ['Detect model match', 'モデル照合を表示'],
+      'token输出速度': ['Token output speed', 'トークン出力速度'],
+      '暂无速度数据': ['No speed data yet', '速度データはまだありません'],
+      '平均首 Token 耗时': ['Average time to first token', '最初のトークンまでの平均時間'],
+      '暂无 TTFT 数据': ['No TTFT data yet', 'TTFT データはまだありません'],
+      '{tokens} 个输出 Token · {seconds} 秒': ['{tokens} output tokens · {seconds} seconds', '{tokens} 出力トークン · {seconds} 秒'],
+      '展开全部速度排名（{count}）': ['Show all speed rankings ({count})', 'すべての速度順位を表示（{count}）'],
+      '收起速度排名': ['Show fewer speed rankings', '速度順位を折りたたむ'],
       '每个供应商 · 模型组合单独统计': ['Count each provider and model combination separately', 'プロバイダーとモデルの組み合わせごとに集計'],
       '合并同名模型，不区分供应商': ['Combine matching model names across providers', '同名モデルをプロバイダーを問わず合算'],
       '模型用量清单 ({count})': ['Model usage ({count})', 'モデル使用量一覧（{count}）'],
@@ -269,6 +481,8 @@ window.__ModuleLoader__.load({
       '请先确认自动查询可能会消耗少量余额。': ['Confirm that automatic queries may incur a small charge.', '自動照会で少額の残高が消費される場合があることを確認してください。'],
       '仅支持 10 分钟、1 小时、5 小时或每天。': ['Supported intervals: 10 minutes, 1 hour, 5 hours or daily.', '間隔は10分、1時間、5時間、または毎日のみ対応しています。'],
       '模型明细开关值无效。': ['Invalid model details switch value.', 'モデル詳細のスイッチ値が無効です。'],
+      '检测模型匹配开关值无效。': ['Invalid model match switch value.', 'モデル照合スイッチの値が無効です。'],
+      'Token 输出速度开关值无效。': ['Invalid token output speed switch value.', 'トークン出力速度スイッチの値が無効です。'],
       '高级模型选择器开关值无效。': ['Invalid advanced model selector switch value.', '詳細モデル選択のスイッチ値が無効です。'],
       '未知设置操作。': ['Unknown settings action.', '設定の操作が不明です。'],
       '设置保存失败，请检查存储目录权限。': ['Failed to save settings. Check storage directory permissions.', '設定を保存できませんでした。保存先フォルダーの権限を確認してください。'],
@@ -443,6 +657,7 @@ window.__ModuleLoader__.load({
       UsageApi.prototype.providerQuotas = function (opts) {
         var search = new URLSearchParams()
         if (opts && opts.fresh) search.set('fresh', '1')
+        if (opts && opts.provider) search.set('provider', opts.provider)
         var q = search.toString()
         return fetch('/api/dsh-usage-stats/provider-quotas' + (q ? '?' + q : ''), { headers: { accept: 'application/json' } }).then(readJson)
       }
@@ -477,6 +692,19 @@ window.__ModuleLoader__.load({
       UsageApi.prototype.testQuota = function (provider, template) {
         return fetch('/api/dsh-usage-stats/quota-test', {
           method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify({ provider: provider, template: template }),
+        }).then(readJson)
+      }
+      UsageApi.prototype.modelMatch = function (opts) {
+        var search = new URLSearchParams()
+        Object.keys(opts || {}).forEach(function (key) { if (opts[key]) search.set(key, opts[key]) })
+        return fetch('/api/dsh-usage-stats/model-match?' + search.toString(), { headers: { accept: 'application/json' } }).then(readJson)
+      }
+      UsageApi.prototype.modelTest = function (body) {
+        return fetch('/api/dsh-usage-stats/model-test', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body) }).then(readJson)
+      }
+      UsageApi.prototype.modelBaselines = function (body) {
+        return fetch('/api/dsh-usage-stats/model-baselines', body === undefined ? { headers: { accept: 'application/json' } } : {
+          method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body),
         }).then(readJson)
       }
       return UsageApi
@@ -550,6 +778,55 @@ window.__ModuleLoader__.load({
       '.dshus-confirm p { margin: 0; font-size: 13px; line-height: 1.6; }',
       '.dshus-query-preview { margin-top: 12px; padding: 10px 0; border-top: 1px solid var(--dsw-alias-border-l2, #414144); font-size: 13px; line-height: 1.8; }',
       '.dshus-control-status { font-size: 12px; color: var(--dsw-alias-label-secondary, #6b7280); line-height: 1.6; }',
+      '.dshus-speed-list { list-style: none; margin: 0; padding: 0; }',
+      '.dshus-speed-head, .dshus-speed-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) 84px 84px; align-items: center; gap: 12px; font-variant-numeric: tabular-nums; }',
+      '.dshus-speed-head { color: var(--dsw-alias-label-secondary, #6b7280); font-size: 12px; text-align: right; }',
+      '.dshus-speed-row { padding: 12px 0; border-bottom: 1px solid var(--dsw-alias-border-l2, #e5e7eb); }',
+      '.dshus-speed-row:last-child { border-bottom: 0; }',
+      '.dshus-speed-rank { color: var(--dsw-alias-label-secondary, #6b7280); font-size: 13px; text-align: center; }',
+      '.dshus-speed-model { min-width: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }',
+      '.dshus-speed-meta { margin-top: 4px; font-size: 12px; font-weight: 400; line-height: 1.5; color: var(--dsw-alias-label-secondary, #6b7280); overflow-wrap: anywhere; }',
+      '.dshus-speed-value { text-align: right; white-space: nowrap; font-size: 20px; font-weight: 600; }',
+      '@container (max-width: 420px) { .dshus-speed-head, .dshus-speed-row { grid-template-columns: 18px minmax(0, 1fr) 64px 60px; gap: 8px; } .dshus-speed-value { font-size: 18px; } }',
+      '@container (max-width: 360px) { .dshus-module.dshus-speed-module { padding: 12px; } .dshus-speed-head, .dshus-speed-row { grid-template-columns: 18px minmax(0, 1fr) 58px 54px; gap: 6px; } }',
+      '.dshus-match-verdict { margin: 14px 0 8px; font-size: 18px; font-weight: 600; }',
+      '.dshus-match-verdict[data-verdict="suspected-mismatch"] { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 5px; }',
+      '.dshus-match-fields { display: grid; gap: 8px; margin: 12px 0; }',
+      '.dshus-match-fields div { display: flex; gap: 12px; align-items: baseline; min-width: 0; }',
+      '.dshus-match-fields dt { flex: 0 0 86px; color: var(--dsw-alias-label-secondary, #6b7280); font-size: 12px; }',
+      '.dshus-match-fields dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; }',
+      '.dshus-audit-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }',
+      '.dshus-audit-field { display: grid; gap: 7px; min-width: 0; }',
+      '.dshus-audit-field .dshus-field { width: 100%; min-height: 36px; }',
+      '.dshus-audit-check { display: flex; gap: 9px; align-items: flex-start; font-size: 13px; line-height: 1.6; margin: 12px 0; }',
+      '.dshus-audit-check input { flex: none; accent-color: #2563eb; margin: 4px 0 0; }',
+      '.dshus-audit-reference, .dshus-audit-result { padding: 12px 0; margin: 12px 0 0; border-top: 1px solid var(--dsw-alias-border-l2, #e5e7eb); font-size: 13px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }',
+      '.dshus-audit-reference p, .dshus-audit-result p { margin: 6px 0; line-height: 1.6; }',
+      '.dshus-audit-result h4 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }',
+      '.dshus-match-verdict[data-verdict="significant-difference"] { text-decoration: underline; text-underline-offset: 5px; }',
+      '.dshus-audit-summary { scroll-margin-top: 90px; }',
+      '.dshus-audit-summary .dshus-match-verdict { font-size: 22px; line-height: 1.4; }',
+      '.dshus-audit-headline { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 32px; margin: 16px 0; }',
+      '.dshus-audit-headline .dshus-match-verdict { margin: 0; font-size: 18px; }',
+      '.dshus-audit-headline p { margin: 8px 0 0; line-height: 1.6; }',
+      '.dshus-audit-score { flex: none; margin: 0; font-variant-numeric: tabular-nums; }',
+      '.dshus-audit-score dt { font-size: 12px; line-height: 20px; color: var(--dsw-alias-label-secondary, #4b5563); }',
+      '.dshus-audit-score dd { margin: 4px 0 0; font-size: 36px; font-weight: 650; line-height: 40px; }',
+      '.dshus-audit-score dd[data-empty="true"] { font-size: 18px; font-weight: 500; }',
+      '.dshus-audit-score-unit { font-size: 14px; font-weight: 400; margin-left: 6px; color: var(--dsw-alias-label-secondary, #4b5563); }',
+      '.dshus-audit-verdict { flex: 1; min-width: 180px; }',
+      '.dshus-audit-model, .dshus-audit-cost { font-size: 13px; line-height: 1.6; margin: 8px 0; overflow-wrap: anywhere; }',
+      '.dshus-audit-model { color: var(--dsw-alias-label-secondary, #4b5563); }',
+      '.dshus-disclosure { border-top: 1px solid var(--dsw-alias-border-l2, #e5e7eb); margin-top: 16px; padding-top: 12px; font-size: 13px; }',
+      '.dshus-disclosure > summary { cursor: pointer; color: var(--dsw-alias-label-secondary, #4b5563); line-height: 24px; }',
+      '.dshus-disclosure > summary:hover { color: var(--dsw-alias-label-primary, #1f2430); }',
+      '.dshus-disclosure > summary:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #3b82f6); outline-offset: 4px; border-radius: 4px; }',
+      '.dshus-audit-details { margin-top: 16px; font-size: 13px; overflow-wrap: anywhere; }',
+      '.dshus-audit-details summary { cursor: pointer; padding: 6px 0; }',
+      '.dshus-audit-details summary:focus-visible, .dshus-audit-check input:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #3b82f6); outline-offset: 3px; }',
+      '.dshus-audit-details a.dshus-btn { color: inherit; text-decoration: none; }',
+      '@container (max-width: 520px) { .dshus-audit-form { grid-template-columns: minmax(0, 1fr); gap: 12px; } }',
+      '@container (max-width: 420px) { .dshus-tab { padding-left: 12px; padding-right: 12px; } }',
       '.dshus-saved-query { display: flex; align-items: center; gap: 8px; padding-top: 10px; font-size: 13px; }',
       '.dshus-saved-query span { flex: 1; min-width: 0; overflow-wrap: anywhere; }',
       '@container (max-width: 420px) { .dshus-setting-row { gap: 10px; } .dshus-select { width: 120px; } }',
@@ -606,6 +883,21 @@ window.__ModuleLoader__.load({
       '.dshus-statbar .dshus-stat .k { font-size: 11.5px; line-height: 16px; color: var(--dsw-alias-label-tertiary, #6b7280); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }',
       '.dshus-statbar .dshus-stat .sub { font-size: 11px; color: var(--dsw-alias-label-caption, #9ca3af); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }',
       '@container (max-width: 480px) { .dshus-statbar { padding: 12px 2px; } .dshus-statbar .dshus-stat { padding: 0 6px; } .dshus-statbar .dshus-stat .v { font-size: 16px; line-height: 20px; } }',
+      '.dshus-statbar.dshus-overview-bar { padding: 4px 0 0; border: 0; border-radius: 0; background: transparent; }',
+      '.dshus-overview-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 24px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-align: left; cursor: pointer; }',
+      '.dshus-overview-toggle:hover { color: var(--dsw-alias-label-primary, #1f2430); }',
+      '.dshus-overview-toggle:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #3b82f6); outline-offset: 4px; border-radius: 4px; }',
+      '.dshus-overview-chevron { flex: none; width: 16px; height: 16px; transition: transform .18s cubic-bezier(.16, 1, .3, 1); }',
+      '.dshus-overview-toggle[aria-expanded="true"] .dshus-overview-chevron { transform: rotate(180deg); }',
+      '.dshus-overview-details { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--dsw-alias-border-l2, #e5e7eb); }',
+      '.dshus-overview-details[hidden] { display: none !important; }',
+      '.dshus-overview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px 0; margin: 4px 0 20px; text-align: center; font-variant-numeric: tabular-nums; }',
+      '.dshus-overview-grid > div { min-width: 0; padding: 0 10px; }',
+      '.dshus-overview-grid dt { font-size: 12px; line-height: 20px; color: var(--dsw-alias-label-secondary, #4b5563); }',
+      '.dshus-overview-grid dd { margin: 6px 0 0; font-size: 20px; font-weight: 600; line-height: 26px; overflow-wrap: anywhere; }',
+      '.dshus-overview-grid .dshus-favorite-model { font-size: 16px; line-height: 24px; }',
+      '@container (max-width: 440px) { .dshus-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }',
+      '@media (prefers-reduced-motion: reduce) { .dshus-overview-chevron { transition: none; } }',
 
       /* 多值余额沿用概览分栏；周期额度逐行对齐名称、进度、百分比与重置时间。 */
       '.dshus-quota-bar { padding: 14px 6px 12px; }',
@@ -1734,9 +2026,12 @@ window.__ModuleLoader__.load({
       var legend = show.map(function (m, idx) {
         var pct = (m.billed / total) * 100
         var label = m.provider ? m.provider + ' · ' + m.model : m.model
-        return React.createElement('div', {
+        return React.createElement(m.key !== '__rest__' && onSelect ? 'button' : 'div', {
           className: 'dshus-donut-row',
           key: m.key,
+          type: m.key !== '__rest__' && onSelect ? 'button' : undefined,
+          title: fmtExact(m.billed) + ' tokens',
+          style: m.key !== '__rest__' && onSelect ? { border: 0, padding: 0, width: '100%', background: 'transparent', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer' } : undefined,
           onMouseMove: function (e) { showTip(e, m.key) },
           onMouseLeave: hideTip,
           onClick: m.key !== '__rest__' && onSelect ? function () { onSelect(m.key) } : undefined,
@@ -1761,12 +2056,12 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function refreshIconButton(onClick, loading, label, alignEnd) {
+    function refreshIconButton(onClick, loading, label, alignEnd, disabled) {
       return React.createElement('button', {
         type: 'button',
         className: 'dshus-btn dshus-icon-btn' + (alignEnd ? ' dshus-heading-refresh' : ''),
         onClick: onClick,
-        disabled: loading,
+        disabled: loading || !!disabled,
         title: label,
         'aria-label': label,
       }, loading
@@ -1779,6 +2074,23 @@ window.__ModuleLoader__.load({
     // Keep the last successful response during refreshes and transient failures.
     // Request generations prevent a late background read from replacing a newer snapshot.
     function quotaFailed(body) { return !body || body.ok === false || body.status === 'error' }
+
+    function quotaNotice(body) {
+      if (!body || !body.refreshError) return null
+      var reasons = {
+        authentication: '凭据无效或已过期，请在模型设置中重新登录。',
+        forbidden: '账户没有配额查询权限。',
+        'rate-limit': '查询受到限流，请稍后重试。',
+        timeout: '查询超时，请检查网络后重试。',
+        service: '供应商服务暂时不可用。',
+        parse: '响应无法解析，请检查查询字段映射。',
+        invalid: '响应无法解析，请检查查询字段映射。',
+      }
+      return React.createElement('div', { className: 'dshus-error', role: 'status' },
+        body.stale ? t('保留上次成功数据') + ' · ' : '',
+        t(reasons[body.refreshError.code] || '查询失败，请检查地址和网络。'),
+        Number.isInteger(body.refreshError.httpStatus) ? ' (HTTP ' + body.refreshError.httpStatus + ')' : '')
+    }
 
     function useQuotaData(loader, props) {
       var state = React.useState(null)
@@ -1795,13 +2107,13 @@ window.__ModuleLoader__.load({
       var pausedRef = React.useRef(false)
       loaderRef.current = loader
       pausedRef.current = props.active === false || props.refreshing === true
-      function load(fresh) {
+      function load(fresh, provider) {
         if (busyRef.current || pausedRef.current) return
         var request = ++requestRef.current
         busyRef.current = true
         setLoading(true)
         setError('')
-        return loaderRef.current(fresh).then(function (body) {
+        return loaderRef.current(fresh, provider).then(function (body) {
           if (request !== requestRef.current) return
           if (quotaFailed(body)) throw new Error(body && body.error || '操作失败，请稍后重试。')
           setData(body)
@@ -1840,7 +2152,7 @@ window.__ModuleLoader__.load({
     }
 
     function ProviderQuotasPanel(props) {
-      var resource = useQuotaData(function (fresh) { return props.api.providerQuotas({ fresh: fresh }) }, props)
+      var resource = useQuotaData(function (fresh, provider) { return props.api.providerQuotas({ fresh: fresh, provider: provider }) }, props)
       var data = resource.data, loading = resource.loading, load = resource.load
       var quotas = data && data.ok === true && Array.isArray(data.quotas) ? data.quotas : []
       if (!quotas.length) return resource.error ? React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(resource.error)) : null
@@ -1854,15 +2166,16 @@ window.__ModuleLoader__.load({
       return React.createElement('div', { className: 'dshus-provider-panels' }, resource.error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(resource.error)), quotas.map(function (quota) {
         var metrics = Array.isArray(quota.metrics) ? quota.metrics : []
         // 上次获取时间：同一张配额卡片内，所有指标共享同一个获取时刻。
-        var fetchedLine = React.createElement('div', { className: 'dshus-fetched' },
-          t('上次获取时间：{time}', { time: fmtFetched(quota.syncedAt) }))
+        var fetchedLine = React.createElement(React.Fragment, null,
+          quotaNotice(quota),
+          React.createElement('div', { className: 'dshus-fetched' }, t('上次获取时间：{time}', { time: fmtFetched(quota.syncedAt) })))
         if (!metrics.length) {
           if (quota.status !== 'unqueried' && quota.status !== 'unavailable') return null
           var statusLabel = quota.status === 'unqueried' ? t('未查询') : t('未获取')
           return React.createElement('div', { key: quota.provider, className: 'dshus-module dshus-balance-module' },
             React.createElement('div', { className: 'dshus-balance-title' },
               React.createElement('h3', null, t(quota.name)),
-              refreshIconButton(function () { load(true) }, loading, t('刷新 {name} 配额', { name: t(quota.name) }), false),
+              refreshIconButton(function () { load(true, quota.provider) }, loading, t('刷新 {name} 配额', { name: t(quota.name) }), false),
             ),
             React.createElement('div', { className: 'dshus-balance-side' },
               React.createElement('div', {
@@ -1926,7 +2239,7 @@ window.__ModuleLoader__.load({
         var balance = metrics.length === 1 && metrics[0].kind === 'amount' && metrics[0].total == null
           ? metrics[0] : null
         if (balance) {
-          var refreshBtn = refreshIconButton(function () { load(true) }, loading, t('刷新 {name} 配额', { name: t(quota.name) }), false)
+          var refreshBtn = refreshIconButton(function () { load(true, quota.provider) }, loading, t('刷新 {name} 配额', { name: t(quota.name) }), false)
           var balanceSymbol = balance.currency === 'CNY' ? '¥' : balance.currency === 'USD' ? '$' : ''
           return React.createElement('div', { key: quota.provider, className: 'dshus-module dshus-balance-module' },
             React.createElement('div', { className: 'dshus-balance-title' },
@@ -1944,7 +2257,7 @@ window.__ModuleLoader__.load({
           React.createElement('div', { className: 'dshus-quota-heading' },
             React.createElement('h3', null, t(quota.name)),
             fetchedLine,
-            refreshIconButton(function () { load(true) }, loading, t('刷新 {name} 配额', { name: t(quota.name) }), false),
+            refreshIconButton(function () { load(true, quota.provider) }, loading, t('刷新 {name} 配额', { name: t(quota.name) }), false),
           ),
           cards.length > 0 && React.createElement('div', { className: 'dshus-statbar dshus-quota-bar' }, cards),
           windowRows.length > 0 && React.createElement('div', { className: 'dshus-quota-rows' }, windowRows),
@@ -2106,6 +2419,7 @@ window.__ModuleLoader__.load({
 
       return React.createElement('div', { className: 'dshus-module dshus-wb-module' },
         resource.error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(resource.error)),
+        quotaNotice(wbData),
         React.createElement('div', { className: 'dshus-quota-heading' },
           React.createElement('h3', null, name),
           React.createElement('div', { className: 'dshus-fetched' }, t('上次获取时间：{time}', { time: fmtFetched(wbData.syncedAt) })),
@@ -2324,6 +2638,7 @@ window.__ModuleLoader__.load({
       var copiedState = React.useState('')
       var copied = copiedState[0], setCopied = copiedState[1]
       var testRef = React.useRef(0)
+      var drafts = React.useRef(Object.create(null))
 
       function loadProviders() {
         setProviderLoading(true)
@@ -2339,13 +2654,22 @@ window.__ModuleLoader__.load({
         setError('')
         setStatus('')
         return props.onSave(patch).then(function () {
+          if (patch.action === 'remove-query') {
+            delete drafts.current[patch.provider]
+            if (provider === patch.provider) {
+              var entry = providers.find(function (item) { return item.provider === provider })
+              editTemplate(entry && entry.template ? JSON.stringify(entry.template, null, 2) : '')
+            }
+          }
           setSaving(false)
           setStatus(message || '设置已保存')
           if (patch.autoQuota !== undefined) setConfirmAuto(false)
         }).catch(function (err) { setSaving(false); setError(String(err.message || err)) })
       }
-      function editTemplate(text) {
+      function editTemplate(text, draftProvider) {
         testRef.current++
+        var id = draftProvider === undefined ? provider : draftProvider
+        if (id) drafts.current[id] = text
         setTemplateText(text)
         setPreview(null)
         setTesting(false)
@@ -2353,10 +2677,12 @@ window.__ModuleLoader__.load({
         setError('')
       }
       function selectProvider(id) {
+        if (provider) drafts.current[provider] = templateText
         setProvider(id)
         var saved = settings.customQueries.find(function (query) { return query.provider === id })
         var item = providers.find(function (entry) { return entry.provider === id })
-        editTemplate(item && item.queryType === 'adapter' ? '' : saved || item ? JSON.stringify(saved ? saved.template : item.template, null, 2) : '')
+        var text = item && item.queryType === 'adapter' ? '' : saved || item ? JSON.stringify(saved ? saved.template : item.template, null, 2) : ''
+        editTemplate(Object.prototype.hasOwnProperty.call(drafts.current, id) ? drafts.current[id] : text, id)
       }
       /**
        * Copy the ready-made prompt. The clipboard API needs a secure context and
@@ -2478,6 +2804,12 @@ window.__ModuleLoader__.load({
             switchButton(t('模型明细与分布'), settings.showModelDetails, function () { save({ showModelDetails: !settings.showModelDetails }) }),
           ),
           React.createElement('div', { className: 'dshus-setting-row' },
+            React.createElement('span', { className: 'dshus-setting-label' }, t('检测模型匹配')),
+            switchButton(t('检测模型匹配'), settings.showModelMatch === true, function () { save({ showModelMatch: settings.showModelMatch !== true }) })),
+          React.createElement('div', { className: 'dshus-setting-row' },
+            React.createElement('span', { className: 'dshus-setting-label' }, t('token输出速度')),
+            switchButton(t('token输出速度'), settings.showTokenSpeed !== false, function () { save({ showTokenSpeed: settings.showTokenSpeed === false }) })),
+          React.createElement('div', { className: 'dshus-setting-row' },
             React.createElement('div', null,
               React.createElement('span', { className: 'dshus-setting-label' }, t('高级模型选择器'))),
             switchButton(t('高级模型选择器'), advancedModelSelect, function () {
@@ -2505,6 +2837,12 @@ window.__ModuleLoader__.load({
               React.createElement('label', { className: 'dshus-setting-label', htmlFor: 'dshus-query-template' }, t('查询模板（JSON）')),
               selected && React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving, onClick: function () { editTemplate(JSON.stringify(selected.template, null, 2)) } }, t('重置模板'))),
             React.createElement('textarea', { id: 'dshus-query-template', className: 'dshus-field dshus-query-editor', value: templateText, spellCheck: false, disabled: saving, onChange: function (event) { editTemplate(event.target.value) } }),
+            React.createElement('div', { className: 'dshus-control-actions' },
+              React.createElement('span', { className: 'dshus-setting-help', role: 'status' }, t('草稿已保留，测试并确认后生效。')),
+              React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving, onClick: function () {
+                var saved = settings.customQueries.find(function (query) { return query.provider === provider })
+                editTemplate(JSON.stringify(saved ? saved.template : selected && selected.template, null, 2) || '')
+              } }, t('恢复已保存模板'))),
             // The old one-line schema description told the user what to write but
             // still left them to write it. This hands them a prompt to paste into
             // an AI instead, with the provider and current template already filled
@@ -2546,10 +2884,311 @@ window.__ModuleLoader__.load({
     /* Settings section page                                               */
     /* ------------------------------------------------------------------ */
 
+    function TokenSpeedRanking(props) {
+      var expandedState = React.useState(false)
+      var expanded = expandedState[0], setExpanded = expandedState[1]
+      var speeds = (props.speeds || []).filter(function (item) { return Number.isFinite(item.tokensPerSecond) && item.tokensPerSecond >= 0 && item.samples > 0 })
+        .slice().sort(function (a, b) { return b.tokensPerSecond - a.tokensPerSecond || b.samples - a.samples || String(a.key).localeCompare(String(b.key)) })
+      var visible = expanded ? speeds : speeds.slice(0, 8)
+      return React.createElement('section', { className: 'dshus-module dshus-speed-module', 'aria-labelledby': 'dshus-speed-heading' },
+        React.createElement('h3', { id: 'dshus-speed-heading' }, t('token输出速度')),
+        speeds.length > 0 && React.createElement('div', { className: 'dshus-speed-head' },
+          React.createElement('span', { style: { gridColumn: 'span 2' }, 'aria-hidden': true }),
+          React.createElement('span', null, 'TPS (tok/s)'),
+          React.createElement('span', { title: t('平均首 Token 耗时') }, 'TTFT (s)')),
+        speeds.length ? React.createElement('ol', { className: 'dshus-speed-list' }, visible.map(function (item, index) {
+          var tps = item.tokensPerSecond >= 10 ? String(Math.round(item.tokensPerSecond)) : String(Math.round(item.tokensPerSecond * 10) / 10)
+          var ttft = Number.isFinite(item.averageTtftMs) && item.averageTtftMs >= 0 ? (item.averageTtftMs / 1000).toFixed(1) : '—'
+          return React.createElement('li', { key: item.key, className: 'dshus-speed-row', 'data-model-key': item.key },
+            React.createElement('span', { className: 'dshus-speed-rank', 'aria-hidden': true }, index + 1),
+            React.createElement('div', { className: 'dshus-speed-model' }, item.model,
+              React.createElement('div', { className: 'dshus-speed-meta' }, item.provider)),
+            React.createElement('div', { className: 'dshus-speed-value', 'aria-label': 'TPS: ' + tps + ' tok/s', title: t('{tokens} 个输出 Token · {seconds} 秒', { tokens: fmtExact(item.outputTokens), seconds: (item.outputMs / 1000).toFixed(3) }) }, tps),
+            React.createElement('div', { className: 'dshus-speed-value', 'aria-label': 'TTFT: ' + ttft + (ttft === '—' ? '' : ' s'), title: t(ttft === '—' ? '暂无 TTFT 数据' : '平均首 Token 耗时') }, ttft))
+        })) : React.createElement('p', { className: 'dshus-muted', role: 'status' }, t(props.loading ? '加载中…' : '暂无速度数据')),
+        speeds.length > 8 && React.createElement('button', { type: 'button', className: 'dshus-btn', 'aria-expanded': expanded, onClick: function () { setExpanded(!expanded) } }, t(expanded ? '收起速度排名' : '展开全部速度排名（{count}）', { count: speeds.length })))
+    }
+
+    function fmtTaskDuration(ms) {
+      if (!Number.isFinite(ms) || ms < 0) return '—'
+      var seconds = Math.round(ms / 1000)
+      if (seconds >= 86400) return t('{days}天 {hours}小时', { days: Math.floor(seconds / 86400), hours: Math.floor(seconds % 86400 / 3600) })
+      if (seconds >= 3600) return t('{hours}小时 {minutes}分', { hours: Math.floor(seconds / 3600), minutes: Math.floor(seconds % 3600 / 60) })
+      if (seconds >= 60) return t('{minutes}分 {seconds}秒', { minutes: Math.floor(seconds / 60), seconds: seconds % 60 })
+      return t('{seconds}秒', { seconds: seconds })
+    }
+    function OverviewDetails(props) {
+      var overview = props.overview
+      if (!overview) return React.createElement('p', { className: 'dshus-setting-help' }, t('暂无数据'))
+      var favorite = overview.recentModel
+      var entries = [
+        ['缓存命中率', Number.isFinite(overview.cacheHitRate) ? (overview.cacheHitRate * 100).toFixed(1) + '%' : '—', t('缓存读取占全部输入的比例')],
+        ['Token 使用峰值', overview.peakDay ? fmt(overview.peakDailyBilled) : '—', overview.peakDay ? overview.peakDay + ' · ' + fmtExact(overview.peakDailyBilled) + ' Token' : t('暂无数据')],
+        ['最长任务时长', fmtTaskDuration(overview.longestTaskMs), t('有完整起止记录的已结束单轮任务，包含工具调用和等待。')],
+        ['当前连续天数', t('{days} 天', { days: overview.currentStreak || 0 }), t('今日尚未使用时，延续至昨日的连续记录。')],
+        ['最长使用天数', t('{days} 天', { days: overview.longestStreak || 0 }), t('历史最长连续使用天数')],
+        ['最近常使用模型', favorite ? favorite.model : '—', favorite ? t('近 7 天调用 {calls} 次 · {providers}', { calls: fmtExact(favorite.calls), providers: (favorite.providers || []).join(' · ') }) : t('暂无数据')],
+      ]
+      return React.createElement('dl', { className: 'dshus-overview-grid' }, entries.map(function (entry, index) {
+        return React.createElement('div', { key: entry[0] }, React.createElement('dt', null, t(entry[0])),
+          React.createElement('dd', { title: entry[2], className: index === 5 ? 'dshus-favorite-model' : undefined }, entry[1]))
+      }))
+    }
+    var NO_SESSION = Object.freeze({})
+    function MatchPanel(props) {
+      var currentStore = props.uiSession && props.uiSession.current || props.uiWorkspace && props.uiWorkspace.selection
+      var current = React.useSyncExternalStore(function (listener) { return currentStore ? currentStore.subscribe(listener) : function () {} }, function () { return currentStore ? currentStore.getSnapshot() : NO_SESSION })
+      var sessionId = current.key || current.sessionId || ''
+      var directoryRef = React.useRef({ id: null, value: null })
+      if (directoryRef.current.id !== sessionId) {
+        var directory = null
+        try { if (sessionId && props.modelDirectories) directory = props.modelDirectories.directoryFor(sessionId) } catch (err) {}
+        directoryRef.current = { id: sessionId, value: directory }
+      }
+      var activeDirectory = directoryRef.current.value, directoryStore = activeDirectory && activeDirectory.store
+      var modelState = React.useSyncExternalStore(function (listener) { return directoryStore ? directoryStore.subscribe(listener) : function () {} }, function () { return directoryStore ? directoryStore.getSnapshot() : NO_SESSION })
+      React.useEffect(function () { if (activeDirectory) Promise.resolve(activeDirectory.load()).catch(function () {}) }, [activeDirectory])
+      var selection = modelState.current || null
+      var provider = selection && selection.provider || '', model = selection && selection.model || '', effort = selection && selection.reasoningEffort || ''
+      var resultKey = [sessionId, provider, model, effort].join('|')
+      var resultState = React.useState(null), result = resultState[0], setResult = resultState[1]
+      var jobState = React.useState(null), job = jobState[0], setJob = jobState[1]
+      var errorState = React.useState(''), error = errorState[0], setError = errorState[1]
+      var loadingState = React.useState(false), loading = loadingState[0], setLoading = loadingState[1]
+      var busyState = React.useState(false), busy = busyState[0], setBusy = busyState[1]
+      var cancellingState = React.useState(false), cancelling = cancellingState[0], setCancelling = cancellingState[1]
+      var catalogState = React.useState(null), catalog = catalogState[0], setCatalog = catalogState[1]
+      var choiceState = React.useState({ key: '', id: '' }), choice = choiceState[0], setChoice = choiceState[1]
+      var modeState = React.useState('audit'), mode = modeState[0], setMode = modeState[1]
+      var countState = React.useState('full'), count = countState[0], setCount = countState[1]
+      var budgetState = React.useState(120000), budget = budgetState[0], setBudget = budgetState[1]
+      var capState = React.useState(false), includeCapabilities = capState[0], setIncludeCapabilities = capState[1]
+      var referenceState = React.useState(''), referenceRoute = referenceState[0], setReferenceRoute = referenceState[1]
+      var refEffortState = React.useState('off'), refEffort = refEffortState[0], setRefEffort = refEffortState[1]
+      var trustState = React.useState(false), trust = trustState[0], setTrust = trustState[1]
+      var quoteState = React.useState(null), quoted = quoteState[0], setQuoted = quoteState[1]
+      var fileRef = React.useRef(null), sequence = React.useRef(0), planSequence = React.useRef(0)
+      var mounted = React.useRef(true)
+      var resultRef = React.useRef(null), notifiedJob = React.useRef('')
+      React.useEffect(function () {
+        if (!job || job.status === 'running' || notifiedJob.current === job.id) return
+        notifiedJob.current = job.id
+        if (resultRef.current && resultRef.current.scrollIntoView) resultRef.current.scrollIntoView({ block: 'start', behavior: 'auto' })
+        if (props.onUsageUpdated) props.onUsageUpdated()
+      }, [job && job.id, job && job.status])
+      React.useEffect(function () { mounted.current = true; return function () { mounted.current = false; planSequence.current++ } }, [])
+      function modelKey(value) { return String(value || '').toLowerCase().split('/').pop() }
+      var references = (catalog && catalog.references || []).filter(function (ref) { return modelKey(ref.model) === modelKey(model) }).sort(function (a, b) { return (a.origin === 'public') - (b.origin === 'public') || String(b.date).localeCompare(String(a.date)) })
+      var selectedReference = references.find(function (ref) { return choice.key === resultKey && ref.id === choice.id }) || references[0] || null
+      var referenceId = selectedReference && selectedReference.id || ''
+      var referenceModels = []
+      ;(modelState.groups || []).forEach(function (group) { (group.models || []).forEach(function (entry) { referenceModels.push({ provider: group.id, model: entry.id, label: (entry.name || entry.id) + ' · ' + (group.name || group.id), reasoning: entry.reasoning }) }) })
+      var referenceModel = referenceModels.find(function (item) { return JSON.stringify([item.provider, item.model]) === referenceRoute })
+      var quoteKey = [resultKey, mode, referenceId, count, budget, includeCapabilities, referenceRoute, refEffort, trust].join('|')
+      var quote = quoted && quoted.key === quoteKey && quoted.body
+      var running = job && job.status === 'running'
+      function readCatalog() {
+        return props.api.modelBaselines().then(function (body) { if (mounted.current) setCatalog(body) })
+      }
+      function refresh() {
+        var request = ++sequence.current
+        setLoading(true); setError('')
+        props.api.modelMatch(sessionId ? { session: sessionId, provider: provider, model: model, reasoningEffort: effort } : { jobOnly: '1' }).then(function (body) {
+          if (request !== sequence.current || !mounted.current) return
+          setResult({ key: resultKey, body: body }); setJob(body.job || null); setLoading(false)
+        }).catch(function (err) { if (request === sequence.current && mounted.current) { setError(String(err.message || err)); setLoading(false) } })
+      }
+      React.useEffect(function () {
+        if (props.active) { refresh(); readCatalog().catch(function (err) { if (mounted.current) setError(String(err.message || err)) }) }
+        return function () { sequence.current++ }
+      }, [props.active, sessionId, provider, model, effort])
+      React.useEffect(function () { planSequence.current++; setQuoted(null) }, [quoteKey])
+      React.useEffect(function () {
+        if (!running) return
+        var alive = true, timer
+        function poll() {
+          props.api.modelMatch({ job: job.id, jobOnly: '1' }).then(function (body) {
+            if (!alive) return
+            setJob(body.job)
+            if (body.job && body.job.status === 'running') timer = setTimeout(poll, 1500)
+            else { setCancelling(false); if (body.job && body.job.baselineId) readCatalog().catch(function () {}) }
+          }).catch(function (err) { if (alive) { setError(String(err.message || err)); timer = setTimeout(poll, 3000) } })
+        }
+        timer = setTimeout(poll, 500)
+        return function () { alive = false; clearTimeout(timer) }
+      }, [running, job && job.id])
+      function preview() {
+        if (busy || running || !selection) return
+        var request = ++planSequence.current
+        setBusy(true); setError(''); setQuoted(null)
+        var testSelection = mode === 'calibrate' && referenceModel ? { provider: referenceModel.provider, model: referenceModel.model, ...(refEffort !== 'off' || referenceModel.reasoning ? { reasoningEffort: refEffort } : {}) } : { provider: provider, model: model, ...(effort ? { reasoningEffort: effort } : {}) }
+        props.api.modelTest({ action: 'plan', sessionId: sessionId, selection: testSelection, mode: mode, referenceId: mode === 'calibrate' || (mode === 'capability' && (!selectedReference || !selectedReference.hasCapabilities)) ? undefined : referenceId || undefined,
+          claimedModel: mode === 'calibrate' ? model : undefined, ackReference: trust, probeCount: count === 'full' ? undefined : Number(count), includeCapabilities: includeCapabilities, budgetTokens: budget }).then(function (body) {
+          if (!mounted.current) return
+          setBusy(false)
+          if (request === planSequence.current) setQuoted({ key: quoteKey, body: body.quote })
+        }).catch(function (err) { if (mounted.current) { setBusy(false); if (request === planSequence.current) setError(String(err.message || err)) } })
+      }
+      function start() {
+        if (busy || running || !quote) return
+        sequence.current++; setLoading(false)
+        setBusy(true); setError(''); setCancelling(false)
+        props.api.modelTest({ sessionId: sessionId, planId: quote.id, ackCost: true }).then(function (body) {
+          if (mounted.current) { setJob(body.job); setQuoted(null); setBusy(false) }
+        }).catch(function (err) { if (mounted.current) { setError(String(err.message || err)); setBusy(false); setQuoted(null) } })
+      }
+      function cancel() {
+        if (!job || cancelling) return
+        setCancelling(true); setError('')
+        props.api.modelTest({ action: 'cancel', id: job.id }).then(function (body) { if (mounted.current) { setJob(body.job); if (body.job.status !== 'running') setCancelling(false) } })
+          .catch(function (err) { if (mounted.current) { setError(String(err.message || err)); setCancelling(false) } })
+      }
+      function importFile(event) {
+        var file = event.target.files && event.target.files[0]
+        event.target.value = ''
+        if (!file) return
+        if (file.size > 1048576) { setError('基线文件超过 1 MB。'); return }
+        setBusy(true); setError('')
+        file.text().then(function (text) { var data = JSON.parse(text); return props.api.modelBaselines({ action: 'import', reference: data.reference || data }) }).then(function (body) {
+          if (mounted.current) { setCatalog(body); setBusy(false); setQuoted(null) }
+        }).catch(function (err) { if (mounted.current) { setBusy(false); setError(err instanceof SyntaxError ? '请求内容不是有效 JSON。' : String(err.message || err)) } })
+      }
+      function removeReference() {
+        setBusy(true); setError('')
+        props.api.modelBaselines({ action: 'remove', id: referenceId }).then(function (body) { if (mounted.current) { setCatalog(body); setBusy(false); setQuoted(null) } })
+          .catch(function (err) { if (mounted.current) { setBusy(false); setError(String(err.message || err)) } })
+      }
+      function fields(config) {
+        return React.createElement('dl', { className: 'dshus-match-fields' }, [['供应商', config.provider], ['请求模型', config.model], ['推理强度', config.reasoningEffort || t('供应商默认')]].map(function (entry) {
+          return React.createElement('div', { key: entry[0] }, React.createElement('dt', null, t(entry[0])), React.createElement('dd', null, entry[1]))
+        }))
+      }
+      function field(label, element) { return React.createElement('label', { className: 'dshus-audit-field' }, React.createElement('span', { className: 'dshus-setting-label' }, t(label)), element) }
+      var originLabels = { public: '论文公开参考', imported: '本地导入', calibrated: '自建参考' }
+      function baselineView(ref) {
+        return React.createElement('div', { className: 'dshus-audit-reference' },
+          React.createElement('p', null, t(originLabels[ref.origin] || '本地导入'), ' · ', ref.provider, ' · ', String(ref.date || '').slice(0, 10)),
+          React.createElement('p', { className: 'dshus-setting-help' }, t('探针 {count} · 参考自测 {selfMismatches} / {selfTotal} 次不一致', ref)),
+          ref.source && React.createElement('a', { href: ref.source, target: '_blank', rel: 'noreferrer', className: 'dshus-brand-link' }, t('查看参考来源')))
+      }
+      function identityView(identity) {
+        var labels = { 'significant-difference': '发现显著差异', 'no-significant-difference': '未发现显著差异', 'insufficient-evidence': '样本不足或测试未完成' }
+        return React.createElement('div', { className: 'dshus-audit-result' }, React.createElement('h4', null, t('行为一致性')),
+          React.createElement('p', { className: 'dshus-match-verdict', 'data-verdict': identity.verdict }, t(labels[identity.verdict] || '样本不足或测试未完成')),
+          React.createElement('p', null, t('有效回答 {valid} / {count} · 与参考不一致 {mismatches}', identity)),
+          React.createElement('p', { className: 'dshus-setting-help' }, identity.pValue !== null ? t('统计 p 值 {p}；阈值 0.05。', { p: Number(identity.pValue).toExponential(2) }) : t('有效回答至少 64 个，覆盖率至少 80%，才能作出统计判断。')))
+      }
+      var analysis = result && result.key === resultKey && result.body.analysis
+      var declarationLabel = analysis && (analysis.counts.different ? '响应声明存在名称差异' : analysis.counts.exact + analysis.counts.compatible ? '响应声明名称一致' : '响应未声明模型名称')
+      var jobTokens = job ? (job.usage.inputTokens || 0) + (job.usage.outputTokens || 0) + (job.usage.cacheReadTokens || 0) + (job.usage.cacheWriteTokens || 0) : 0
+      var capableLabels = { 'current-sample': '当前能力样本', 'significant-decline': '发现显著能力下降', 'no-significant-decline': '未发现显著能力下降', 'insufficient-evidence': '样本不足或测试未完成' }
+      function conclusionView(compact) {
+        var summary = job.conclusion || { verdict: job.status === 'running' ? 'running' : job.status === 'complete' && job.identity && job.identity.verdict === 'no-significant-difference' ? 'no-anomaly' : job.status === 'complete' && job.identity && job.identity.verdict === 'significant-difference' ? 'suspected-mismatch' : 'inconclusive', reason: job.status === 'cancelled' ? 'cancelled' : 'unfinished' }
+        var titles = { running: '测试运行中', 'no-anomaly': '未发现明显异常', 'suspected-mismatch': '疑似不匹配', 'suspected-decline': '疑似能力下降', inconclusive: '无法判定', 'reference-created': '参考基线已建立', 'capability-complete': '能力测试完成', 'no-decline': '未发现明显能力下降' }
+        var explanations = { 'behavior-consistent': '本次行为与参考基线没有显著差异，未发现换模迹象。', 'behavior-difference': '本次行为与参考基线存在显著差异，疑似换模或版本、配置发生变化。', 'capability-decline': '与相同推理参数的能力基线相比，发现显著能力下降。', 'reference-created': '参考基线已保存，可用于同模型的后续检测。', cancelled: '检测已取消，已发生的用量仍会统计。', interrupted: '宿主重启时检测尚未完成，请重新检测。', budget: '已达到 Token 预算，检测未完成。', parameters: '通道未遵守测试参数，本次无法对照参考。', timeout: '请求超时，检测未完成。', 'request-failed': '通道请求失败，检测未完成。', truncated: '部分输出被截断，未形成足够的有效答案。', format: '部分响应不符合答题格式，无法完成统计判断。', 'reference-failed': '参考基线未建立，无法用于模型判断。', unfinished: '尚未取得足够证据，无法判断模型是否匹配。' }
+        return React.createElement('div', null,
+          React.createElement('p', { className: 'dshus-match-verdict', 'data-verdict': summary.verdict }, t(titles[summary.verdict] || '无法判定')),
+          explanations[summary.reason] && (!compact || summary.verdict === 'inconclusive' || summary.verdict === 'reference-created') && React.createElement('p', null, t(explanations[summary.reason])),
+          !compact && summary.verdict === 'inconclusive' && job.identity && React.createElement('p', null, t('有效回答 {valid} / {count}，覆盖率 {coverage}%；至少需要 {required} 个有效回答。', { valid: job.identity.valid || 0, count: job.identity.count || 0, coverage: ((job.identity.coverage || 0) * 100).toFixed(1), required: Math.max(64, Math.ceil((job.identity.count || 0) * 0.8)) })),
+          job.capability && job.capability.verdict === 'current-sample' && React.createElement('p', { className: 'dshus-setting-help' }, t(compact ? '能力样本 {passed}/{valid} · 暂无能力基线' : '尚无能力基线，无法判断是否降级；本次通过 {passed} / {valid} 项。', job.capability)))
+      }
+      function jobView() {
+        var historical = job.status !== 'running' && (job.sessionId !== sessionId || job.selection.provider !== provider || job.selection.model !== model || (job.selection.reasoningEffort || '') !== effort)
+        var score = job.score && Number.isFinite(job.score.value) ? job.score : null
+        return React.createElement('div', { className: 'dshus-module dshus-audit-summary', role: 'status', ref: resultRef },
+          React.createElement('h3', { title: historical ? t('历史结果，仅对应下方列出的模型和参数。') : undefined }, t(historical ? '上次检测结果' : '检测结果')),
+          React.createElement('div', { className: 'dshus-audit-headline' },
+            !running && job.mode === 'audit' && React.createElement('dl', { className: 'dshus-audit-score' },
+              React.createElement('dt', null, t('参考接近度')),
+              React.createElement('dd', { 'data-empty': !score, title: score ? t('一致答案 {matched} / {valid}；分数为有效回答的一致率。', score) : t('无法评分') },
+                score ? String(score.value) : t('无法评分'), score && React.createElement('span', { className: 'dshus-audit-score-unit' }, '/100'))),
+            React.createElement('div', { className: 'dshus-audit-verdict' }, conclusionView(true))),
+          React.createElement('p', { className: 'dshus-audit-model' }, job.selection.model, ' · ', job.selection.provider),
+          running && React.createElement('p', { className: 'dshus-setting-help' }, t('已完成 {progress} 次请求，上限 {requests} 次', { progress: job.progress, requests: job.plan.requests })),
+          running && React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: cancelling, onClick: cancel }, t(cancelling ? '正在取消…' : '取消测试')),
+          job.usageReported && React.createElement('p', { className: 'dshus-audit-cost', title: fmtExact(jobTokens) }, t(job.usageSaved ? '本次消耗 {tokens} Token · 已计入统计' : '本次已上报消耗 {tokens} Token', { tokens: fmt(jobTokens) })),
+          job.usageIncomplete && React.createElement('p', { className: 'dshus-setting-help' }, t('部分测试用量尚未上报，可能已产生费用。')),
+          !job.usageSaved && job.message && React.createElement('p', { className: 'dshus-setting-help' }, uiError(job.message)),
+          React.createElement('details', { className: 'dshus-disclosure', key: job.id },
+            React.createElement('summary', null, t('检测详情')),
+            fields(job.selection),
+            score && React.createElement('p', null, t('一致答案 {matched} / {valid}；分数为有效回答的一致率。', score)),
+            React.createElement('p', null, t('已完成 {progress} 次请求，上限 {requests} 次', { progress: job.progress, requests: job.plan.requests })),
+            job.testSelection && job.testSelection.reasoningEffort !== job.selection.reasoningEffort && React.createElement('p', { className: 'dshus-setting-help' }, t('行为检测推理强度：{effort}', { effort: job.testSelection.reasoningEffort || t('关闭推理') })),
+            job.reference && baselineView(job.reference),
+            job.mode !== 'calibrate' && job.identity && identityView(job.identity),
+            job.capability && React.createElement('div', { className: 'dshus-audit-result' }, React.createElement('h4', null, t('能力变化')), React.createElement('p', null, t(capableLabels[job.capability.verdict])),
+              React.createElement('p', null, t('通过 {passed} / {valid} · 共 {count} 项任务', job.capability)),
+              job.capability.verdict === 'current-sample' && React.createElement('p', { className: 'dshus-setting-help' }, t('尚无能力基线，无法判断是否降级；本次通过 {passed} / {valid} 项。', job.capability)),
+              job.capability.paired > 0 && React.createElement('p', { className: 'dshus-setting-help' }, t('成对对照 {paired} 项 · 下降 {losses} 项 · 提升 {gains} 项', job.capability))),
+            job.channel && React.createElement('div', { className: 'dshus-audit-result' }, React.createElement('h4', null, t('本次通道表现')), React.createElement('p', null,
+              'TPS ', job.channel.tps === null ? '—' : Number(job.channel.tps).toFixed(1), ' tok/s · TTFT ', job.channel.ttftMs === null ? '—' : (job.channel.ttftMs / 1000).toFixed(2) + ' s'))))
+      }
+      return React.createElement(React.Fragment, null,
+        React.createElement('div', { className: 'dshus-module' },
+          React.createElement('h3', null, t('模型匹配')),
+          !sessionId && React.createElement('p', { className: 'dshus-setting-help' }, t('尚无当前会话，请先打开一个 DSH 会话。')),
+          sessionId && (selection ? fields(selection) : React.createElement('p', { className: 'dshus-setting-help' }, t('正在读取当前模型…'))),
+          React.createElement('p', { className: 'dshus-setting-help' }, t('对照参考模型的回答指纹，分别检查行为一致性、能力变化与通道表现。'))),
+        error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
+        catalog && catalog.storageWarning && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(catalog.storageWarning)),
+        job && jobView(),
+        React.createElement('div', { className: 'dshus-module' },
+          React.createElement('h3', null, t('独立检测')),
+          React.createElement('div', { className: 'dshus-audit-form' },
+            field('检测方式', React.createElement('select', { className: 'dshus-field', value: mode, disabled: busy || running, onChange: function (event) { setMode(event.target.value); setCount('full') } },
+              [['audit', '行为指纹检测'], ['capability', '能力测试'], ['calibrate', '建立可信参考']].map(function (item) { return React.createElement('option', { key: item[0], value: item[0] }, t(item[1])) }))),
+            mode !== 'calibrate' && field('参考基线', React.createElement('select', { className: 'dshus-field', value: referenceId, disabled: busy || running || !references.length, onChange: function (event) { setChoice({ key: resultKey, id: event.target.value }) } },
+              !references.length && React.createElement('option', { value: '' }, t('当前模型尚无参考基线')),
+              references.map(function (ref) { return React.createElement('option', { key: ref.id, value: ref.id }, ref.model + ' · ' + ref.provider + ' · ' + t(originLabels[ref.origin])) }))),
+            mode === 'calibrate' && field('可信参考通道', React.createElement('select', { className: 'dshus-field', value: referenceRoute, disabled: busy || running, onChange: function (event) {
+              setReferenceRoute(event.target.value); setTrust(false)
+              var item = referenceModels.find(function (entry) { return JSON.stringify([entry.provider, entry.model]) === event.target.value })
+              var reasoning = item && item.reasoning
+              setRefEffort(!reasoning || reasoning.efforts.some(function (e) { return e.id === 'off' }) ? 'off' : reasoning.defaultEffort || reasoning.efforts[0].id)
+            } },
+              React.createElement('option', { value: '' }, t('选择可信供应商与模型')), referenceModels.map(function (item) { return React.createElement('option', { key: JSON.stringify([item.provider, item.model]), value: JSON.stringify([item.provider, item.model]) }, item.label) }))),
+            mode === 'calibrate' && field('参考推理强度', React.createElement('select', { className: 'dshus-field', value: refEffort, disabled: busy || running || !referenceModel, onChange: function (event) { setRefEffort(event.target.value) } },
+              (referenceModel && referenceModel.reasoning ? referenceModel.reasoning.efforts : [{ id: 'off', name: '关闭推理' }]).map(function (e) { return React.createElement('option', { key: e.id, value: e.id }, e.id === 'off' ? t('关闭推理') : seatEffortZh(e.id, e.name)) }))),
+            mode !== 'capability' && field('探针题量', React.createElement('select', { className: 'dshus-field', value: count, disabled: busy || running, onChange: function (event) { setCount(event.target.value) } },
+              mode === 'calibrate' ? [128, 256].map(function (n) { return React.createElement('option', { key: n, value: n === 128 ? 'full' : '256' }, t('{count} 个候选探针', { count: n })) }) : [
+                React.createElement('option', { key: 'full', value: 'full' }, t('完整参考集（{count} 题）', { count: selectedReference ? selectedReference.count : 0 })),
+                selectedReference && selectedReference.subsetAvailable && selectedReference.count > 128 && React.createElement('option', { key: '128', value: '128' }, t('随机抽样 128 题'))])),
+            field('已上报 Token 预算', React.createElement('input', { type: 'number', className: 'dshus-field', min: 1024, max: 500000, step: 1024, value: budget, disabled: busy || running, onChange: function (event) { setBudget(Number(event.target.value)) } }))),
+          mode === 'calibrate' && React.createElement('label', { className: 'dshus-audit-check' }, React.createElement('input', { type: 'checkbox', checked: trust, disabled: busy || running, onChange: function (event) { setTrust(event.target.checked) } }), t('我确认此通道可作为当前模型的可信参考')),
+          mode === 'audit' && React.createElement('label', { className: 'dshus-audit-check' }, React.createElement('input', { type: 'checkbox', checked: includeCapabilities, disabled: busy || running, onChange: function (event) { setIncludeCapabilities(event.target.checked) } }), t('同时运行 16 项能力测试')),
+          selectedReference && mode !== 'calibrate' && baselineView(selectedReference),
+          mode === 'audit' && !selectedReference && React.createElement('p', { className: 'dshus-setting-help' }, t('请导入该模型的 KBF 基线，或选择可信通道建立本地参考。')),
+          mode === 'calibrate' && React.createElement('p', { className: 'dshus-setting-help' }, t('三轮筛选稳定回答，再独立自测校准；同时保存 16 项能力测试作为后续对照。')),
+          mode === 'capability' && React.createElement('p', { className: 'dshus-setting-help' }, t('测试代码推演、路径推理、上下文检索与约束优化。没有能力基线时仅展示本次成绩。')),
+          React.createElement('div', { className: 'dshus-control-actions' },
+            React.createElement('button', { type: 'button', className: 'dshus-btn', onClick: preview, disabled: busy || running || !selection || !sessionId || modelState.status !== 'ready' || !catalog || (mode === 'audit' && !selectedReference) || (mode === 'calibrate' && (!referenceModel || !trust)) }, t(busy ? '正在处理…' : '查看测试预算')),
+            React.createElement('button', { type: 'button', className: 'dshus-btn', onClick: start, disabled: busy || running || !quote }, t('开始检测（会消耗 Token）'))),
+          quote && React.createElement('div', { className: 'dshus-audit-reference', role: 'status' },
+            fields(quote.testSelection),
+            React.createElement('p', { className: 'dshus-cost-note' }, t('请求最多 {requests} 次 · 输入约 {estimatedInputTokens} Token · 输出上限 {maxOutputTokens} Token', Object.fromEntries(Object.entries(quote.plan).map(function (entry) { return [entry[0], typeof entry[1] === 'number' ? fmtExact(entry[1]) : entry[1]] })))),
+            React.createElement('p', { className: 'dshus-setting-help' }, t('预算按已上报用量检查；推理、未上报用量及供应商重试按通道规则计费。'))),
+          React.createElement('details', { className: 'dshus-audit-details' }, React.createElement('summary', null, t('管理参考基线')),
+            React.createElement('input', { type: 'file', accept: '.json,application/json', ref: fileRef, hidden: true, onChange: importFile }),
+            React.createElement('div', { className: 'dshus-control-actions' },
+              React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: busy || running, onClick: function () { if (fileRef.current) fileRef.current.click() } }, t('导入基线 JSON')),
+              selectedReference && React.createElement('a', { className: 'dshus-btn', download: 'model-reference.json', href: '/api/dsh-usage-stats/model-baselines?export=' + encodeURIComponent(referenceId) }, t('导出基线')),
+              selectedReference && selectedReference.origin !== 'public' && React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: busy || running, onClick: removeReference }, t('移除当前基线'))))),
+        React.createElement('div', { className: 'dshus-module' }, React.createElement('h3', null, t('已有响应提示'), refreshIconButton(refresh, loading, t('刷新分析'), true, !sessionId)),
+          analysis && React.createElement('details', { className: 'dshus-audit-details' }, React.createElement('summary', null, t(declarationLabel)),
+            React.createElement('p', { className: 'dshus-setting-help' }, t('样本 {samples} · 同名 {exact} · 版本近似 {compatible} · 名称差异 {different} · 未上报 {missing}', analysis.counts)),
+            analysis.records.slice(0, 5).map(function (item, i) { return React.createElement('p', { key: i, className: 'dshus-setting-help' }, item.model, ' → ', item.responseModel || t('未上报')) })),
+          React.createElement('p', { className: 'dshus-setting-help' }, t('名称与速度提供辅助提示；行为差异也可能来自版本或配置变化。检测用量计入用量统计。'))))
+    }
+
+
     function UsageStatsSection(props) {
       useLocaleRevision()
       var api = props.api
       var intl = props.intl
+      var overviewExpandedState = React.useState(false)
+      var overviewExpanded = overviewExpandedState[0]
+      var setOverviewExpanded = overviewExpandedState[1]
       var modelState = React.useState('')
       var model = modelState[0]
       var setModel = modelState[1]
@@ -2634,8 +3273,10 @@ window.__ModuleLoader__.load({
       var tab = tabState[0]
       var setTab = tabState[1]
 
-      var controlState = React.useState({ settings: { autoQuota: false, intervalMinutes: 60, showModelDetails: true, advancedModelSelect: false, customQueries: [] } })
+      var controlState = React.useState({ settings: { autoQuota: false, intervalMinutes: 60, showModelDetails: true, showModelMatch: false, showTokenSpeed: true, advancedModelSelect: false, customQueries: [] } })
       var control = controlState[0], setControl = controlState[1]
+      var showModelMatch = control.settings.showModelMatch === true
+      if (tab === 'match' && !showModelMatch) tab = 'usage'
       var controlReadyState = React.useState(false)
       var controlReady = controlReadyState[0], setControlReady = controlReadyState[1]
       var controlErrorState = React.useState('')
@@ -2644,6 +3285,10 @@ window.__ModuleLoader__.load({
       var quotaRevision = quotaRevisionState[0], setQuotaRevision = quotaRevisionState[1]
       var quotaVisitedState = React.useState(false)
       var quotaVisited = quotaVisitedState[0], setQuotaVisited = quotaVisitedState[1]
+      var controlVisitedState = React.useState(false)
+      var controlVisited = controlVisitedState[0], setControlVisited = controlVisitedState[1]
+      var matchVisitedState = React.useState(false)
+      var matchVisited = matchVisitedState[0], setMatchVisited = matchVisitedState[1]
       var quotaSnapshotsState = React.useState({})
       var quotaSnapshots = quotaSnapshotsState[0], setQuotaSnapshots = quotaSnapshotsState[1]
       var quotaLoadingState = React.useState(false)
@@ -2652,14 +3297,18 @@ window.__ModuleLoader__.load({
       var quotaError = quotaErrorState[0], setQuotaError = quotaErrorState[1]
 
       function changeTab(next) {
+        if (next === 'match' && !showModelMatch) return
         if (next === tab) return
         // A short tab must not inherit the long usage page's scroll position.
         if (scrollPortRef.current) scrollPortRef.current.scrollTop = 0
         if (next === 'quota') setQuotaVisited(true)
+        if (next === 'control') setControlVisited(true)
+        if (next === 'match') setMatchVisited(true)
+        if (next === 'usage') load()
         setTab(next)
       }
       function onTabKeyDown(event) {
-        var names = ['usage', 'quota', 'control']
+        var names = showModelMatch ? ['usage', 'quota', 'match', 'control'] : ['usage', 'quota', 'control']
         var index = names.indexOf(tab)
         var next = event.key === 'ArrowRight' ? names[(index + 1) % names.length] : event.key === 'ArrowLeft' ? names[(index + names.length - 1) % names.length] : event.key === 'Home' ? 'usage' : event.key === 'End' ? 'control' : null
         if (next === null) return
@@ -2673,6 +3322,8 @@ window.__ModuleLoader__.load({
       var requestRef = React.useRef(0)
       var retryTimerRef = React.useRef(null)
       var successfulQueryRef = React.useRef({ model: '' })
+      var controlRequestRef = React.useRef(0)
+      var controlWritesRef = React.useRef(0)
       var pageRef = React.useRef(null)
       var scrollPortRef = React.useRef(null)
 
@@ -2717,8 +3368,14 @@ window.__ModuleLoader__.load({
       }, [])
 
       function loadControls() {
+        if (controlWritesRef.current > 0) return
+        var request = ++controlRequestRef.current
         setControlError('')
-        api.controls().then(function (body) { setControl(body); syncModelSeatFromControls(body); setControlReady(true) }).catch(function (err) { setControlError(String(err.message || err)); setControlReady(false) })
+        api.controls().then(function (body) {
+          if (request === controlRequestRef.current) acceptControls(body)
+        }).catch(function (err) {
+          if (request === controlRequestRef.current) { setControlError(String(err.message || err)); setControlReady(false) }
+        })
       }
       React.useEffect(function () { loadControls() }, [])
       React.useEffect(function () {
@@ -2740,12 +3397,22 @@ window.__ModuleLoader__.load({
         var timer = setInterval(loadControls, 30000)
         return function () { clearInterval(timer) }
       }, [tab])
+      function acceptControls(body) {
+        setControl(body); syncModelSeatFromControls(body); setControlReady(true)
+        if (body.settings.showModelMatch !== true) {
+          setTab(function (previous) { return previous === 'match' ? 'usage' : previous })
+          setMatchVisited(false)
+        }
+      }
       function saveControls(patch) {
+        var request = ++controlRequestRef.current
+        controlWritesRef.current++
+        setControlError('')
         return api.controls(patch).then(function (body) {
-          setControl(body); syncModelSeatFromControls(body); setControlReady(true)
+          if (request === controlRequestRef.current) acceptControls(body)
           if (patch.action === 'save-query' || patch.action === 'remove-query') setQuotaRevision(function (value) { return value + 1 })
           return body
-        })
+        }).finally(function () { controlWritesRef.current-- })
       }
       function refreshQuotas() {
         setQuotaLoading(true)
@@ -2864,11 +3531,12 @@ window.__ModuleLoader__.load({
           var gmCur = mergedMap[gmKey]
           var canonical = gmKey === 'glm-5.3-flash' ? 'glm-5.3-flash' : null
           if (gmCur === undefined) {
-            gmCur = { key: 'by-model:' + gmKey, provider: '', model: canonical || modelDisplayName(gmName), lastTime: gmItem.lastTime || 0, billed: gmItem.billed || 0, _topBilled: gmItem.billed || 0 }
+            gmCur = { key: 'by-model:' + gmKey, provider: '', providers: [gmItem.provider || ''], model: canonical || modelDisplayName(gmName), lastTime: gmItem.lastTime || 0, billed: gmItem.billed || 0, _topBilled: gmItem.billed || 0 }
             mergedMap[gmKey] = gmCur
             mergedOrder.push(gmCur)
           } else {
             gmCur.billed += gmItem.billed || 0
+            if (gmCur.providers.indexOf(gmItem.provider || '') === -1) gmCur.providers.push(gmItem.provider || '')
             if ((gmItem.lastTime || 0) > gmCur.lastTime) gmCur.lastTime = gmItem.lastTime || 0
             if (canonical === null && (gmItem.billed || 0) > (gmCur._topBilled || 0)) {
               gmCur.model = modelDisplayName(gmName)
@@ -2885,9 +3553,7 @@ window.__ModuleLoader__.load({
       // palette colour by current rank; everything else keeps its own colour.
       var donutColorFor = function (key) {
         if (groupByModel && key.indexOf('by-model:') === 0) {
-          for (var di = 0; di < donutModels.length; di++) {
-            if (donutModels[di].key === key) return DONUT_COLORS[di % DONUT_COLORS.length]
-          }
+          return sharedModelColor(key.slice('by-model:'.length))
         }
         return colorOf(key)
       }
@@ -2963,7 +3629,7 @@ window.__ModuleLoader__.load({
           opts = opts || {}
           var display = typeof v === 'number' ? (opts.exact ? fmtExact(v) : fmt(v)) : v
           return React.createElement('div', { className: 'dshus-stat' + (opts.cls ? ' ' + opts.cls : '') },
-            React.createElement('div', { className: 'v' }, display),
+            React.createElement('div', { className: 'v', title: typeof v === 'number' ? fmtExact(v) : undefined }, display),
             React.createElement('div', { className: 'k' }, k),
           )
         }
@@ -2981,7 +3647,7 @@ window.__ModuleLoader__.load({
       var tableModels = donutModels.filter(function (m) {
         if (!filterText) return true
         var name = (m.model || m.key || '').toLowerCase()
-        var prov = (m.provider || '').toLowerCase()
+        var prov = ((m.provider || '') + ' ' + (m.providers || []).join(' ')).toLowerCase()
         return name.indexOf(filterText) !== -1 || prov.indexOf(filterText) !== -1
       })
 
@@ -3004,7 +3670,7 @@ window.__ModuleLoader__.load({
               React.createElement('span', null, label),
             ),
           ),
-          React.createElement('td', { style: { textAlign: 'right', fontWeight: 600 } }, fmt(m.billed || 0)),
+          React.createElement('td', { title: fmtExact(m.billed || 0), style: { textAlign: 'right', fontWeight: 600 } }, fmt(m.billed || 0)),
           React.createElement('td', { style: { textAlign: 'right' } }, formatPct(pct)),
           React.createElement('td', { className: 'dshus-table-bar-cell' },
             React.createElement('div', { className: 'dshus-table-bar-bg' },
@@ -3031,6 +3697,7 @@ window.__ModuleLoader__.load({
         React.createElement('div', { className: 'dshus-tabs', role: 'tablist', 'aria-label': t('用量统计页面') },
           React.createElement('button', { id: 'dshus-tab-usage', type: 'button', role: 'tab', 'aria-selected': tab === 'usage', 'aria-controls': 'dshus-usage-panel', tabIndex: tab === 'usage' ? 0 : -1, className: 'dshus-tab' + (tab === 'usage' ? ' on' : ''), onClick: function () { changeTab('usage') }, onKeyDown: onTabKeyDown }, t('用量')),
           React.createElement('button', { id: 'dshus-tab-quota', type: 'button', role: 'tab', 'aria-selected': tab === 'quota', 'aria-controls': 'dshus-quota-panel', tabIndex: tab === 'quota' ? 0 : -1, className: 'dshus-tab' + (tab === 'quota' ? ' on' : ''), onClick: function () { changeTab('quota') }, onKeyDown: onTabKeyDown }, t('配额')),
+          showModelMatch && React.createElement('button', { id: 'dshus-tab-match', type: 'button', role: 'tab', 'aria-selected': tab === 'match', 'aria-controls': 'dshus-match-panel', tabIndex: tab === 'match' ? 0 : -1, className: 'dshus-tab' + (tab === 'match' ? ' on' : ''), onClick: function () { changeTab('match') }, onKeyDown: onTabKeyDown }, t('匹配')),
           React.createElement('button', { id: 'dshus-tab-control', type: 'button', role: 'tab', 'aria-selected': tab === 'control', 'aria-controls': 'dshus-control-panel', tabIndex: tab === 'control' ? 0 : -1, className: 'dshus-tab' + (tab === 'control' ? ' on' : ''), onClick: function () { changeTab('control') }, onKeyDown: onTabKeyDown }, t('控制')),
         ),
         ),
@@ -3039,12 +3706,25 @@ window.__ModuleLoader__.load({
         React.createElement('div', { className: 'dshus-panels' },
         tab === 'usage' && React.createElement('div', { id: 'dshus-usage-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-usage', tabIndex: 0 },
           error !== null && React.createElement('div', { className: 'dshus-error' }, uiError(error)),
+          data && data.auditUsageWarning && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(data.auditUsageWarning)),
           stale && data && data.partial && React.createElement('div', { className: 'dshus-error' }, t('部分会话读取失败')),
+          stale && data && !data.partial && React.createElement('div', { className: 'dshus-muted', role: 'status' }, t('后台同步中，当前显示上次数据。')),
+          displayedModel && React.createElement('div', { className: 'dshus-control-actions', role: 'status' },
+            React.createElement('span', null, t('当前模型筛选：{model}', { model: displayedModel })),
+            React.createElement('button', { type: 'button', className: 'dshus-btn', onClick: function () { changeModel('') } }, t('清除筛选'))),
 
         /* Area 1: 概览指标 */
         React.createElement('div', { className: 'dshus-module' },
-          React.createElement('h3', null, t('概览指标')),
+          React.createElement('h3', null,
+            React.createElement('button', { type: 'button', className: 'dshus-overview-toggle', 'aria-expanded': overviewExpanded, 'aria-controls': 'dshus-overview-details', onClick: function () { setOverviewExpanded(!overviewExpanded) } },
+              t('概览指标'),
+              React.createElement('svg', { className: 'dshus-overview-chevron', viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
+                React.createElement('path', { d: 'M4 6.5 8 10.5 12 6.5' })))),
           cards,
+          React.createElement('div', { id: 'dshus-overview-details', className: 'dshus-overview-details', hidden: !overviewExpanded },
+            React.createElement(OverviewDetails, { overview: data && data.overview })),
+          React.createElement('div', { className: 'dshus-setting-help', role: 'status' }, t('本地会话统计'), ' · ', t('上次同步：{time}', { time: fmtFetched(data && data.syncedAt) })),
+          displayedModel && React.createElement('p', { className: 'dshus-setting-help' }, t('概览为全部历史；图表按当前模型筛选。')),
         ),
 
         /* Area 2: 今日Token用量 */
@@ -3088,6 +3768,8 @@ window.__ModuleLoader__.load({
           ),
           React.createElement(DailyTrend, { dayMap: dayMap, dayModelMap: dayModelMap, colorOf: colorOf, tz: tz, period: trendPeriod }),
         ),
+
+        control.settings.showTokenSpeed !== false && React.createElement(TokenSpeedRanking, { speeds: data && data.tokenSpeeds, loading: loading && !data }),
 
         /* Area 5: 模型明细 */
         control.settings.showModelDetails && React.createElement('div', { className: 'dshus-module' },
@@ -3160,7 +3842,9 @@ window.__ModuleLoader__.load({
           React.createElement(WorkBuddyPanel, { api: api, key: 'workbuddy', active: tab === 'quota', revision: quotaRevision, refreshing: quotaLoading, snapshot: quotaSnapshots.workbuddy }),
           React.createElement(WorkBuddyPanel, { api: api, source: 'workbuddy-ai', key: 'workbuddy-ai', active: tab === 'quota', revision: quotaRevision, refreshing: quotaLoading, snapshot: quotaSnapshots['workbuddy-ai'] }),
         ),
-        tab === 'control' && React.createElement('div', { id: 'dshus-control-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-control', tabIndex: 0 },
+        showModelMatch && matchVisited && React.createElement('div', { id: 'dshus-match-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-match', tabIndex: 0, hidden: tab !== 'match' },
+          React.createElement(MatchPanel, { api: api, active: tab === 'match', onUsageUpdated: load, uiSession: props.uiSession, uiWorkspace: props.uiWorkspace, modelDirectories: props.modelDirectories })),
+        controlVisited && React.createElement('div', { id: 'dshus-control-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-control', tabIndex: 0, hidden: tab !== 'control' },
           React.createElement(ControlsPanel, { api: api, control: control, ready: controlReady, error: controlError, onReload: loadControls, onSave: saveControls }),
         ),
         ),
@@ -3191,7 +3875,7 @@ window.__ModuleLoader__.load({
      * Registering the seat is guarded by typeof checks, so a host that
      * provides none of these still runs the usage page normally.
      */
-    var inject = ['slots', 'locale', 'modelDirectories', 'sessions', 'remote', 'remote.session', 'timer']
+    var inject = ['slots', 'locale', 'modelDirectories', 'sessions', 'remote', 'remote.session', 'timer', 'uiSession', 'uiWorkspace']
 
     /* ------------------------------------------------------------------ */
     /* Advanced model selector — optional rs2 slider seat (高级模型选择器)  */
@@ -4048,7 +4732,9 @@ window.__ModuleLoader__.load({
                 label: function () { return t('用量统计') },
               },
               function (slotProps) {
-                return React.createElement(UsageStatsSection, { api: api, intl: (slotProps && slotProps.intl !== undefined) ? slotProps.intl : true })
+                var uiWorkspace = ctx.get('uiWorkspace')
+                return React.createElement(UsageStatsSection, { api: api, intl: (slotProps && slotProps.intl !== undefined) ? slotProps.intl : true,
+                  uiWorkspace: uiWorkspace, uiSession: ctx.get('uiSession'), modelDirectories: ctx.get('modelDirectories') })
               },
             )
           })
@@ -4068,7 +4754,7 @@ window.__ModuleLoader__.load({
     exports.apply = apply
     // Structural hooks for the offline layout check (scripts/render-heatmap-check.mjs).
     // Not consumed by the host: the bundle's real entry points stay inject/apply.
-    exports.__components = { Heatmap: Heatmap, HeatPager: HeatPager, buildHeatmap: buildHeatmap }
+    exports.__components = { Heatmap: Heatmap, HeatPager: HeatPager, buildHeatmap: buildHeatmap, OverviewDetails: OverviewDetails, TokenSpeedRanking: TokenSpeedRanking, MatchPanel: MatchPanel }
     return module.exports
   },
 })

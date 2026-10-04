@@ -1,0 +1,6 @@
+KBF reference probes, domain definitions and prompt format
+Copyright 2026 The KBF Authors. Apache License 2.0.
+Source: https://github.com/Ooo0ption/KBF
+Pinned revision: 68aefbbab879469152aaac9fd988a86c30ee4739
+The reference files were reduced to the fields needed by this plugin.
+Reference provenance is recorded per model; third-party references are not official attestations.

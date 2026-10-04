@@ -30,7 +30,7 @@
   <a href="screenshots/usage.png"><img src="screenshots/usage.png" alt="Usage dashboard with totals, hourly tokens and a calendar heatmap" width="800"></a>
 </p>
 
-<p align="center"><sub>Today's usage, lifetime totals, and the patterns behind them.</sub></p>
+<p align="center"><sub>Today's usage, lifetime totals, and the patterns behind them. Screenshot versions and values have been edited for this release and use synthetic data.</sub></p>
 
 <table align="center">
   <thead>
@@ -48,17 +48,37 @@
   </tbody>
 </table>
 
+<table align="center">
+  <thead>
+    <tr><th align="center">Token output speed · token输出速度</th><th align="center">Model match · 模型匹配</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center"><a href="screenshots/token-speed.png"><img src="screenshots/token-speed.png" alt="Models ranked by TPS with average TTFT" width="400"></a></td>
+      <td align="center"><a href="screenshots/match.png"><img src="screenshots/match.png" alt="Reference similarity score, audit verdict and collapsed details" width="400"></a></td>
+    </tr>
+    <tr>
+      <td align="center">Compare output speed and first-token wait across providers.</td>
+      <td align="center">Review the score, verdict and counted audit usage.</td>
+    </tr>
+  </tbody>
+</table>
+
 ## Features
 
 | Tab | What you can do |
 | --- | --- |
-| **Usage · 用量** | View today's and lifetime tokens, active days, hourly calls, a daily/weekly heatmap, and model breakdowns. |
+| **Usage · 用量** | View today's and lifetime tokens, active days, hourly calls, a daily/weekly heatmap, model breakdowns, and token output speed. |
 | **Quotas · 配额** | Check configured account balances, subscription windows, and optional WorkBuddy / WorkBuddy AI credits. |
-| **Controls · 控制** | Choose a refresh interval, configure custom quota queries, and enable model details or the advanced model selector. |
+| **Match · 匹配** | Enable Detect model match in Controls to show this tab (off by default). Analyze the current session's request settings and response-declared model; optionally run cancellable independent tests. |
+| **Controls · 控制** | Choose a refresh interval, configure custom quota queries, and toggle model details, model matching, token output speed, or the advanced model selector. |
 
-- **Follow your usage:** filter historical charts by 7 / 30 / 365 days or all history, and compare providers and models.
+- **Follow your usage:** switch the trend between 7 and 30 days, page through daily or weekly history, and compare providers and models.
 - **Keep quotas together:** use built-in readers or map a custom provider's JSON response.
 - **Refresh on your terms:** fetch manually or enable scheduled queries. Automatic quota refresh is off by default.
+- **Inspect overview metrics:** expand the overview for cache hit rate, historical daily token peak, longest completed user round, current and longest usage streaks, and the most-called model in the last seven days. Same model names merge across providers. Round timing requires complete start/end records and excludes idle gaps between messages; today's streak continues through yesterday until a full unused day. Retained historical totals stay included.
+- **Compare output speed:** Token output speed is on by default, sorting provider/model pairs by DSH TPS: cumulative output tokens divided by cumulative first-nonempty-output-to-response-completion time, in tok/s. TTFT shows the average time from call start to first non-empty token for completed timed calls, in seconds; missing records show a dash. Samples without valid decode timing are excluded from the ranking. Hide it in Controls.
+- **Keep successful results:** failed quota refreshes retain amounts and timestamps with safe diagnostics. Card refreshes query only their provider; query drafts survive tab changes.
 - **Choose models faster:** opt into a model/reasoning panel with an effort slider; disabling it restores the official selector.
 - **Fit the desktop:** light/dark themes, responsive charts, pinned tabs, and a keyboard-operable provider picker.
 - **Follow your language:** Chinese, English, and Japanese UI text updates with DSH's selected language. User-defined names and quota labels stay as configured.
@@ -88,10 +108,10 @@ Usage statistics load from your local DSH sessions. Open **配额** and click a 
 <details>
 <summary>Install a specific version or a downloaded archive</summary>
 
-To install version `0.1.2`, enter this in the same installer:
+To install version `0.2.0`, enter this in the same installer:
 
 ```text
-@sligqoer/dsh-usage-stats@0.1.2
+@sligqoer/dsh-usage-stats@0.2.0
 ```
 
 You can also manually install a [Release archive](https://github.com/Jockjrop/dsh-usage-stats/releases/latest). Enter the URL below, or download the `.tgz` and `SHA256SUMS`, verify the hash, and enter the archive's local absolute path. Do not extract it before installing.
@@ -101,7 +121,7 @@ https://github.com/Jockjrop/dsh-usage-stats/releases/latest/download/dsh-usage-s
 ```
 
 ```powershell
-Get-FileHash ./sligqoer-dsh-usage-stats-0.1.2.tgz -Algorithm SHA256
+Get-FileHash ./sligqoer-dsh-usage-stats-0.2.0.tgz -Algorithm SHA256
 ```
 
 </details>
@@ -169,6 +189,8 @@ npm run build
 | Automatic quota refresh | Off |
 | Refresh interval | 1 hour; also supports 10 minutes, 5 hours, or daily |
 | Model details | On |
+| Detect model match | Off |
+| Token output speed | On |
 | Advanced model selector | Off |
 
 Enabling automatic queries asks you to acknowledge possible query costs. The schedule continues while the settings page is closed. Opening the quota page normally reads cached results.
@@ -231,19 +253,33 @@ Editing invalidates the test; successful tests expire after 15 minutes. A confir
 
 ## Privacy
 
-Usage aggregation runs locally. The plugin saves counts, model identifiers and usage timestamps, without conversation text. Credentials are resolved on the host and are not returned to the renderer.
+Usage aggregation runs locally. The plugin saves counts, model identifiers, usage timestamps, explicit session titles and working directories, and at most 30 bounded model-evidence records per session. It does not keep conversation bodies, private replay blocks or credentials. Credentials are resolved on the host and are not returned to the renderer. Independent tests persist reported usage and the most recent 10 results without prompts or raw responses.
+
+The Match tab follows the current session. Metadata declarations provide weak hints only. Reading logs, references and budget previews makes no inference calls.
+
+Behavioral auditing uses [KBF](https://github.com/Ooo0ption/KBF)-compatible knowledge-boundary fingerprints, including consistent wrong answers. The package includes 28 references and 10,327 probes with dates, deployment provenance and original-file SHA-256 hashes. Some references use third-party deployments; DeepSeek V4.1 Flash uses Novita. Import KBF JSON or create a reference through a trusted configured provider for additional models. Custom calibration filters three consensus passes and performs an independent self-test on the retained set. It does not reproduce the paper's full contrast-model screening experiment.
+
+Use the reference's CP99 upper error bound and a one-sided binomial test (p < 0.05), with at least 64 valid answers and 80% coverage on both sides. Recalibration is required when the reference's noise bound exceeds 30%. Results indicate significant difference, no significant difference, or insufficient evidence. A p-value is not the probability of model authenticity. Public references use temperature zero and suppressed reasoning; unsupported models need references calibrated with matching parameters. Behavioral changes may reflect versions, prompts or deployment configuration.
+
+Completed behavioral audits show a 0–100 reference similarity score: matching answers divided by valid answers, multiplied by 100. This is answer agreement, not an authenticity probability. Cancelled, interrupted or insufficient-evidence audits remain unscored. Saved results receive scores without another test. Audit details starts collapsed and contains the parameters, validation process, statistical test and channel measurements.
+
+Sixteen seeded capability tasks cover code tracing, path reasoning, context retrieval and constraint optimization. Custom references can retain their scores for paired decline tests under matching reasoning settings. Without a capability reference, results describe this run only. TPS/TTFT remain performance measurements.
+
+Select **Preview test budget** to inspect the actual parameters, call limit, input estimate, output cap and reported-token budget, then **Start audit (uses tokens)**. Quotes expire after five minutes and are single-use. Runs are cancellable with a 60-second per-call timeout; reported-token budgets stop subsequent calls. Reasoning, unreported usage and provider retries follow channel billing, so this is not an absolute invoice cap. Tests do not use conversation content or modify the session; each call's reported usage enters the statistics, including failed or cancelled calls. Store up to 20 private references atomically in `storages/usage-stats-model-baselines.json`; save usage and the last 10 results in `storages/usage-stats-model-tests.json`. A verdict above the form explains behavior, capability decline or an inconclusive result. Host-interrupted tests remain inconclusive. After switching or deleting the original conversation, the previous result stays available and applies only to its listed model and settings.
 
 Quota tests and refreshes contact the selected platform. There is no analytics or telemetry endpoint.
 
 <details>
 <summary>Storage and request safeguards</summary>
 
-Both files live under `<DSH_HOME>/storages/`, or the current user's `.dsh/storages/` when `DSH_HOME` is unset:
+Local files live under `<DSH_HOME>/storages/`, or the current user's `.dsh/storages/` when `DSH_HOME` is unset:
 
 | File | Contents |
 | --- | --- |
 | `usage-stats-corpus.json` | Per-session usage contributions |
 | `usage-stats-controls.json` | Controls, custom templates and quota snapshots |
+| `usage-stats-model-baselines.json` | Private behavioral and capability references |
+| `usage-stats-model-tests.json` | Reported audit usage and the last ten results |
 
 These are private local files, excluded from Git along with credentials, environment files, databases, logs, backups and previews.
 
@@ -306,6 +342,9 @@ Routes use the `/api/dsh-usage-stats/` prefix:
 | `controls` | GET / POST | Read/update controls; writes require JSON |
 | `quota-providers` | GET | Configured providers and credential-free templates |
 | `quota-test` | POST | Test a template and return an expiring confirmation ID |
+| `model-match` | GET | Existing response hints and the current/previous audit result |
+| `model-test` | POST | Preview a budget, start or cancel an audit |
+| `model-baselines` | GET / POST | List, import, export or remove behavioral references |
 
 The corpus refreshes every 30 seconds. Requests wait up to 1500 ms and may return `stale: true`/`partial: true`. SQLite fingerprints require `node:sqlite`; otherwise sessions are reread. Timezone changes re-bucket stored events, with possible approximation for old hourly-only history at fractional-hour boundaries.
 

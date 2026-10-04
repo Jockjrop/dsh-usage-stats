@@ -9,6 +9,9 @@ import vm from 'node:vm';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+const lock = JSON.parse(await fs.readFile(path.join(root, 'package-lock.json'), 'utf8'));
+assert.equal(lock.version, pkg.version, 'Lockfile version must match package.json.');
+assert.equal(lock.packages?.['']?.version, pkg.version, 'Lockfile root package must match package.json.');
 const npmCli = process.env.npm_execpath;
 assert.ok(npmCli, 'Run this script through npm run release.');
 assert.match(pkg.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
@@ -35,10 +38,27 @@ assert.ok(packed?.filename, 'npm pack did not return package metadata.');
 const archiveName = `${pkg.name.replace(/^@/, '').replace('/', '-')}-${pkg.version}.tgz`;
 assert.equal(packed.filename, archiveName);
 const members = new Set(packed.files.map(file => file.path));
-for (const member of ['package.json', 'cordis.patch.yml', 'CHANGELOG.md', 'lib/index.js', 'lib/client.js', 'lib/provider-quotas.js', 'lib/quota-controls.js']) {
+assert.ok([...members].every(member => !/^(?:src|test|scripts|node_modules|storages|credentials)\//.test(member)), 'Release must contain prebuilt public files only.');
+const allowedMembers = new Set(['package.json', 'LICENSE', ...pkg.files.filter(file => !file.endsWith('/')),
+  'lib/fingerprints/kbf-202609.json', 'lib/fingerprints/KBF-LICENSE.txt', 'lib/fingerprints/NOTICE.txt']);
+for (const member of allowedMembers) {
   assert.ok(members.has(member), `Release is missing ${member}.`);
 }
-assert.ok([...members].every(member => !/^(?:src|test|scripts|node_modules|storages|credentials)\//.test(member)), 'Release must contain prebuilt public files only.');
+const privateFile = /(?:^|\/)(?:\.[^/]+|storages|sessions|credentials|usage-stats-(?:corpus|controls|model-tests|model-baselines)\.json)(?:\/|$)/;
+const sensitiveText = [
+  /[A-Za-z]:[\\/]Users[\\/](?!Public\b|Example\b|Username\b)[^\\/\s'"<>]+/i,
+  /\b(?:sk-(?!test|fake|example)[A-Za-z0-9_-]{24,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[A-Z0-9]{16})\b/,
+  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
+  /https?:\/\/[^\s/:'"]+:[^\s/@'"]+@/,
+];
+for (const member of members) {
+  assert.ok(allowedMembers.has(member), `Unexpected release file: ${member}.`);
+  assert.ok(!privateFile.test(member), `Private runtime file cannot be released: ${member}.`);
+  if (!/\.(?:js|json|md|txt|yml|yaml|svg)$/.test(member)) continue;
+  const content = await fs.readFile(path.join(root, member), 'utf8');
+  // Report the file only; never echo a detected credential into release logs.
+  assert.ok(sensitiveText.every(pattern => !pattern.test(content)), `Release privacy check failed: ${member}.`);
+}
 
 const archivePath = path.join(outputDir, archiveName);
 const aliasName = 'dsh-usage-stats.tgz';
@@ -49,6 +69,9 @@ await fs.writeFile(path.join(outputDir, 'SHA256SUMS'), `${digest}  ${archiveName
 
 // Exercise a consumer installation with scripts disabled and no DSH credentials.
 const smokeDir = await fs.mkdtemp(path.join(tmpdir(), 'dsh-usage-stats-release-'));
+// npm run exports .npmrc policy as environment variables. npm 12 rejects
+// allow-scripts from env for project installs; retain .npmrc and --ignore-scripts.
+const smokeEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^npm_config_allow[_-]scripts$/i.test(key)));
 try {
   await fs.writeFile(path.join(smokeDir, 'package.json'), JSON.stringify({
     name: 'dsh-release-smoke',
@@ -56,7 +79,8 @@ try {
     dsh: { profile: { bundles: ['existing-bundle'] } },
   }));
   execFileSync(process.execPath, [npmCli, 'install', '--prefix', smokeDir, '--ignore-scripts', '--no-audit', '--no-fund', archivePath], {
-    cwd: root,
+    cwd: smokeDir,
+    env: smokeEnv,
     stdio: 'pipe',
   });
   const installedRoot = path.join(smokeDir, 'node_modules', pkg.name);

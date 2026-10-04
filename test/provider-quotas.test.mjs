@@ -119,7 +119,7 @@ test('official built-in providers report only validated quota or balance data', 
   assert.equal(calls.length, 18, 'manual refresh re-reads each available provider')
 })
 
-test('custom gateways and invalid upstream data never produce quota cards', async () => {
+test('custom gateways are excluded and invalid upstream data produces diagnostics without quota values', async () => {
   const { read, calls } = fixture({
     openrouter: { apiKeyEnv: 'OPENROUTER_API_KEY', baseURL: 'https://gateway.example/v1' },
     moonshotai: {},
@@ -131,7 +131,8 @@ test('custom gateways and invalid upstream data never produce quota cards', asyn
     'https://api.z.ai/api/monitor/usage/quota/limit': { code: 401, data: { limits: [{ type: 'TOKENS_LIMIT', percentage: 1 }] } },
   })
   const result = await read()
-  assert.deepEqual(result.quotas, [])
+  assert.deepEqual(result.quotas.map((row) => row.provider), ['moonshotai', 'minimax', 'zai'])
+  assert.ok(result.quotas.every((row) => row.metrics.length === 0 && row.refreshError.code === 'parse'))
   assert.equal(calls.length, 3)
   assert.ok(calls.every(({ url }) => !url.includes('openrouter')))
 })

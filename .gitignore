@@ -16,8 +16,12 @@ storages/
 sessions/
 credentials/
 auth.json
+.credentials.yaml
+.credentials.yml
 usage-stats-corpus.json
 usage-stats-controls.json
+usage-stats-model-tests.json
+usage-stats-model-baselines.json
 *.sqlite
 *.sqlite-*
 *.db

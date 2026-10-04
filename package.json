@@ -1,7 +1,7 @@
 {
   "name": "@sligqoer/dsh-usage-stats",
-  "description": "DSH Desktop token statistics with range filters, an incremental session corpus, and connected quota panels. Desktop profile only.",
-  "version": "0.1.2",
+  "description": "DSH Desktop token and session statistics, resilient quota panels, and evidence-based model matching. Desktop profile only.",
+  "version": "0.2.0",
   "type": "module",
   "repository": {
     "type": "git",
@@ -22,6 +22,11 @@
     "lib/client.js",
     "lib/provider-quotas.js",
     "lib/quota-controls.js",
+    "lib/model-match.js",
+    "lib/model-fingerprints.js",
+    "lib/model-capabilities.js",
+    "lib/model-test-history.js",
+    "lib/fingerprints/",
     "cordis.patch.yml",
     "README.md",
     "README.zh-CN.md",
@@ -29,6 +34,8 @@
     "screenshots/usage.png",
     "screenshots/quotas.png",
     "screenshots/controls.png",
+    "screenshots/token-speed.png",
+    "screenshots/match.png",
     "screenshots/icon.svg",
     "LICENSE"
   ],
@@ -51,7 +58,7 @@
     "prepack": "npm run build",
     "release": "node scripts/build-release.mjs",
     "publish:release": "node scripts/publish-npm.mjs",
-    "test": "node test/consistency.test.mjs && node --test test/desktop.test.mjs test/usage.test.mjs test/client.test.mjs test/client-locale-quota.test.mjs test/provider-quotas.test.mjs test/quota-controls.test.mjs test/privacy.test.mjs",
+    "test": "node test/consistency.test.mjs && node --test test/desktop.test.mjs test/usage.test.mjs test/client.test.mjs test/client-locale-quota.test.mjs test/provider-quotas.test.mjs test/quota-controls.test.mjs test/model-match.test.mjs test/privacy.test.mjs",
     "preview:heatmap": "node scripts/build-heatmap-preview.mjs"
   },
   "license": "Apache-2.0"
