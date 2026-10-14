@@ -1,5 +1,5 @@
 /** Persistent quota controls, bounded custom queries and host-side scheduling. */
-import { readFile, mkdir, writeFile, rename } from 'node:fs/promises'
+import { readFile, mkdir, writeFile, rename, stat as fileStat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { quotaTemplate, hasBuiltinQuotaQuery, officialQuotaSpec, customQuotaAuth, quotaErrorCode } from './provider-quotas.js'
@@ -20,7 +20,7 @@ export class QuotaControlError extends Error {
 const fail = (message, code, status) => { throw new QuotaControlError(message, code, status) }
 
 function defaults() {
-  return { autoQuota: false, intervalMinutes: 60, showModelDetails: true, showModelMatch: false, showTokenSpeed: true, advancedModelSelect: false, customQueries: [] }
+  return { autoQuota: false, intervalMinutes: 10, showModelDetection: true, advancedModelSelect: true, modelReasoning: true, customQueries: [] }
 }
 
 /**
@@ -213,7 +213,7 @@ export async function executeQuotaQuery(ctx, provider, rawTemplate, request = fe
 }
 
 /** Source reads are explicit; cached page reads never spend account credit. */
-export function createQuotaControls(ctx, { path, sources, request = fetch, now = Date.now }) {
+export function createQuotaControls(ctx, { path, legacyPath, sources, request = fetch, now = Date.now }) {
   let settings = defaults()
   let snapshots = {}
   let lastRefreshAt = 0
@@ -246,14 +246,24 @@ export function createQuotaControls(ctx, { path, sources, request = fetch, now =
 
   const load = () => loaded ||= (async () => {
     try {
-      const stat = JSON.parse(await readFile(path, 'utf8'))
+      let text
+      try { text = await readFile(path, 'utf8') }
+      catch (error) {
+        if (error.code !== 'ENOENT' || !legacyPath) throw error
+        const candidates = await Promise.all((Array.isArray(legacyPath) ? legacyPath : [legacyPath]).map(async file => {
+          try { return { file, modified: (await fileStat(file)).mtimeMs } } catch { return null }
+        }))
+        const latest = candidates.filter(Boolean).sort((a, b) => b.modified - a.modified)[0]
+        if (!latest) throw error
+        text = await readFile(latest.file, 'utf8')
+      }
+      const stat = JSON.parse(text)
       const saved = stat.settings
       if (plain(saved)) {
         settings.autoQuota = saved.autoQuota === true
-        settings.showModelDetails = saved.showModelDetails !== false
-        settings.showModelMatch = saved.showModelMatch === true
-        settings.showTokenSpeed = saved.showTokenSpeed !== false
-        settings.advancedModelSelect = saved.advancedModelSelect === true
+        settings.showModelDetection = saved.showModelDetection !== false
+        settings.advancedModelSelect = saved.advancedModelSelect !== false
+        settings.modelReasoning = saved.modelReasoning !== false
         if (QUOTA_INTERVALS.includes(saved.intervalMinutes)) settings.intervalMinutes = saved.intervalMinutes
         if (Array.isArray(saved.customQueries)) {
           settings.customQueries = saved.customQueries.slice(0, 50).flatMap((query) => {
@@ -264,7 +274,7 @@ export function createQuotaControls(ctx, { path, sources, request = fetch, now =
       }
       if (plain(stat.snapshots)) snapshots = Object.fromEntries(Object.keys(sources).filter((key) => plain(stat.snapshots[key])).map((key) => [key, stat.snapshots[key]]))
       if (Number.isFinite(stat.lastRefreshAt) && stat.lastRefreshAt > 0) lastRefreshAt = Math.min(stat.lastRefreshAt, now())
-    } catch {} // Missing/corrupt settings use conservative defaults.
+    } catch {} // Missing/corrupt settings use defaults.
   })()
 
   const persist = () => {
@@ -301,8 +311,9 @@ export function createQuotaControls(ctx, { path, sources, request = fetch, now =
     if (key !== 'providers') return clone(body)
     const entries = directory(ctx)
     const quotas = (Array.isArray(body.quotas) ? body.quotas : []).filter((quota) => {
-      if (!officialQuotaSpec(quota.provider)?.configuredOnly) return true
       const entry = entries.find((item) => item.provider === quota.provider)
+      if (!entry) return false
+      if (!officialQuotaSpec(quota.provider)?.configuredOnly) return true
       return !!entry?.profile && (settings.customQueries.some((query) => query.provider === quota.provider) || hasBuiltinQuotaQuery(entry.provider, entry.profile))
     })
     const shown = new Set(quotas.map((quota) => quota.provider))
@@ -322,7 +333,12 @@ export function createQuotaControls(ctx, { path, sources, request = fetch, now =
     if (!Object.hasOwn(sources, key)) fail('未知配额来源。')
     const source = sources[key]
     const adapter = plain(source)
-    if (provider && (key !== 'providers' || !directory(ctx).some((entry) => entry.provider === provider))) fail('所选供应商已不存在，请重新选择。')
+    if (provider && key !== 'providers') fail('所选供应商已不存在，请重新选择。')
+    // A card can outlive the provider's settings. Return the current display
+    // snapshot so the client removes it instead of retaining its old balance.
+    if (provider && !directory(ctx).some((entry) => entry.provider === provider)) {
+      return displaySnapshot(key, snapshots[key] || { ok: true, quotas: [], cached: true })
+    }
     if (!sourceEnabled(key)) return { ok: true, available: false, status: 'not-configured', cached: true }
     if (!fresh) {
       const body = snapshots[key] || (key === 'providers' ? { ok: true, quotas: [], cached: true } : { ok: true, available: adapter, status: adapter ? 'unqueried' : 'unavailable', cached: true })
@@ -426,21 +442,17 @@ export function createQuotaControls(ctx, { path, sources, request = fetch, now =
           if (!QUOTA_INTERVALS.includes(patch.intervalMinutes)) fail('仅支持 10 分钟、1 小时、5 小时或每天。')
           next.intervalMinutes = patch.intervalMinutes
         }
-        if (patch.showModelDetails != null) {
-          if (typeof patch.showModelDetails !== 'boolean') fail('模型明细开关值无效。')
-          next.showModelDetails = patch.showModelDetails
-        }
-        if (patch.showModelMatch != null) {
-          if (typeof patch.showModelMatch !== 'boolean') fail('检测模型匹配开关值无效。')
-          next.showModelMatch = patch.showModelMatch
-        }
-        if (patch.showTokenSpeed != null) {
-          if (typeof patch.showTokenSpeed !== 'boolean') fail('Token 输出速度开关值无效。')
-          next.showTokenSpeed = patch.showTokenSpeed
+        if (patch.showModelDetection != null) {
+          if (typeof patch.showModelDetection !== 'boolean') fail('模型检测开关值无效。')
+          next.showModelDetection = patch.showModelDetection
         }
         if (patch.advancedModelSelect != null) {
           if (typeof patch.advancedModelSelect !== 'boolean') fail('高级模型选择器开关值无效。')
           next.advancedModelSelect = patch.advancedModelSelect
+        }
+        if (Object.prototype.hasOwnProperty.call(patch, 'modelReasoning')) {
+          if (typeof patch.modelReasoning !== 'boolean') fail('模型推理强度开关值无效。')
+          next.modelReasoning = patch.modelReasoning
         }
       } else fail('未知设置操作。')
       const oldSnapshots = clone(snapshots)
@@ -465,13 +477,42 @@ export function createQuotaControls(ctx, { path, sources, request = fetch, now =
   return {
     get, update, test, read, tick,
     providers: async () => ({ ok: true, providers: providerDirectory() }),
-    dispose: () => { disposed = true },
+    dispose: async () => { disposed = true; await updateQueue.catch(() => {}); await Promise.allSettled([allFlight, ...flights.values()]); await saveQueue.catch(() => {}) },
   }
 }
 
 const WORKBUDDY_SOURCES = {
   workbuddy: { name: 'WorkBuddy', path: '/plugins/dsh-workbuddy-connect/status' },
   'workbuddy-ai': { name: 'WorkBuddy AI', path: '/plugins/dsh-workbuddy-connect/ai/status' },
+}
+
+/** Display the selected built-in account; never import credentials on a page read. */
+export function nativeWorkBuddyQuotaSource(getService, provider = 'workbuddy') {
+  if (!Object.hasOwn(WORKBUDDY_SOURCES, provider)) fail('未知 WorkBuddy 积分来源。')
+  const channelId = provider === 'workbuddy-ai' ? 'workbuddy' : 'buddy'
+  const name = provider === 'workbuddy-ai' ? 'WorkBuddy 国际版' : 'WorkBuddy 国内版'
+  const selected = service => service?.accountsView(channelId).accounts.find(account => account.selected && account.enabled && account.status === 'ready')
+  return {
+    provider, name,
+    description: '读取“模型接入 → 账号渠道”中已选定的 ' + name + ' 账号积分，无需其他插件。',
+    available: () => Boolean(selected(getService())),
+    async read() {
+      const service = getService()
+      const account = selected(service)
+      if (!account) return { ok: true, available: false, status: 'not-configured' }
+      const reading = (await service.refreshQuota({ channelId, accountId: account.id })).results?.[0]
+      const current = selected(service)
+      if (!reading || reading.error || !current || current.id !== account.id || current.version !== account.version) {
+        return { ok: true, available: true, status: reading?.error?.code === 'AUTH' ? 'signed-out' : 'unavailable' }
+      }
+      return {
+        ok: true, available: true, status: 'signed-in', syncedAt: reading.observedAt,
+        credits: { total: reading.total, ...reading.unlimited === true ? { unlimited: true } : {},
+          accounts: (reading.kinds ?? []).map(pool => ({ packageName: pool.name, remain: pool.balance, size: pool.total })) },
+        models: service.models(channelId).filter(model => model.accountId === account.id && model.billing === 'account-included' && model.callable === true).map(model => ({ id: model.modelId, name: model.displayName, free: true, badges: [] })),
+      }
+    },
+  }
 }
 
 /** Optional plugin registration is detected without probing its HTTP route. */

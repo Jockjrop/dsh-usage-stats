@@ -65,6 +65,54 @@ test('failed provider refresh preserves the last success, bounded reason and tim
   assert.equal(recovered.refreshError, undefined)
 }))
 
+test('removed provider caches are hidden without querying or discarding surviving providers across restart', async () => temporary(async (path) => {
+  const profiles = { deepseek: {}, gateway: { baseURL: 'http://127.0.0.1:9000/v1' } }
+  const base = configuredContext()
+  const ctx = { get: name => name === 'settings' ? { describe: () => [{ ns: 'models', value: { providers: profiles } }] } : base.get(name) }
+  let queries = 0
+  const options = { path, sources: { providers: async () => { queries++; return { ok: true, quotas: [] } } } }
+  await writeFile(path, JSON.stringify({ settings: { autoQuota: false }, snapshots: { providers: { ok: true, quotas: [
+    { provider: 'deepseek', name: 'DeepSeek', metrics: [{ kind: 'amount', label: '账户可用余额', remaining: 10, currency: 'CNY' }], syncedAt: 100 },
+    { provider: 'gateway', name: '本地网关', custom: true, metrics: [{ kind: 'amount', label: '余额', remaining: 20, currency: 'USD' }], syncedAt: 200 },
+  ] } } }))
+  const controller = createQuotaControls(ctx, options)
+  assert.deepEqual((await controller.read('providers')).quotas.map(row => row.provider), ['deepseek', 'gateway'])
+  delete profiles.deepseek
+  let view = await controller.read('providers')
+  assert.deepEqual(view.quotas.map(row => row.provider), ['gateway'])
+  assert.equal(view.quotas[0].metrics[0].remaining, 20)
+  view = await controller.read('providers', true, 'deepseek')
+  assert.deepEqual(view.quotas.map(row => row.provider), ['gateway'], 'a stale card refresh returns current cards without a removed-provider error')
+  assert.equal(queries, 0)
+  assert.deepEqual((await createQuotaControls(ctx, options).read('providers')).quotas.map(row => row.provider), ['gateway'])
+  delete profiles.gateway
+  assert.deepEqual((await controller.read('providers')).quotas, [], 'an empty configured-provider map hides all cached cards')
+  assert.equal(queries, 0)
+}))
+
+test('providers removed while a refresh is pending cannot return from its result or persisted cache', async () => temporary(async (path) => {
+  const profiles = { deepseek: {}, gateway: { baseURL: 'http://127.0.0.1:9000/v1' } }
+  const base = configuredContext()
+  const ctx = { get: name => name === 'settings' ? { describe: () => [{ ns: 'models', value: { providers: profiles } }] } : base.get(name) }
+  const quota = provider => ({ provider, name: provider, metrics: [{ kind: 'amount', label: '余额', remaining: 10, currency: 'CNY' }] })
+  let release, calls = 0
+  const options = { path, sources: { providers: async (_excluded, provider) => {
+    calls++
+    if (provider) return new Promise(resolve => { release = () => resolve({ ok: true, quotas: [quota(provider)] }) })
+    return { ok: true, quotas: [quota('deepseek'), quota('gateway')] }
+  } } }
+  const controller = createQuotaControls(ctx, options)
+  await controller.read('providers', true)
+  const refresh = controller.read('providers', true, 'deepseek')
+  await waitFor(() => !!release)
+  delete profiles.deepseek
+  release()
+  assert.deepEqual((await refresh).quotas.map(row => row.provider), ['gateway'])
+  assert.deepEqual((await controller.read('providers')).quotas.map(row => row.provider), ['gateway'])
+  assert.deepEqual((await createQuotaControls(ctx, options).read('providers')).quotas.map(row => row.provider), ['gateway'])
+  assert.equal(calls, 2)
+}))
+
 test('single-provider refresh skips other custom queries and retains unrelated cached rows', async () => temporary(async (path) => {
   const requested = []
   const options = { path, sources: { providers: async (_excluded, provider) => {
@@ -76,7 +124,8 @@ test('single-provider refresh skips other custom queries and retains unrelated c
   await controls.read('providers', true, 'gateway')
   assert.deepEqual(requested, [null, 'gateway'])
   assert.deepEqual((await controls.read('providers')).quotas.map((row) => row.provider), ['deepseek', 'gateway'])
-  await assert.rejects(controls.read('providers', true, 'removed'), /不存在/)
+  assert.deepEqual((await controls.read('providers', true, 'removed')).quotas.map(row => row.provider), ['deepseek', 'gateway'])
+  assert.deepEqual(requested, [null, 'gateway'], 'refreshing a removed provider does not probe any source')
 }))
 
 test('late full refresh cannot overwrite a newer single-provider refresh', async () => temporary(async (path) => {
@@ -94,43 +143,50 @@ test('late full refresh cannot overwrite a newer single-provider refresh', async
   assert.equal((await controls.read('providers')).quotas[0].metrics[0].remaining, 20)
 }))
 
+test('breaking detection setting ignores the old matching toggle and persists its new key', async () => temporary(async path => {
+  await writeFile(path, JSON.stringify({ settings: { showModelMatch: false, showTokenSpeed: false } }))
+  const controls = createQuotaControls(context(), { path })
+  const initial = (await controls.get()).settings
+  assert.equal(initial.showModelDetection, true); assert.equal(initial.showModelMatch, undefined)
+  assert.equal(initial.showTokenSpeed, undefined)
+  await controls.update({ showModelDetection: false })
+  const persisted = JSON.parse(await readFile(path, 'utf8'))
+  assert.equal(persisted.settings.showModelDetection, false); assert.equal(persisted.settings.showModelMatch, undefined)
+  assert.equal((await createQuotaControls(context(), { path }).get()).settings.showModelDetection, false)
+}))
+
 test('default-off reads never query; explicit refresh caches and survives restart without credentials', async () => temporary(async (path) => {
   let calls = 0
+  const base = configuredContext()
+  const ctx = { get: name => name === 'credentials' ? undefined : base.get(name) }
   const options = { path, sources: { providers: async () => { calls++; return { ok: true, quotas: [{ provider: 'deepseek', name: 'DeepSeek', metrics: [{ kind: 'amount', remaining: 10, currency: 'CNY' }] }] } } } }
-  const controller = createQuotaControls(context(), options)
-  assert.deepEqual((await controller.get()).settings, { autoQuota: false, intervalMinutes: 60, showModelDetails: true, showModelMatch: false, showTokenSpeed: true, advancedModelSelect: false, customQueries: [] })
+  const controller = createQuotaControls(ctx, options)
+  assert.deepEqual((await controller.get()).settings, { autoQuota: false, intervalMinutes: 10, showModelDetection: true, advancedModelSelect: true, modelReasoning: true, customQueries: [] })
   await controller.tick()
-  assert.deepEqual((await controller.read('providers')).quotas, [])
+  assert.deepEqual((await controller.read('providers')).quotas.map(row => [row.provider, row.status, row.metrics]), [['deepseek', 'unqueried', []]])
   assert.equal(calls, 0)
   await controller.read('providers', true)
-  const restarted = createQuotaControls(context(), options)
+  const restarted = createQuotaControls(ctx, options)
   assert.equal((await restarted.read('providers')).quotas[0].metrics[0].remaining, 10)
   assert.equal(calls, 1)
-  await restarted.update({ showModelDetails: false, intervalMinutes: 1440 })
-  const persisted = createQuotaControls(context(), options)
-  assert.equal((await persisted.get()).settings.showModelDetails, false)
+  await restarted.update({ modelReasoning: false, intervalMinutes: 1440 })
+  const persisted = createQuotaControls(ctx, options)
+  assert.equal((await persisted.get()).settings.modelReasoning, false)
   assert.equal((await persisted.get()).settings.intervalMinutes, 1440)
 }))
 
-test('match and token-speed visibility defaults migrate, persist and reject invalid switches atomically', async () => temporary(async (path) => {
-  const options = { path, sources: {} }
-  await writeFile(path, JSON.stringify({ settings: { showModelDetails: false, advancedModelSelect: true } }), 'utf8')
-  const controls = createQuotaControls(context(), options)
-  const legacy = (await controls.get()).settings
-  assert.equal(legacy.showModelMatch, false)
-  assert.equal(legacy.showTokenSpeed, true)
-  assert.equal(legacy.advancedModelSelect, true)
-  await controls.update({ showModelMatch: true, showTokenSpeed: false })
-  const restarted = createQuotaControls(context(), options)
-  assert.equal((await restarted.get()).settings.showModelMatch, true)
-  assert.equal((await restarted.get()).settings.showTokenSpeed, false)
-  await assert.rejects(restarted.update({ showModelMatch: false, showTokenSpeed: 'true' }), /Token 输出速度开关值无效/)
-  await assert.rejects(restarted.update({ showModelMatch: 1 }), /检测模型匹配开关值无效/)
-  assert.equal((await restarted.get()).settings.showModelMatch, true)
-  await restarted.update({ showModelMatch: false, showTokenSpeed: true })
-  const final = (await createQuotaControls(context(), options).get()).settings
-  assert.equal(final.showModelMatch, false)
-  assert.equal(final.showTokenSpeed, true)
+test('model-only visibility settings migrate and validate without taking over statistical preferences', async () => temporary(async path => {
+ const options={path,sources:{}};
+ await writeFile(path,JSON.stringify({settings:{showModelDetails:false,showTokenSpeed:false,advancedModelSelect:true}}));
+ const controls=createQuotaControls(context(),options);
+ assert.equal((await controls.get()).settings.showModelDetection,true);
+ assert.equal((await controls.get()).settings.showTokenSpeed,undefined);
+ await controls.update({showModelDetection:true,modelReasoning:false});
+ const restored=createQuotaControls(context(),options);
+ assert.equal((await restored.get()).settings.showModelDetection,true);
+ assert.equal((await restored.get()).settings.modelReasoning,false);
+ await assert.rejects(restored.update({showModelDetection:false,modelReasoning:'true'}));
+ assert.equal((await restored.get()).settings.showModelDetection,true);
 }))
 
 test('configured balances appear unqueried without a probe, including custom StepFun ids', async () => temporary(async (path) => {
@@ -174,24 +230,38 @@ test('configured balances appear unqueried without a probe, including custom Ste
   assert.equal(queries, priorCalls)
 }))
 
-test('the advanced model selector switch is off by default, persists both ways and rejects non-booleans', async () => temporary(async (path) => {
+test('the advanced model selector switch is on by default, persists both ways and rejects non-booleans', async () => temporary(async (path) => {
   const options = { path, sources: {} }
   const controller = createQuotaControls(context(), options)
-  // Off by default: the seat must not shadow the official model selector until
-  // the user asks for it.
-  assert.equal((await controller.get()).settings.advancedModelSelect, false)
-  // A settings file written before this switch existed must load as off, not as
-  // undefined, or the picker would silently read undefined as "no".
+  assert.equal((await controller.get()).settings.advancedModelSelect, true)
+  // A saved document without this key inherits the enabled default.
   await writeFile(path, JSON.stringify({ settings: { autoQuota: false, intervalMinutes: 60, showModelDetails: true } }), 'utf8')
-  assert.equal((await createQuotaControls(context(), options).get()).settings.advancedModelSelect, false)
-  await controller.update({ advancedModelSelect: true })
-  assert.equal((await controller.get()).settings.advancedModelSelect, true)
+  assert.equal((await createQuotaControls(context(), options).get()).settings.advancedModelSelect, true)
+  await controller.update({ advancedModelSelect: false })
+  assert.equal((await controller.get()).settings.advancedModelSelect, false)
   await assert.rejects(controller.update({ advancedModelSelect: 'true' }), /高级模型选择器开关值无效/)
-  assert.equal((await controller.get()).settings.advancedModelSelect, true)
+  assert.equal((await controller.get()).settings.advancedModelSelect, false)
   const persisted = createQuotaControls(context(), options)
-  assert.equal((await persisted.get()).settings.advancedModelSelect, true)
-  await persisted.update({ advancedModelSelect: false })
-  assert.equal((await createQuotaControls(context(), options).get()).settings.advancedModelSelect, false)
+  assert.equal((await persisted.get()).settings.advancedModelSelect, false)
+  await persisted.update({ advancedModelSelect: true })
+  assert.equal((await createQuotaControls(context(), options).get()).settings.advancedModelSelect, true)
+}))
+
+test('model reasoning visibility defaults on for old stores, persists, and validates writes atomically', async () => temporary(async (path) => {
+  const options = { path, sources: {} }
+  await writeFile(path, JSON.stringify({ settings: { intervalMinutes: 300, showModelDetails: true } }), 'utf8')
+  const controls = createQuotaControls(context(), options)
+  assert.equal((await controls.get()).settings.modelReasoning, true)
+  await controls.update({ modelReasoning: false })
+  const restarted = createQuotaControls(context(), options)
+  assert.equal((await restarted.get()).settings.modelReasoning, false)
+  assert.equal((await restarted.get()).settings.intervalMinutes, 300)
+  for (const invalid of ['false', null, 0]) {
+    await assert.rejects(restarted.update({ modelReasoning: invalid, intervalMinutes: 1440 }), /模型推理强度开关值无效/)
+    assert.equal((await restarted.get()).settings.intervalMinutes, 300, 'invalid switches cannot partly update other settings')
+  }
+  await restarted.update({ modelReasoning: true })
+  assert.equal((await createQuotaControls(context(), options).get()).settings.modelReasoning, true)
 }))
 
 test('automatic queries require the cost reminder, run at each supported interval, and stop when disabled', async () => temporary(async (path) => {
@@ -518,12 +588,12 @@ test('desktop control routes persist settings and reject cross-origin writes and
     assert.equal((await fetch(root + 'opencode-go')).status, 404)
     assert.equal((await (await fetch(root + 'workbuddy?fresh=1')).json()).status, 'not-configured')
     assert.equal((await (await fetch(root + 'workbuddy-ai?fresh=1')).json()).status, 'not-configured')
-    assert.ok(intervalCount >= 2)
+    assert.ok(intervalCount >= 1)
     const providers = await (await fetch(root + 'quota-providers')).json()
     assert.equal(providers.providers.length, 2)
     assert.doesNotMatch(JSON.stringify(providers), /provider-secret|gateway-secret/)
-    const options = { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ showModelDetails: false }) }
-    assert.equal((await (await fetch(root + 'controls', options)).json()).settings.showModelDetails, false)
+    const options = { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ modelReasoning: false }) }
+    assert.equal((await (await fetch(root + 'controls', options)).json()).settings.modelReasoning, false)
     assert.equal((await fetch(root + 'controls', { ...options, headers: { ...options.headers, origin: 'https://outside.example' } })).status, 403)
     assert.equal((await fetch(root + 'controls', { ...options, headers: { 'content-type': 'text/plain' } })).status, 400)
     assert.equal((await fetch(root + 'quota-test', { ...options, body: '{broken' })).status, 400)

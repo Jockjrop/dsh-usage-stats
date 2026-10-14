@@ -17,7 +17,7 @@ function requestStatus(url, headers) {
   })
 }
 
-async function withHost(services, check, corpus) {
+async function withHost(services, check, corpus, documents = {}) {
   const home = await mkdtemp(join(tmpdir(), 'dsh-usage-privacy-'))
   const previousHome = process.env.DSH_HOME
   process.env.DSH_HOME = home
@@ -28,8 +28,10 @@ async function withHost(services, check, corpus) {
     else { res.writeHead(404); res.end() }
   })
   try {
+    await mkdir(join(home, 'storages'), { recursive: true })
+    for (const [name, body] of Object.entries(documents)) await writeFile(join(home, 'storages', name), JSON.stringify(body))
     if (corpus) {
-      await mkdir(join(home, 'storages'))
+      await mkdir(join(home, 'storages'), { recursive: true })
       await writeFile(join(home, 'storages', 'usage-stats-corpus.json'), JSON.stringify(corpus))
     }
     const webServer = { register(route) { routes.set(route.path, route.handler); return () => routes.delete(route.path) } }
@@ -51,27 +53,6 @@ async function withHost(services, check, corpus) {
   }
 }
 
-test('unexpected control errors never return host paths or credential details', async () => {
-  const detail = join(tmpdir(), 'private-profile', 'credentials.json') + ' credential-fixture-value'
-  await withHost({
-    llm: { listConfigurableProviders: () => [{ provider: 'gateway', settingsNs: 'models' }] },
-    settings: { describe() { throw new Error(detail) } },
-  }, async (root) => {
-    for (const [route, options] of [
-      ['quota-providers', undefined],
-      ['quota-test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: 'gateway', template: {} }) }],
-    ]) {
-      const response = await fetch(root + route, options)
-      assert.equal(response.status, 500)
-      assert.deepEqual(await response.json(), { ok: false, error: '操作失败，请稍后重试。' })
-      assert.equal(response.headers.get('cache-control'), 'no-store')
-    }
-    const response = await fetch(root + 'controls', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ intervalMinutes: 1 }) })
-    assert.equal(response.status, 400)
-    assert.match((await response.json()).error, /仅支持 10 分钟/)
-  })
-})
-
 test('failed statistics serialization returns an opaque error instead of exception text', async () => {
   await withHost({}, async (root) => {
     const response = await fetch(root + 'stats')
@@ -83,7 +64,7 @@ test('failed statistics serialization returns an opaque error instead of excepti
 
 test('all usage and quota routes reject external origins and disable HTTP caching', async () => {
   await withHost({}, async (root) => {
-    for (const route of ['stats', 'sessions', 'model-match', 'model-test', 'model-baselines', 'provider-quotas', 'controls', 'quota-providers', 'quota-test', 'workbuddy', 'workbuddy-ai']) {
+    for (const route of ['stats', 'sessions', 'provider-quotas', 'controls', 'display-settings', 'account-quotas', 'account-quotas/refresh', 'integration']) {
       const denied = await fetch(root + route, { headers: { origin: 'https://outside.example' } })
       assert.equal(denied.status, 403, route)
       assert.equal(denied.headers.get('cache-control'), 'no-store', route)
@@ -94,29 +75,22 @@ test('all usage and quota routes reject external origins and disable HTTP cachin
     assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
     assert.equal(await requestStatus(root + 'controls', { host: 'outside.example' }), 403)
     assert.equal(await requestStatus(root + 'controls', { 'sec-fetch-site': 'cross-site' }), 403)
+    for (const route of ['model-match', 'model-test', 'model-baselines']) assert.equal((await fetch(root + route)).status, 404)
   })
 })
-
-test('host includes restored audit spend and result without adding a session or re-running a model', async () => {
-  // The fixture home is available while apply() loads its independent history.
-  await withHost({ sessionQuery: { listSessions: async () => [] }, llm: { stream() { assert.fail('restoring results must not run a model') } } }, async (root) => {
-    const { createModelTestHistory } = await import('../src/model-test-history.js')
-    await createModelTestHistory(join(process.env.DSH_HOME, 'storages', 'usage-stats-model-tests.json')).record({ id: 'restored', sessionId: 'former', mode: 'audit', status: 'complete', selection: { provider: 'gateway', model: 'requested' }, startedAt: Date.now(), finishedAt: Date.now(),
-      usage: { inputTokens: 12, outputTokens: 3 }, identity: { verdict: 'no-significant-difference', count: 128, valid: 128, mismatches: 0, pValue: 1 }, plan: { requests: 1 }, results: [{ time: Date.now(), outcome: 'scored', stop: 'stop', usageReported: true, usage: { inputTokens: 12, outputTokens: 3 } }] })
-    // Start another plugin context to verify its actual boot/HTTP path.
-    const routes = new Map()
-    apply({ get: name => ({ profileContext: { name: 'desktop' }, sessionQuery: { listSessions: async () => [] }, webServer: { register(route) { routes.set(route.path, route.handler); return () => {} } } })[name], effect: callback => callback(), interval: () => () => {} })
-    const server = createServer((req, res) => routes.get(new URL(req.url, 'http://local').pathname)(req, res))
-    try {
-      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-      const base = 'http://127.0.0.1:' + server.address().port + '/api/dsh-usage-stats/'
-      const stats = await (await fetch(base + 'stats')).json(), match = await (await fetch(base + 'model-match?session=former')).json()
-      assert.equal(stats.ok, true); assert.equal(stats.overview.totalBilled, 15); assert.equal(stats.totals.calls, 1); assert.equal(stats.sessions, 0)
-      assert.equal(match.job.conclusion.verdict, 'no-anomaly'); assert.equal(match.job.usageSaved, true)
-      // Deleting/switching the former conversation must not hide its result.
-      const previous = await (await fetch(base + 'model-match?session=another')).json()
-      assert.equal(previous.job.id, 'restored'); assert.equal(previous.job.sessionId, 'former')
-      assert.equal(previous.analysis.counts.samples, 0)
-    } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
-  })
+test('statistics does not read credentials and invalid display preferences never expose private host errors', async () => {
+ await withHost({llm:new Proxy({}, {get(){throw Error('private-fixture')}}),credentials:{get(){assert.fail('statistics must not read account secrets')}}},async root=>{
+  assert.equal((await fetch(root+'stats')).status,200);
+  const response=await fetch(root+'display-settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({showTokenSpeed:'true'})});
+  assert.equal(response.status,400);assert.doesNotMatch(JSON.stringify(await response.json()),/private-fixture|credentials/);
+  const quota=await fetch(root+'provider-quotas');assert.equal(quota.status,500);assert.doesNotMatch(JSON.stringify(await quota.json()),/private-fixture|credentials/);
+ })
+})
+test('statistics restores legacy detection spend without loading a model or executing inference', async () => {
+  const time=Date.now()
+  const history={version:1,jobs:[],usage:[{id:'legacy',selection:{provider:'gateway',model:'fixture'},startedAt:time,results:[{time,selection:{provider:'gateway',model:'fixture'},stop:'stop',usageReported:true,usage:{inputTokens:12,outputTokens:3}}]}]}
+ await withHost({},async root=>{
+  for(let repeat=0;repeat<2;repeat++){const result=await(await fetch(root+'stats')).json();assert.equal(result.totals.billed,15);assert.equal(result.totals.calls,1)}
+  assert.equal((await fetch(root+'model-detection')).status,200);
+ },null,{'usage-stats-detections.json':history})
 })

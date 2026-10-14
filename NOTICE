@@ -1,0 +1,39 @@
+dsh-usage-stats — third-party notices
+
+Apache-2.0; see LICENSE. The read-only quota UI uses the brand assets described below.
+
+1. Bundled brand artwork
+------------------------
+
+Provider and model logos are shipped locally as data URIs. Source revisions
+and licence texts are recorded under third_party/brand-icons. Artwork comes
+from Ebony-Vinyl/dsh-our-free-model (MIT), LobeHub/lobe-icons (MIT), and the
+Simple Icons collection (CC0) distributed by react-icons (MIT). Kilo,
+LobsterAI, Loomy and fallback glyphs are locally drawn identifiers. Only logo
+assets from dsh-our-free-model are redistributed. Brand names and logos belong
+to their owners; no affiliation is implied.
+
+2. LM Fingerprint engine and reference data (MIT)
+------------------------------------------------
+
+Source: https://github.com/Ikaleio/lm-detector
+Package: lmfpd 0.0.1791719537634
+Commit: 2d71e10cec030ca786dcbcd14eba84edb4ecf10c
+Copyright (c) 2026 xqy2006
+
+Official shared modules and the published reference bank/detector are bundled
+under third_party/lm-fingerprint. Its verbatim MIT licence, source revision,
+package integrity and per-file hashes ship in LICENSE and UPSTREAM.json.
+TypeScript type erasure and relative import extensions are the only source
+transformations. The upstream CLI, web proxy and third-party skill wrapper
+are not redistributed. Verified updates use the same source and licence.
+
+The detection result layout and confidence bars are adapted from the same
+project's web/src/components/result-panel.tsx and web/src/index.css (MIT),
+using DSH theme tokens, localized sample status and bounded partial results.
+https://lm.ikale.io/docs/web/ describes the upstream result semantics.
+
+3. Runtime dependencies
+------------------------
+
+undici (MIT) provides proxy-aware updates. TypeScript 5.9.3 (Apache-2.0) erases upstream engine types. Their licences are included by npm.

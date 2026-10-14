@@ -1,0 +1,16 @@
+{
+  "url": "https://github.com/lobehub/lobe-icons",
+  "commit": "c385b2b8d1f9e19aa86e628d4e23c91ee1111a47",
+  "license": "MIT",
+  "usage": "SVG brand artwork from packages/static-svg/icons; fill colors adapted for a light brand canvas.",
+  "assets": [
+    {
+      "path": "packages/static-svg/icons/openai.svg",
+      "sha": "78caf4fa20ffb0ae8ebefd74408871c11c1c7fd2"
+    },
+    {
+      "path": "packages/static-svg/icons/kimi.svg",
+      "sha": "1915850ee50ea636cc34b37aa11ba7f1ae0a26a2"
+    }
+  ]
+}

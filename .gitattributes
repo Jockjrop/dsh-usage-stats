@@ -1,2 +1,4 @@
 * text=auto eol=lf
 *.png binary
+# Keep upstream licence bytes stable for the provenance hashes.
+third_party/lm-fingerprint/LICENSE -text whitespace=cr-at-eol

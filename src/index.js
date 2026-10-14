@@ -9,7 +9,7 @@
  * Provider quotas use the credentials configured in DSH. Optional local
  * plugins are registered as quota adapters, with display-only cache data.
  *
- * Performance model (fixed for slow page loads):
+ * Statistics cache:
  *   - The corpus is aggregated into per-session contributions that are kept
  *     in memory AND persisted to <DSH_HOME>/storages/usage-stats-corpus.json,
  *     so a server restart does not force a cold full scan.
@@ -22,17 +22,21 @@
  *
  * The desktop renderer sends its system UTC offset. Sessions with source events are
  * re-bucketed exactly; old retained sessions use their stored hourly buckets.
- * `?fresh=1` forces a rescan. No dsh source changes.
+ * `?fresh=1` forces a rescan.
  */
 import { mkdir, readFile, rename, stat, writeFile, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
-import { createProviderQuotaReader } from './provider-quotas.js'
-import { createQuotaControls, workBuddyQuotaSource, QuotaControlError } from './quota-controls.js'
-import { captureModelEvidence, normalizeEvidence, analyzeModelEvidence, createModelMatchRunner, ModelMatchError, modelSelection } from './model-match.js'
-import { createModelTestHistory } from './model-test-history.js'
 
 /** Stable cordis plugin name (row id `usage-stats`). */
+import { createUsagePreferences, validateDisplayPatch, PreferenceError } from './usage-preferences.js'
+import { createSupplementalUsage } from './supplemental-usage.js'
+import { createProviderQuotaReader } from './provider-quotas.js'
+import { createQuotaControls, QuotaControlError, workBuddyQuotaSource } from './quota-controls.js'
+import { createModelDetectionRunner, readDetectionModels, ModelDetectionError } from './model-detection.js'
+import { createModelDetectionHistory } from './model-detection-history.js'
+import { getBridge, requireBridge, publishBridge, HUB_SERVICE, USAGE_SERVICE, HUB_UPDATED, IntegrationError } from './bridge.js'
+
 export const name = 'usage-stats'
 
 /** Services required before the surfaces can mount (timer for the warm loop). */
@@ -270,7 +274,6 @@ export function scanSessionEvents(events, tz, inheritedEventCount = 0) {
     speedVersion: SPEED_VERSION,
     taskVersion: 1,
     longestTaskMs: null,
-    evidence: captureModelEvidence(events, inheritedEventCount),
     messages: 0,
     withUsage: false,
     totals: emptyBucket(),
@@ -419,7 +422,6 @@ function normalizeSession(s) {
     title: safeSessionText(s.title, 300),
     cwd: safeSessionText(s.cwd, 1024),
     createdAt: Number.isFinite(s.createdAt) ? s.createdAt : 0,
-    evidence: normalizeEvidence(s.evidence),
     fp: (s.fp && Number.isFinite(s.fp.size) && Number.isFinite(s.fp.mtimeMs)) ? { size: s.fp.size, mtimeMs: s.fp.mtimeMs } : null,
     retained: !!s.retained,
     syncedAt: Number.isFinite(s.syncedAt) ? s.syncedAt : 0,
@@ -513,24 +515,10 @@ export async function collectFileFps(sessionsDir) {
 }
 
 /**
- * SQLite-persistence fingerprint source.
- *
- * DSH switched its durable session store from per-session
- * `session.jsonl.zstd` files (dsh-session-persistence-jsonl) to a single
- * `sessions/sessions.sqlite` database (dsh-session-persistence). New sessions
- * therefore have NO jsonl file at all, so `collectFileFps` returns nothing for
- * them and the incremental scan would read each fresh session exactly once —
- * while it is still empty — and never again (its file fingerprint stays null
- * forever). That is why recent usage stopped being recorded.
- *
- * The SQLite store keeps an authoritative, monotonically increasing
- * `f_head_sequence` per session (it equals MAX(f_sequence) of that session's
- * events and is flushed live, even for the running session). We fold it into
- * the same {size, mtimeMs} fingerprint shape the incremental scan already
- * understands, so a session is re-read exactly when its log grows.
- *
- * Returns an empty Map when the DB is missing/unreadable (older jsonl-only
- * deployments, or a transient lock) so the caller can fall back to files.
+ * Read fingerprints from sessions/sessions.sqlite. Each session's
+ * `f_head_sequence` equals its maximum event sequence and grows with live
+ * writes. Map it to {size, mtimeMs} so incremental scans detect new events.
+ * Missing or unreadable databases return an empty Map for JSONL fallback.
  */
 export async function collectSqliteFps(sessionsDir) {
   const out = new Map()
@@ -577,7 +565,7 @@ function rekeyLegacySession(s, fromTz, toTz) {
       data: { message: { source: { provider: e[1], model: e[2] } },
         usage: { inputTokens: e[3], outputTokens: e[4], cacheReadTokens: e[5], cacheWriteTokens: e[6], reasoningTokens: e[7] } },
     }))
-    return { ...s, ...scanSessionEvents(events, toTz), detailsVersion: s.detailsVersion, evidence: s.evidence,
+    return { ...s, ...scanSessionEvents(events, toTz), detailsVersion: s.detailsVersion,
       ownUsageVersion: s.ownUsageVersion,
       speedVersion: s.speedVersion, usageEvents: s.usageEvents, ttftEvents: s.ttftEvents,
       taskVersion: s.taskVersion, longestTaskMs: s.longestTaskMs,
@@ -620,10 +608,8 @@ function putMergedBucket(map, key, bucket) {
 }
 
 /**
- * One incremental refresh pass. Only changed/new sessions are re-read; the
- * rest keep their previously measured contribution. Deleted sessions are
- * dropped. The per-session contributions then fold into the response in
- * memory.
+ * Re-read changed or new sessions during an incremental refresh. Unchanged
+ * and deleted sessions retain their measured contributions for aggregation.
  */
 export async function syncCorpus(ctx, reqTz, state) {
   const query = ctx.get('sessionQuery')
@@ -652,10 +638,7 @@ export async function syncCorpus(ctx, reqTz, state) {
     for (const id of Object.keys(nextSessions)) nextSessions[id] = rekeyLegacySession(nextSessions[id], state.tz, tz)
   }
 
-  // Fingerprint source: SQLite persistence is authoritative now (every current
-  // session has a row whose head_sequence grows live); the jsonl scan is kept as
-  // a fallback for older deployments and for any id SQLite does not cover. The
-  // SQLite map is overlaid last so it wins wherever both exist.
+  // SQLite fingerprints take precedence; JSONL covers sessions absent from SQLite.
   const fps = await collectFileFps()
   const sqlFps = await collectSqliteFps()
   for (const [id, fp] of sqlFps) fps.set(id, fp)
@@ -687,7 +670,6 @@ export async function syncCorpus(ctx, reqTz, state) {
       try {
         const snap = await query.readSession(id)
         const contribution = scanSessionEvents(snap && snap.events ? snap.events : [], tz, snap?.inheritedEventCount)
-        contribution.evidence = captureModelEvidence(snap?.events || [], snap?.inheritedEventCount)
         const header = snap?.header || snap?.session || records.find(rec => rec?.header?.id === id)?.header
         contribution.cwd = safeSessionText(header?.cwd, 1024)
         contribution.createdAt = Number.isFinite(header?.createdAt) ? header.createdAt : 0
@@ -719,11 +701,11 @@ export async function syncCorpus(ctx, reqTz, state) {
  * (windowed by `days`, optionally filtered to one `modelKey`). Pure and cheap:
  * O(number of distinct usage dates / models), no I/O.
  */
-export function modelTestContribution(history, tz) {
+export function modelDetectionContribution(history, tz) {
   const rows = history.usage().filter(r => r.time > 0 && r.selection)
   const reported = rows.filter(r => r.usageReported)
   const contribution = scanSessionEvents(reported.map(r => ({ type: 'assistant/message', time: r.time, data: { usage: r.usage, message: { source: r.selection } } })), tz)
-  contribution.audit = true
+  contribution.detection = true
   reported.forEach((r, i) => { contribution.usageEvents[i][8] = r.decodeMs > 0 && ['stop', 'max-tokens'].includes(r.stop) ? r.decodeMs : 0 })
   contribution.ttftEvents = rows.filter(r => r.ttftMs !== null && ['stop', 'max-tokens'].includes(r.stop)).map(r => [r.time, r.selection.provider, r.selection.model, r.ttftMs])
   return contribution
@@ -870,7 +852,7 @@ export function foldResponse(state, days, modelKey, tz, now, additional = []) {
       bucketInto(perDay, mk, s.byDayModel[key])
     }
     messages += sessionMessages
-    if (sessionMessages > 0 && !s.audit) sessionsWithUsage += 1
+    if (sessionMessages > 0 && !s.detection) sessionsWithUsage += 1
 
     if (fromKey === null) {
       for (const mk of Object.keys(s.byModel || {})) {
@@ -1086,16 +1068,25 @@ export function foldSessionRows(state, options = {}, now = Date.now()) {
 export function apply(ctx) {
   if (ctx.get('profileContext')?.name !== 'desktop') return
 
+  const storage = join(resolveHome(), 'storages')
+  const preferences = createUsagePreferences(join(storage, 'usage-stats-display.json'), join(storage, 'usage-stats-controls.json'))
+  const history = createModelDetectionHistory(join(storage, 'usage-stats-detections.json'))
+  const modelDetectionHistory = createSupplementalUsage(ctx, join(storage, 'usage-stats-supplemental.json'), join(storage, 'usage-stats-detections.json'), history)
+  const runner = createModelDetectionRunner(ctx, { enginePath: join(storage, 'usage-stats-lm-fingerprint'),
+    onUpdate: async job => { await history.record(job); await modelDetectionHistory.refresh() } })
   const readProviderQuotas = createProviderQuotaReader(ctx)
-  const modelTestHistory = createModelTestHistory(join(resolveHome(), 'storages', 'usage-stats-model-tests.json'))
-  const modelMatchRunner = createModelMatchRunner(ctx, { path: join(resolveHome(), 'storages', 'usage-stats-model-baselines.json'), onUpdate: job => modelTestHistory.record(job) })
+  const workBuddySource = provider => {
+    const legacy = workBuddyQuotaSource(ctx, fetch, provider)
+    return { ...legacy,
+      available: () => getBridge(ctx, HUB_SERVICE)?.workBuddyAvailable?.(provider) === true || legacy.available(),
+      read: () => { const hub = getBridge(ctx, HUB_SERVICE); return hub?.workBuddyAvailable?.(provider) === true ? hub.readWorkBuddyQuota(provider) : legacy.read() },
+    }
+  }
   const quotaControls = createQuotaControls(ctx, {
-    path: join(resolveHome(), 'storages', 'usage-stats-controls.json'),
-    sources: {
-      providers: (excluded, provider) => readProviderQuotas(true, excluded, provider),
-      workbuddy: workBuddyQuotaSource(ctx),
-      'workbuddy-ai': workBuddyQuotaSource(ctx, undefined, 'workbuddy-ai'),
-    },
+    path: join(storage, 'usage-stats-quota-controls.json'),
+    legacyPath: [join(storage, 'models-hub-controls.json'), join(storage, 'usage-stats-controls.json')],
+    sources: { providers: (excluded, provider) => readProviderQuotas(true, excluded, provider),
+      workbuddy: workBuddySource('workbuddy'), 'workbuddy-ai': workBuddySource('workbuddy-ai') },
   })
   const storePath = resolveStorePath()
   let state = defaultState()
@@ -1181,85 +1172,59 @@ export function apply(ctx) {
   }
 
   const webServer = ctx.get('webServer')
-  if (webServer === undefined) return
-
-  ctx.effect(
-    () => webServer.register({
-      kind: 'exact',
-      path: '/api/dsh-usage-stats/stats',
-      handler: async (req, res) => {
-        if (!guard(req, res, 'GET')) return
-        const t0 = Date.now()
-        const params = readQuery(req)
-        const daysParam = Number(params.get('days'))
-        const days = Number.isFinite(daysParam) && daysParam > 0 ? Math.min(Math.round(daysParam), 3650) : 0
-        const modelKey = (params.get('model') || '').trim() || null
-        const tzParam = params.get('tz')
-        const requestedTz = tzParam === null || tzParam === '' ? SYSTEM_TZ : clampTz(tzParam)
-        const fresh = params.get('fresh') === '1'
-        try {
-          await ensureLoaded()
-          const staleByTtl = Date.now() - (state.syncedAt || 0) > CACHE_TTL_MS
-          if (state.tz !== requestedTz) {
-            // A timezone switch must finish before the snapshot is served.
-            await sync(requestedTz)
-          } else if (fresh || staleByTtl || state.partial) {
-            await syncWithBudget(requestedTz)
-          }
-          if (state.tz !== requestedTz) throw new Error('requested timezone is not ready')
-          const now = Date.now()
-          const data = foldResponse(state, days, modelKey, state.tz, now, [modelTestContribution(modelTestHistory, state.tz)])
-          const stale = syncPromise !== null || state.partial || now - (state.syncedAt || 0) > CACHE_TTL_MS
-          writeJson(res, 200, {
-            ok: true,
-            days,
-            model: modelKey,
-            tz: state.tz,
-            totals: serializeBucket(data.totals),
-            overview: data.overview,
-            messages: data.messages,
-            sessions: state.lastSessionsCount,
-            sessionsWithUsage: data.sessionsWithUsage,
-            firstTime: data.firstTime,
-            lastTime: data.lastTime,
-            byDay: data.byDay.map((d) => ({ date: d.date, ...serializeBucket(d.bucket) })),
-            byDayModels: data.byDayModels,
-            byWeek: data.byWeek.map((w) => ({ date: w.date, ...serializeBucket(w.bucket) })),
-            byHour: data.byHour.map((h) => ({ hour: h.hour, ...serializeBucket(h.bucket) })),
-            byHourModels: data.byHourModels,
-            byModel: data.byModel.map((m) => ({ key: m.key, provider: m.provider, model: m.model, lastTime: m.lastTime, ...serializeBucket(m.bucket) })),
-            tokenSpeeds: data.tokenSpeeds,
-            syncedAt: state.syncedAt || 0,
-            stale,
-            partial: state.partial,
-            auditUsageWarning: modelTestHistory.warning(),
-            scanMs: Date.now() - t0,
-          })
-        } catch {
-          writeJson(res, 500, { ok: false, error: '用量统计暂时不可用，请稍后重试。' })
-        }
-      },
-    }),
-    'dsh-usage-stats: routes',
-  )
-
-  ctx.effect(
-    () => webServer.register({
-      kind: 'exact',
-      path: '/api/dsh-usage-stats/provider-quotas',
-      handler: async (req, res) => {
-        if (!guard(req, res, 'GET')) return
-        const fresh = readQuery(req).get('fresh') === '1'
-        try {
-          writeJson(res, 200, await quotaControls.read('providers', fresh, readQuery(req).get('provider')))
-        } catch (error) {
-          // This route never sends credential or upstream error text to the renderer.
-          writeJson(res, error instanceof QuotaControlError ? 400 : 500, { ok: false, error: error instanceof QuotaControlError ? error.message : '配额查询暂时不可用，请稍后重试。' })
-        }
-      },
-    }),
-    'dsh-usage-stats: official provider quota route',
-  )
+  const readStats = async (options = {}) => {
+const t0 = Date.now()
+const params = options instanceof URLSearchParams ? options : new URLSearchParams(Object.entries(options).filter(([key, value]) => ['days', 'model', 'tz', 'fresh'].includes(key) && value != null))
+const daysParam = Number(params.get('days'))
+const days = Number.isFinite(daysParam) && daysParam > 0 ? Math.min(Math.round(daysParam), 3650) : 0
+const modelKey = (params.get('model') || '').trim() || null
+const tzParam = params.get('tz')
+const requestedTz = tzParam === null || tzParam === '' ? SYSTEM_TZ : clampTz(tzParam)
+const fresh = params.get('fresh') === '1'
+  await ensureLoaded()
+  const staleByTtl = Date.now() - (state.syncedAt || 0) > CACHE_TTL_MS
+  if (state.tz !== requestedTz) {
+    // A timezone switch must finish before the snapshot is served.
+    await sync(requestedTz)
+  } else if (fresh || staleByTtl || state.partial) {
+    await syncWithBudget(requestedTz)
+  }
+  if (state.tz !== requestedTz) throw new Error('requested timezone is not ready')
+  const now = Date.now()
+  await modelDetectionHistory.refresh()
+  const data = foldResponse(state, days, modelKey, state.tz, now, [modelDetectionContribution(modelDetectionHistory, state.tz)])
+  const stale = syncPromise !== null || state.partial || now - (state.syncedAt || 0) > CACHE_TTL_MS
+  return {
+    ok: true,
+    days,
+    model: modelKey,
+    tz: state.tz,
+    totals: serializeBucket(data.totals),
+    overview: data.overview,
+    messages: data.messages,
+    sessions: state.lastSessionsCount,
+    sessionsWithUsage: data.sessionsWithUsage,
+    firstTime: data.firstTime,
+    lastTime: data.lastTime,
+    byDay: data.byDay.map((d) => ({ date: d.date, ...serializeBucket(d.bucket) })),
+    byDayModels: data.byDayModels,
+    byWeek: data.byWeek.map((w) => ({ date: w.date, ...serializeBucket(w.bucket) })),
+    byHour: data.byHour.map((h) => ({ hour: h.hour, ...serializeBucket(h.bucket) })),
+    byHourModels: data.byHourModels,
+    byModel: data.byModel.map((m) => ({ key: m.key, provider: m.provider, model: m.model, lastTime: m.lastTime, ...serializeBucket(m.bucket) })),
+    tokenSpeeds: data.tokenSpeeds,
+    syncedAt: state.syncedAt || 0,
+    stale,
+    partial: state.partial,
+    detectionUsageWarning: modelDetectionHistory.warning(),
+    scanMs: Date.now() - t0,
+  }
+  }
+  ctx.effect(() => webServer.register({ kind: 'exact', path: '/api/dsh-usage-stats/stats', handler: async (req, res) => {
+    if (!guard(req, res, 'GET')) return
+    try { writeJson(res, 200, await readStats(readQuery(req))) }
+    catch { writeJson(res, 500, { ok: false, error: '用量统计暂时不可用，请稍后重试。' }) }
+  } }), 'dsh-usage-stats: statistics')
 
   const trustedControlRequest = (req, res) => {
     if (!isLoopbackRequest(req)) { writeJson(res, 403, { ok: false, error: 'forbidden: loopback-only' }); return false }
@@ -1271,39 +1236,93 @@ export function apply(ctx) {
     } catch { writeJson(res, 403, { ok: false, error: '请求来源不受信任。' }); return false }
     return true
   }
-  const readControlBody = async (req, limit = 32_768) => {
-    if (!String(req.headers['content-type'] || '').startsWith('application/json')) throw new QuotaControlError('请使用 JSON 请求。')
+  const readControlBody = async req => {
+    const limit = 32_768
+    if (!String(req.headers['content-type'] || '').startsWith('application/json')) throw new PreferenceError('请使用 JSON 请求。')
     let bytes = 0
     const chunks = []
     for await (const chunk of req) {
       bytes += Buffer.byteLength(chunk)
-      if (bytes > limit) throw new QuotaControlError(limit === 32_768 ? '请求内容超过 32 KB。' : '基线文件超过 1 MB。')
+      if (bytes > limit) throw new PreferenceError('请求内容超过 32 KB。')
       chunks.push(Buffer.from(chunk))
     }
-    try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw new QuotaControlError('请求内容不是有效 JSON。') }
+    try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw new PreferenceError('请求内容不是有效 JSON。') }
   }
   const registerControl = (path, handler) => ctx.effect(() => webServer.register({
     kind: 'exact', path: '/api/dsh-usage-stats/' + path,
     handler: async (req, res) => {
       if (!trustedControlRequest(req, res)) return
       try { await handler(req, res) } catch (error) {
-        const expected = error instanceof QuotaControlError || error instanceof ModelMatchError
-        writeJson(res, expected ? 400 : 500, { ok: false, error: expected ? error.message : '操作失败，请稍后重试。' })
+        const expected = error instanceof PreferenceError || error instanceof IntegrationError || error instanceof QuotaControlError || error instanceof ModelDetectionError
+        writeJson(res, error instanceof IntegrationError ? 503 : expected ? 400 : 500, { ok: false, error: expected ? error.message : '操作失败，请稍后重试。' })
       }
     },
   }), 'dsh-usage-stats: ' + path)
+  registerControl('display-settings', async (req, res) => {
+    if (req.method === 'GET') writeJson(res, 200, await preferences.get())
+    else if (guard(req, res, 'POST')) writeJson(res, 200, await preferences.update(await readControlBody(req)))
+  })
   registerControl('controls', async (req, res) => {
-    if (req.method === 'GET') writeJson(res, 200, await quotaControls.get())
-    else if (guard(req, res, 'POST')) writeJson(res, 200, await quotaControls.update(await readControlBody(req)))
+    if (!['GET', 'POST'].includes(req.method || 'GET')) { writeJson(res, 405, { ok: false, error: 'method not allowed' }); return }
+    const hub = getBridge(ctx, HUB_SERVICE)
+    if (req.method === 'POST') {
+      const body = await readControlBody(req), display = {}, model = {}
+      if (!body || typeof body !== 'object' || Array.isArray(body)) throw new PreferenceError('设置应为 JSON 对象。')
+      for (const [key, value] of Object.entries(body)) (['showModelDetails', 'showTokenSpeed'].includes(key) ? display : model)[key] = value
+      validateDisplayPatch(display)
+      if (Object.keys(model).length) await quotaControls.update(model)
+      if (Object.keys(display).length) await preferences.update(display)
+    }
+    const display = await preferences.get(), model = await quotaControls.get()
+    writeJson(res, 200, { ...model, ...display, settings: { ...model.settings, ...display.settings }, connected: !!hub })
   })
-  registerControl('quota-providers', async (req, res) => {
-    if (guard(req, res, 'GET')) writeJson(res, 200, await quotaControls.providers())
+  registerControl('provider-quotas', async (req, res) => {
+    if (guard(req, res, 'GET')) writeJson(res, 200, await quotaControls.read('providers', readQuery(req).get('fresh') === '1', readQuery(req).get('provider')))
   })
-  registerControl('quota-test', async (req, res) => {
+  registerControl('quota-providers', async (req, res) => { if (guard(req, res, 'GET')) writeJson(res, 200, await quotaControls.providers()) })
+  registerControl('quota-test', async (req, res) => { if (guard(req, res, 'POST')) { const body = await readControlBody(req); writeJson(res, 200, await quotaControls.test(body.provider, body.template)) } })
+  for (const source of ['workbuddy', 'workbuddy-ai']) registerControl(source, async (req, res) => {
+    if (guard(req, res, 'GET')) writeJson(res, 200, await quotaControls.read(source, readQuery(req).get('fresh') === '1'))
+  })
+  registerControl('model-detection', async (req, res) => {
+    if (req.method === 'GET') {
+      const params = readQuery(req), sessionId = params.get('session') || '', id = params.get('job') || undefined
+      let job
+      try {
+        const latest = !id && runner.status()
+        job = (latest?.status === 'running' ? latest : null) || runner.status(id, sessionId) || history.latest(sessionId)
+          || (!id && (runner.status() || history.latest())) || null
+      } catch (error) { job = id && history.get(id); if (!job) throw error }
+      writeJson(res, 200, { ok: true, job }); return
+    }
     if (!guard(req, res, 'POST')) return
     const body = await readControlBody(req)
-    writeJson(res, 200, await quotaControls.test(body.provider, body.template))
+    if (body.action === 'cancel') writeJson(res, 200, { ok: true, job: runner.cancel(body.id) })
+    else if (body.action === 'plan') writeJson(res, 200, { ok: true, quote: await runner.plan(body) })
+    else if (body.action === 'start') writeJson(res, 200, { ok: true, job: runner.start(body) })
+    else throw new ModelDetectionError('检测操作无效。')
   })
+  registerControl('model-detection-models', async (req, res) => {
+    if (guard(req, res, 'GET')) writeJson(res, 200, { ok: true, ...await readDetectionModels(ctx, readQuery(req).get('provider') || '') })
+  })
+  registerControl('model-fingerprint-engine', async (req, res) => {
+    if (req.method === 'GET') { writeJson(res, 200, { ok: true, ...await runner.catalog() }); return }
+    if (!guard(req, res, 'POST')) return
+    if ((await readControlBody(req)).action !== 'update') throw new ModelDetectionError('请选择更新指纹引擎。')
+    await runner.updateEngine(); writeJson(res, 200, { ok: true, ...await runner.catalog() })
+  })
+  registerControl('account-quotas', async (req, res) => {
+    if (!guard(req, res, 'GET')) return
+    const hub = getBridge(ctx, HUB_SERVICE)
+    writeJson(res, 200, hub ? { ok: true, connected: true, ...await hub.readAccountQuotas() } : { ok: true, connected: false, channels: [], accounts: [], quotas: [] })
+  })
+  registerControl('account-quotas/refresh', async (req, res) => {
+    if (guard(req, res, 'POST')) writeJson(res, 200, { ok: true, ...await requireBridge(ctx).refreshAccountQuota(await readControlBody(req)) })
+  })
+  registerControl('integration', async (req, res) => {
+    if (guard(req, res, 'GET')) writeJson(res, 200, { ok: true, protocolVersion: 1, modelsHub: !!getBridge(ctx, HUB_SERVICE) })
+  })
+
   registerControl('sessions', async (req, res) => {
     if (!guard(req, res, 'GET')) return
     const params = readQuery(req), tzParam = params.get('tz')
@@ -1314,75 +1333,32 @@ export function apply(ctx) {
     writeJson(res, 200, { ok: true, ...foldSessionRows(state, Object.fromEntries(params)), syncedAt: state.syncedAt,
       stale: syncPromise !== null || state.partial || Date.now() - state.syncedAt > CACHE_TTL_MS, partial: state.partial })
   })
-  registerControl('model-match', async (req, res) => {
-    if (!guard(req, res, 'GET')) return
-    const params = readQuery(req), sessionId = params.get('session') || ''
-    const latestJob = () => {
-      const id = params.get('job') || undefined
-      try {
-        return modelMatchRunner.status(id, sessionId) || modelTestHistory.latest(sessionId)
-          || (!id && (modelMatchRunner.status() || modelTestHistory.latest())) || null
-      }
-      catch (error) { const stored = id && modelTestHistory.get(id); if (stored) return stored; throw error }
-    }
-    if (params.get('jobOnly') === '1') { writeJson(res, 200, { ok: true, job: latestJob() }); return }
-    await ensureLoaded()
-    // Analyze a fresh local snapshot for this one session. No inference calls.
-    if (sessionId && !state.sessions[sessionId]?.retained) {
-      try {
-        const snapshot = await ctx.get('sessionQuery').readSession(sessionId)
-        const evidence = captureModelEvidence(snapshot?.events || [], snapshot?.inheritedEventCount)
-        const requested = modelSelection({ provider: params.get('provider'), model: params.get('model'), reasoningEffort: params.get('reasoningEffort') })
-        writeJson(res, 200, { ok: true, sessionId, analysis: analyzeModelEvidence(evidence, requested), job: latestJob() })
-        return
-      } catch (error) { if (error instanceof ModelMatchError) throw error }
-    }
-    const requested = modelSelection({ provider: params.get('provider'), model: params.get('model'), reasoningEffort: params.get('reasoningEffort') })
-    writeJson(res, 200, { ok: true, sessionId, retained: !!state.sessions[sessionId]?.retained,
-      analysis: analyzeModelEvidence(state.sessions[sessionId]?.evidence, requested), job: latestJob() })
+  publishBridge(ctx, USAGE_SERVICE, {
+    capabilities: ['usage-snapshot', 'model-speed', 'provider-quota', 'model-detection', 'model-controls'],
+    readStats,
+    readControls: async () => { const quota = await quotaControls.get(), display = await preferences.get(); return { ...quota, settings: { ...quota.settings, ...display.settings } } },
+    updateControls: patch => quotaControls.update(patch),
+    readProviderQuotas: ({ fresh = false, provider = null } = {}) => quotaControls.read('providers', fresh, provider),
+    readSupplementalUsage: () => ({ protocolVersion: 1, records: history.usageRecords(), warning: history.warning() }),
   })
-  registerControl('model-test', async (req, res) => {
-    if (!guard(req, res, 'POST')) return
-    const body = await readControlBody(req)
-    // Starting requires a real readable session; cancel never sends a request.
-    if (body.action === 'cancel') { writeJson(res, 200, { ok: true, job: modelMatchRunner.cancel(body.id) }); return }
-    const records = await ctx.get('sessionQuery').listSessions()
-    if (!(records || []).some(rec => rec?.header?.id === body.sessionId)) throw new ModelMatchError('会话已不可用，请重新选择。')
-    if (body.action === 'plan') { writeJson(res, 200, { ok: true, quote: await modelMatchRunner.plan(body) }); return }
-    writeJson(res, 200, { ok: true, job: modelMatchRunner.start(body) })
-  })
-  registerControl('model-baselines', async (req, res) => {
-    if (req.method === 'GET') {
-      const id = readQuery(req).get('export')
-      writeJson(res, 200, id ? { ok: true, reference: modelMatchRunner.exportReference(id) } : { ok: true, ...modelMatchRunner.catalog() })
-      return
-    }
-    if (!guard(req, res, 'POST')) return
-    const body = await readControlBody(req, 1_048_576)
-    if (body.action === 'remove') await modelMatchRunner.removeReference(body.id)
-    else if (body.action === 'import') await modelMatchRunner.importReference(body.reference)
-    else throw new ModelMatchError('请选择导入或移除基线。')
-    writeJson(res, 200, { ok: true, ...modelMatchRunner.catalog() })
-  })
-  ctx.effect(() => () => modelMatchRunner.dispose(), 'dsh-usage-stats: model test cleanup')
-  for (const source of ['workbuddy', 'workbuddy-ai']) {
-    registerControl(source, async (req, res) => {
-      if (guard(req, res, 'GET')) writeJson(res, 200, await quotaControls.read(source, readQuery(req).get('fresh') === '1'))
-    })
-  }
-
-  void quotaControls.tick().catch(() => {})
-  ctx.effect(() => ctx.interval(() => { void quotaControls.tick().catch(() => {}) }, 30_000), 'dsh-usage-stats: automatic quota refresh')
-  ctx.effect(() => () => quotaControls.dispose(), 'dsh-usage-stats: quota controls cleanup')
+  ctx.effect(() => async () => { runner.dispose(); await quotaControls.dispose(); await Promise.all([preferences.flush(), modelDetectionHistory.flush(), history.flush()]) }, 'dsh-usage-stats: integration cleanup')
+  ctx.effect(() => {
+    if (typeof ctx.on !== 'function') return
+    return ctx.on(HUB_UPDATED, () => { void modelDetectionHistory.refresh() })
+  }, 'dsh-usage-stats: model hub notifications')
 
   // Background keep-fresh: build + persist corpus shortly after boot so the
   // first page open is served from warm memory, and keep it warm thereafter.
   void ensureLoaded().then(() => {
+    void modelDetectionHistory.refresh()
     return sync().catch(() => {})
   })
+  void quotaControls.tick().catch(() => {})
+  ctx.effect(() => ctx.interval(() => { void quotaControls.tick().catch(() => {}) }, SYNC_INTERVAL_MS), 'dsh-usage-stats: automatic quota refresh')
 
   ctx.effect(
     () => ctx.interval(() => {
+      void modelDetectionHistory.refresh()
       void sync().catch(() => {})
     }, SYNC_INTERVAL_MS),
     'dsh-usage-stats: keep-fresh',

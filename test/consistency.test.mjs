@@ -1,72 +1,18 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import crypto from 'node:crypto';
-import { fileURLToPath } from 'node:url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const root = path.resolve(__dirname, '..');
-
-function sha256(filePath) {
-  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
-}
-
-console.log('[Consistency Test] Verifying build output consistency across src, lib, and root...');
-
-const srcIndexHash = sha256(path.join(root, 'src', 'index.js'));
-const libIndexHash = sha256(path.join(root, 'lib', 'index.js'));
-const rootIndexHash = sha256(path.join(root, 'index.js'));
-
-const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-const expectedClient = fs.readFileSync(path.join(root, 'src', 'client.js'), 'utf8')
-  .replace("var PLUGIN_VERSION = '__DSH_USAGE_STATS_VERSION__'", 'var PLUGIN_VERSION = ' + JSON.stringify(pkg.version))
-  .replace("id: '__DSH_USAGE_STATS_PACKAGE__'", 'id: ' + JSON.stringify(pkg.name));
-const srcClientHash = crypto.createHash('sha256').update(expectedClient).digest('hex');
-const libClientHash = sha256(path.join(root, 'lib', 'client.js'));
-const rootClientHash = sha256(path.join(root, 'client.js'));
-
-const srcQuotasHash = sha256(path.join(root, 'src', 'provider-quotas.js'));
-const libQuotasHash = sha256(path.join(root, 'lib', 'provider-quotas.js'));
-const rootQuotasHash = sha256(path.join(root, 'provider-quotas.js'));
-
-let failed = false;
-for (const file of ['quota-controls.js', 'model-match.js', 'model-fingerprints.js', 'model-capabilities.js', 'model-test-history.js', 'fingerprints/kbf-202609.json', 'fingerprints/KBF-LICENSE.txt', 'fingerprints/NOTICE.txt']) {
-  const hash = sha256(path.join(root, 'src', file));
-  if (hash !== sha256(path.join(root, 'lib', file)) || hash !== sha256(path.join(root, file))) {
-    console.error('Mismatch across src, lib, and root:', file);
-    failed = true;
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { renderClient } from '../scripts/build.mjs'
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+assert.equal(fs.readFileSync(path.join(root, 'lib/client.js'), 'utf8'), renderClient(root), 'Client build must match its canonical sources')
+const templates = new Set(['client.js', 'reasoning-settings.js', 'account-quotas-client.js', 'quota-brand-icons.js'])
+function compare(source, target) {
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    if (source === path.join(root, 'src') && templates.has(entry.name)) continue
+    const from = path.join(source, entry.name), to = path.join(target, entry.name)
+    if (entry.isDirectory()) compare(from, to)
+    else assert.deepEqual(fs.readFileSync(to), fs.readFileSync(from), 'Stale build: ' + to)
   }
 }
-
-if (srcIndexHash !== libIndexHash || srcIndexHash !== rootIndexHash) {
-  console.error('❌ Mismatch in index.js across src, lib, and root:');
-  console.error('  src: ', srcIndexHash);
-  console.error('  lib: ', libIndexHash);
-  console.error('  root:', rootIndexHash);
-  failed = true;
-} else {
-  console.log('✅ index.js is 100% consistent across src, lib, and root.');
-}
-
-if (srcClientHash !== libClientHash || srcClientHash !== rootClientHash) {
-  console.error('❌ Mismatch in client.js across src, lib, and root:');
-  console.error('  src: ', srcClientHash);
-  console.error('  lib: ', libClientHash);
-  console.error('  root:', rootClientHash);
-  failed = true;
-} else {
-  console.log('✅ client.js matches src and package.json in lib and root.');
-}
-
-if (srcQuotasHash !== libQuotasHash || srcQuotasHash !== rootQuotasHash) {
-  console.error('❌ Mismatch in provider-quotas.js across src, lib, and root.');
-  failed = true;
-} else {
-  console.log('✅ provider-quotas.js is 100% consistent across src, lib, and root.');
-}
-
-if (failed) {
-  process.exit(1);
-} else {
-  console.log('🎉 All consistency checks passed successfully!');
-}
+compare(path.join(root, 'src'), path.join(root, 'lib'))
+console.log('Source and lib/ are consistent.')

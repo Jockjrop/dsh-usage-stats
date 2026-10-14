@@ -1,115 +1,68 @@
-import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import fs from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import vm from 'node:vm';
+import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import fs from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import vm from 'node:vm'
+import { build } from './build.mjs'
+import { archiveName, archiveAlias, assertPublicFile, checkRelease, renderReleaseNotes, verifyArchives } from './release-checks.mjs'
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
-const lock = JSON.parse(await fs.readFile(path.join(root, 'package-lock.json'), 'utf8'));
-assert.equal(lock.version, pkg.version, 'Lockfile version must match package.json.');
-assert.equal(lock.packages?.['']?.version, pkg.version, 'Lockfile root package must match package.json.');
-const npmCli = process.env.npm_execpath;
-assert.ok(npmCli, 'Run this script through npm run release.');
-assert.match(pkg.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
-if (process.env.GITHUB_REF_TYPE === 'tag') {
-  assert.equal(process.env.GITHUB_REF_NAME, `v${pkg.version}`, 'Release tag must match package.json.');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'))
+const npmCli = process.env.npm_execpath
+assert.ok(npmCli, 'Run this through npm run release')
+build(root)
+const { notes } = await checkRelease(root, process.env.GITHUB_REF_TYPE === 'tag' ? { tag: process.env.GITHUB_REF_NAME } : {})
+const output = path.join(root, 'release')
+await fs.mkdir(output, { recursive: true })
+const metadata = JSON.parse(execFileSync(process.execPath, [npmCli, 'pack', '--json', '--ignore-scripts', '--pack-destination', output], { cwd: root, encoding: 'utf8' }))
+const packed = Array.isArray(metadata) ? metadata[0] : metadata[pkg.name] ?? metadata
+const filename = archiveName(pkg)
+assert.equal(packed.filename, filename)
+assert.equal(packed.name, pkg.name)
+assert.equal(packed.version, pkg.version)
+for (const file of packed.files) {
+  const content = /\.(?:[cm]?js|json|md|ya?ml|txt|svg)$|(?:^|\/)(?:LICENSE|NOTICE)$/.test(file.path)
+    ? await fs.readFile(path.join(root, file.path), 'utf8') : ''
+  assertPublicFile(file.path, content, { packed: true })
 }
-
-const changelog = await fs.readFile(path.join(root, 'CHANGELOG.md'), 'utf8');
-const currentChanges = changelog.split(/^## /m).find(section => section.startsWith(`${pkg.version} - `));
-assert.ok(currentChanges, `CHANGELOG.md is missing version ${pkg.version}.`);
-const releaseChanges = currentChanges.slice(currentChanges.indexOf('\n') + 1).trim();
-assert.ok(releaseChanges, 'The current changelog entry must contain release notes.');
-
-await import('./build.mjs');
-const outputDir = path.join(root, 'release');
-await fs.mkdir(outputDir, { recursive: true });
-const packResult = JSON.parse(execFileSync(process.execPath, [npmCli, 'pack', '--json', '--ignore-scripts', '--pack-destination', outputDir], {
-  cwd: root,
-  encoding: 'utf8',
-}));
-// npm 12 keys pack results by package name; earlier npm versions return an array.
-const packed = Array.isArray(packResult) ? packResult.find(result => result.name === pkg.name) : packResult[pkg.name] ?? packResult;
-assert.ok(packed?.filename, 'npm pack did not return package metadata.');
-const archiveName = `${pkg.name.replace(/^@/, '').replace('/', '-')}-${pkg.version}.tgz`;
-assert.equal(packed.filename, archiveName);
-const members = new Set(packed.files.map(file => file.path));
-assert.ok([...members].every(member => !/^(?:src|test|scripts|node_modules|storages|credentials)\//.test(member)), 'Release must contain prebuilt public files only.');
-const allowedMembers = new Set(['package.json', 'LICENSE', ...pkg.files.filter(file => !file.endsWith('/')),
-  'lib/fingerprints/kbf-202609.json', 'lib/fingerprints/KBF-LICENSE.txt', 'lib/fingerprints/NOTICE.txt']);
-for (const member of allowedMembers) {
-  assert.ok(members.has(member), `Release is missing ${member}.`);
-}
-const privateFile = /(?:^|\/)(?:\.[^/]+|storages|sessions|credentials|usage-stats-(?:corpus|controls|model-tests|model-baselines)\.json)(?:\/|$)/;
-const sensitiveText = [
-  /[A-Za-z]:[\\/]Users[\\/](?!Public\b|Example\b|Username\b)[^\\/\s'"<>]+/i,
-  /\b(?:sk-(?!test|fake|example)[A-Za-z0-9_-]{24,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[A-Z0-9]{16})\b/,
-  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
-  /https?:\/\/[^\s/:'"]+:[^\s/@'"]+@/,
-];
-for (const member of members) {
-  assert.ok(allowedMembers.has(member), `Unexpected release file: ${member}.`);
-  assert.ok(!privateFile.test(member), `Private runtime file cannot be released: ${member}.`);
-  if (!/\.(?:js|json|md|txt|yml|yaml|svg)$/.test(member)) continue;
-  const content = await fs.readFile(path.join(root, member), 'utf8');
-  // Report the file only; never echo a detected credential into release logs.
-  assert.ok(sensitiveText.every(pattern => !pattern.test(content)), `Release privacy check failed: ${member}.`);
-}
-
-const archivePath = path.join(outputDir, archiveName);
-const aliasName = 'dsh-usage-stats.tgz';
-const bytes = await fs.readFile(archivePath);
-const digest = createHash('sha256').update(bytes).digest('hex');
-await fs.writeFile(path.join(outputDir, aliasName), bytes);
-await fs.writeFile(path.join(outputDir, 'SHA256SUMS'), `${digest}  ${archiveName}\n${digest}  ${aliasName}\n`);
-
-// Exercise a consumer installation with scripts disabled and no DSH credentials.
-const smokeDir = await fs.mkdtemp(path.join(tmpdir(), 'dsh-usage-stats-release-'));
-// npm run exports .npmrc policy as environment variables. npm 12 rejects
-// allow-scripts from env for project installs; retain .npmrc and --ignore-scripts.
-const smokeEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^npm_config_allow[_-]scripts$/i.test(key)));
+const fixture = await fs.mkdtemp(path.join(tmpdir(), 'dsh-usage-package-'))
 try {
-  await fs.writeFile(path.join(smokeDir, 'package.json'), JSON.stringify({
-    name: 'dsh-release-smoke',
-    private: true,
-    dsh: { profile: { bundles: ['existing-bundle'] } },
-  }));
-  execFileSync(process.execPath, [npmCli, 'install', '--prefix', smokeDir, '--ignore-scripts', '--no-audit', '--no-fund', archivePath], {
-    cwd: smokeDir,
-    env: smokeEnv,
-    stdio: 'pipe',
-  });
-  const installedRoot = path.join(smokeDir, 'node_modules', pkg.name);
-  const installed = JSON.parse(await fs.readFile(path.join(installedRoot, 'package.json'), 'utf8'));
-  assert.equal(installed.name, pkg.name);
-  assert.equal(installed.version, pkg.version);
-  assert.equal(installed.main, 'lib/index.js');
-  assert.equal(installed.dsh.client.platform, 'web');
-  await fs.access(path.join(installedRoot, installed.dsh.bundle.patch));
-  const patch = await fs.readFile(path.join(installedRoot, installed.dsh.bundle.patch), 'utf8');
-  assert.ok(patch.split('\n').some(line => line.trim() === `name: '${pkg.name}'`), 'Bundle patch must load the installed package by its scoped name.');
-  const host = await import(pathToFileURL(path.join(installedRoot, installed.main)).href);
-  assert.equal(host.name, 'usage-stats');
-  assert.equal(typeof host.apply, 'function');
-  let client;
-  vm.runInNewContext(await fs.readFile(path.join(installedRoot, installed.exports['./client']), 'utf8'), {
-    window: { __ModuleLoader__: { load(definition) { client = definition; } } },
-  }, { timeout: 5000 });
-  assert.equal(client.id, pkg.name);
-  assert.equal(typeof client.factory, 'function');
-  const profile = JSON.parse(await fs.readFile(path.join(smokeDir, 'package.json'), 'utf8'));
-  assert.deepEqual(profile.dsh.profile.bundles, ['existing-bundle']);
+  await fs.writeFile(path.join(fixture, 'package.json'), JSON.stringify({ private: true, type: 'module' }))
+  // npm run's allow-scripts setting is invalid for a child project install in npm 12.
+  // Consumer installation still explicitly disables every lifecycle script.
+  const installEnv = { ...process.env }
+  for (const key of Object.keys(installEnv)) if (/^npm_config_allow_scripts$/i.test(key)) delete installEnv[key]
+  execFileSync(process.execPath, [npmCli, 'install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', path.join(output, filename)], { cwd: fixture, env: installEnv, stdio: 'pipe' })
+  const installed = path.join(fixture, 'node_modules', ...pkg.name.split('/'))
+  const installedPackage = JSON.parse(await fs.readFile(path.join(installed, 'package.json'), 'utf8'))
+  assert.equal(installedPackage.name, pkg.name)
+  assert.equal(installedPackage.version, pkg.version)
+  for (const file of packed.files) assert.deepEqual(await fs.readFile(path.join(installed, file.path)), await fs.readFile(path.join(root, file.path)), 'Installed member differs: ' + file.path)
+  const plugin = await import(pathToFileURL(path.join(installed, pkg.main)).href)
+  assert.equal(typeof plugin.apply, 'function')
+  plugin.apply({ get(name) { assert.equal(name, 'profileContext'); return { name: 'web' } } })
+  const { verifyEngine, openEngine } = await import(pathToFileURL(path.join(installed, 'lib/lm-fingerprint-engine.js')).href)
+  const enginePath = path.join(installed, 'third_party/lm-fingerprint')
+  const manifest = await verifyEngine(enginePath)
+  const engine = openEngine(enginePath, manifest)
+  try { await engine.ready; assert.equal(engine.models.length, manifest.modelCount) } finally { engine.dispose() }
+  let client
+  vm.runInNewContext(await fs.readFile(path.join(installed, 'lib/client.js'), 'utf8'), {
+    window: { __ModuleLoader__: { load(definition) { assert.equal(definition.id, pkg.name); client = definition.factory(() => ({})) } } }, console, URLSearchParams,
+  })
+  assert.equal(typeof client.apply, 'function')
+  client.apply({ get() { assert.fail('A browser must not mount a desktop plugin') } })
 } finally {
-  // Validate the exact temporary directory before recursive cleanup on Windows.
-  assert.equal(path.dirname(path.resolve(smokeDir)), path.resolve(tmpdir()));
-  assert.ok(path.basename(smokeDir).startsWith('dsh-usage-stats-release-'));
-  await fs.rm(smokeDir, { recursive: true, force: true });
+  const relative = path.relative(tmpdir(), fixture)
+  assert.ok(relative.startsWith('dsh-usage-package-') && !relative.includes(path.sep))
+  await fs.rm(fixture, { recursive: true, force: true })
 }
-
-await fs.writeFile(path.join(outputDir, 'RELEASE_NOTES.txt'), `## 本次更新 / What's changed\n\n${releaseChanges}\n\n## 安装 / Installation\n\n在 DSH 桌面端主界面侧栏进入「插件 → 添加插件」，填入 npm 包名，安装后点击「立即启用」：\n\n\`${pkg.name}\`\n\n旧版用户先卸载旧的 \`dsh-usage-stats\`，再安装上面的新包。之后可通过插件页的「检查更新」更新。请使用包名安装；GitHub、压缩包地址和本地链接安装不进入当前更新检查流程。\n\n面板入口：设置 → 用量统计。此版本仅支持 desktop profile。\n\nIn DSH Desktop, open Plugins → Add plugin, enter the npm package name above, install, and select Enable now. Existing users should uninstall the old \`dsh-usage-stats\` package once, then install this scoped package. Future updates can use Check updates. GitHub URLs, archive URLs, and local links do not participate in the current update checker.\n\nOptional prebuilt archive: https://github.com/Jockjrop/dsh-usage-stats/releases/download/v${pkg.version}/${archiveName}\n\nAssets: versioned package, latest-download alias, and SHA256SUMS. Both archives contain identical prebuilt modules; installation was verified with lifecycle scripts disabled.\n`);
-console.log(`Release ${pkg.version}: built modules, package installation and renderer entry verified.`);
-console.log(`  release/${archiveName}\n  release/${aliasName}\n  release/SHA256SUMS`);
+const hash = createHash('sha256').update(await fs.readFile(path.join(output, filename))).digest('hex')
+await fs.copyFile(path.join(output, filename), path.join(output, archiveAlias))
+await fs.writeFile(path.join(output, 'SHA256SUMS'), `${hash}  ${filename}\n${hash}  ${archiveAlias}\n`)
+await fs.writeFile(path.join(output, 'RELEASE_NOTES.txt'), renderReleaseNotes(notes))
+await verifyArchives(output, pkg)
+console.log('Verified prebuilt package installation: release/' + filename)

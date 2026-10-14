@@ -1,14 +1,31 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, mkdtempSync, mkdirSync, cpSync, writeFileSync, rmSync } from 'node:fs'
+import { readFileSync, existsSync, mkdtempSync, mkdirSync, cpSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import vm from 'node:vm'
 
-const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
 const settle = () => new Promise(resolve => setImmediate(resolve))
 const interpolate = (text, params) => text.replace(/\{(\w+)\}/g, (match, key) => params && key in params ? String(params[key]) : match)
+
+/**
+ * Use the shipped bundle so inline renderer modules and localization are included.
+ */
+const bundle = (() => {
+  const directory = mkdtempSync(join(tmpdir(), 'dshus-locale-bundle-'))
+  try {
+    mkdirSync(join(directory, 'scripts'))
+    cpSync(new URL('../src', import.meta.url), join(directory, 'src'), { recursive: true })
+    cpSync(new URL('../scripts/build.mjs', import.meta.url), join(directory, 'scripts/build.mjs'))
+    cpSync(new URL('../package.json', import.meta.url), join(directory, 'package.json'))
+    execFileSync(process.execPath, [join(directory, 'scripts/build.mjs')], { stdio: 'pipe' })
+    return readFileSync(join(directory, 'lib/client.js'), 'utf8')
+  } finally {
+    assert.equal(dirname(resolve(directory)), resolve(tmpdir()))
+    rmSync(directory, { recursive: true, force: true })
+  }
+})()
 
 function find(node, predicate) {
   if (Array.isArray(node)) return node.map(child => find(child, predicate)).find(Boolean)
@@ -21,7 +38,7 @@ function textOf(node) {
   return node?.props ? textOf(node.props.children) : ''
 }
 
-function harness({ language = 'en', fetch: customFetch, code = source, services = {}, slotProps = {} } = {}) {
+function harness({ language = 'en', fetch: customFetch, code = bundle, services = {}, slotProps = {} } = {}) {
   let plugin, section, meta, activeStore, index = 0, invalidations = 0
   const stores = new Map(), dictionaries = new Map(), listeners = new Set(), intervals = new Map()
   let snapshot = { active: language, revision: 0 }
@@ -83,101 +100,10 @@ function harness({ language = 'en', fetch: customFetch, code = source, services 
   }
   return { render, section, meta, locale, plugin, intervals, invalidations: () => invalidations,
     page: () => render(section.type, section.props),
+    controlsPage: () => render(section.type, { ...section.props, embedded: true }),
     component: (tree, name, predicate = () => true) => find(tree, node => node.type?.name === name && predicate(node)),
   }
 }
-
-test('visibility controls default match off and speed on, persist, and keep keyboard tabs valid', async () => {
-  // Start with the pre-feature payload to exercise missing-key defaults.
-  const settings = { autoQuota: false, intervalMinutes: 60, showModelDetails: false, customQueries: [] }
-  const requests = []
-  const h = harness({ language: 'zh', fetch: async (url, opts = {}) => {
-    requests.push(url)
-    if (url.endsWith('/controls')) {
-      if (opts.method === 'POST') Object.assign(settings, JSON.parse(opts.body))
-      return { ok: true, json: async () => ({ ok: true, settings: structuredClone(settings) }) }
-    }
-    return { ok: true, json: async () => ({ ok: true, providers: [], byDay: [], byModel: [], byHour: [], tokenSpeeds: [] }) }
-  } })
-  let page = h.page(); page.flush(); await settle()
-  assert.ok(!find(h.page().tree, n => n.props?.id === 'dshus-tab-match'))
-  assert.ok(h.component(h.page().tree, 'TokenSpeedRanking'), 'speed is independent of model-details visibility')
-  const selectTab = id => find(h.page().tree, n => n.props?.id === 'dshus-tab-' + id).props.onClick()
-  const keyFrom = (id, key) => {
-    selectTab(id)
-    const tree = h.page().tree, tabs = []
-    for (const name of ['usage', 'quota', 'match', 'control']) {
-      const button = find(tree, n => n.props?.id === 'dshus-tab-' + name)
-      if (button) tabs.push({ focus: () => tabs.focused = name })
-    }
-    find(tree, n => n.props?.id === 'dshus-tab-' + id).props.onKeyDown({ key, preventDefault() {}, currentTarget: { parentElement: { querySelectorAll: () => tabs } } })
-    return tabs.focused
-  }
-  assert.equal(keyFrom('quota', 'ArrowRight'), 'control')
-  const controlsElement = () => h.component(h.page().tree, 'ControlsPanel')
-  const controls = () => { const el = controlsElement(); return h.render(el.type, el.props).tree }
-  let panel = controls()
-  assert.equal(find(panel, n => n.props?.role === 'switch' && n.props['aria-label'] === '检测模型匹配').props['aria-checked'], false)
-  assert.equal(find(panel, n => n.props?.role === 'switch' && n.props['aria-label'] === 'token输出速度').props['aria-checked'], true)
-  find(panel, n => n.props?.role === 'switch' && n.props['aria-label'] === '检测模型匹配').props.onClick()
-  await settle()
-  assert.equal(settings.showModelMatch, true)
-  assert.ok(find(h.page().tree, n => n.props?.id === 'dshus-tab-match'))
-  assert.equal(keyFrom('quota', 'ArrowRight'), 'match')
-  assert.ok(h.component(h.page().tree, 'MatchPanel'))
-  selectTab('control')
-  find(controls(), n => n.props?.role === 'switch' && n.props['aria-label'] === 'token输出速度').props.onClick()
-  await settle()
-  selectTab('usage')
-  assert.ok(!h.component(h.page().tree, 'TokenSpeedRanking'))
-  selectTab('control')
-  find(controls(), n => n.props?.role === 'switch' && n.props['aria-label'] === 'token输出速度').props.onClick()
-  await settle()
-  selectTab('usage')
-  assert.ok(h.component(h.page().tree, 'TokenSpeedRanking'))
-  selectTab('control')
-  const reload = controlsElement().props.onReload
-  selectTab('match')
-  settings.showModelMatch = false
-  reload(); await settle()
-  page = h.page()
-  assert.ok(!find(page.tree, n => n.props?.id === 'dshus-tab-match'))
-  assert.ok(!h.component(page.tree, 'MatchPanel'))
-  assert.equal(find(page.tree, n => n.props?.id === 'dshus-tab-usage').props['aria-selected'], true)
-  assert.ok(requests.every(url => !url.includes('/model-match')), 'display toggles never start model analysis or independent tests')
-})
-
-test('late control reads and failures cannot undo saved switches or hide the match tab', async () => {
-  const settings = { autoQuota: false, intervalMinutes: 60, showModelDetails: true, showModelMatch: false, showTokenSpeed: true, advancedModelSelect: false, customQueries: [] }
-  const delayed = []
-  let holdReads = false
-  const h = harness({ language: 'zh', fetch: async (url, opts = {}) => {
-    if (url.endsWith('/controls')) {
-      if (opts.method === 'POST') Object.assign(settings, JSON.parse(opts.body))
-      const body = { ok: true, settings: structuredClone(settings) }
-      if (holdReads && opts.method !== 'POST') return new Promise((resolve, reject) => delayed.push({ resolve: () => resolve({ ok: true, json: async () => body }), reject }))
-      return { ok: true, json: async () => body }
-    }
-    return { ok: true, json: async () => ({ ok: true, providers: [], byDay: [], byModel: [], byHour: [], tokenSpeeds: [] }) }
-  } })
-  let page = h.page(); page.flush(); await settle()
-  find(h.page().tree, n => n.props?.id === 'dshus-tab-control').props.onClick()
-  const controlProps = () => h.component(h.page().tree, 'ControlsPanel').props
-  holdReads = true
-  controlProps().onReload()
-  assert.equal(delayed.length, 1)
-  await controlProps().onSave({ showModelMatch: true, showTokenSpeed: false })
-  delayed.shift().resolve(); await settle()
-  assert.equal(controlProps().control.settings.showModelMatch, true)
-  assert.equal(controlProps().control.settings.showTokenSpeed, false)
-  assert.ok(find(h.page().tree, n => n.props?.id === 'dshus-tab-match'))
-  controlProps().onReload()
-  await controlProps().onSave({ showTokenSpeed: true })
-  delayed.shift().reject(new Error('obsolete read failed')); await settle()
-  assert.equal(controlProps().ready, true)
-  assert.equal(controlProps().error, '')
-  assert.equal(controlProps().control.settings.showTokenSpeed, true)
-})
 
 test('token output speed sorts TPS, shows TTFT with provider-only subtext, expands, and translates empty states', () => {
   const h = harness(), type = h.plugin.__components.TokenSpeedRanking
@@ -214,33 +140,15 @@ test('token output speed sorts TPS, shows TTFT with provider-only subtext, expan
   assert.match(textOf(h.render(type, props).tree), /token输出速度.*暂无速度数据/)
 })
 
-test('settings copy, accessibility labels and notices follow the application locale live', async () => {
-  const h = harness()
-  assert.ok(h.plugin.inject.includes('locale'))
-  assert.equal(h.meta.label(), 'Usage statistics')
-  let page = h.page()
-  assert.match(textOf(page.tree), /Usage statistics.*Usage.*Quota.*Controls/)
-  page.flush(); await settle()
-  find(page.tree, node => node.props?.id === 'dshus-tab-control').props.onClick()
-  const element = h.component(h.page().tree, 'ControlsPanel')
-  let controls = h.render(element.type, { ...element.props, ready: true })
-  controls.flush(); await settle()
-  controls = h.render(element.type, { ...element.props, ready: true })
-  find(controls.tree, node => node.props?.role === 'switch' && node.props['aria-label'] === 'Fetch remaining balance automatically').props.onClick()
-  controls = h.render(element.type, { ...element.props, ready: true })
-  assert.match(textOf(controls.tree), /may incur a small charge/)
-  assert.match(textOf(controls.tree), /10 minutes.*1 hour.*5 hours.*Daily/)
-  assert.doesNotMatch(textOf(controls.tree), /[\u4e00-\u9fff]/)
-  h.locale.switch('ja')
-  assert.ok(h.invalidations() > 0, 'a locale change schedules the mounted page to render')
-  assert.equal(h.meta.label(), '利用状況')
-  assert.match(textOf(h.page().tree), /利用状況.*使用量.*利用枠.*設定/)
-  controls = h.render(element.type, { ...element.props, ready: true })
-  assert.match(textOf(controls.tree), /少額の残高が消費/)
-  assert.match(textOf(controls.tree), /10分.*1時間.*5時間.*毎日/)
-  h.locale.switch('zh')
-  assert.equal(h.meta.label(), '用量统计')
-  assert.match(textOf(h.render(element.type, { ...element.props, ready: true }).tree), /自动获取剩余余额/)
+test('statistics labels, switches and notices follow the live application locale', async () => {
+ const h=harness();assert.ok(h.plugin.inject.includes('locale'));assert.equal(h.meta.label(),'Usage statistics');
+ const page=h.page();page.flush();await settle();assert.match(textOf(page.tree),/Usage statistics.*Usage.*Quota/);
+ const element=h.component(h.controlsPage().tree,'ControlsPanel');
+ const render=()=>h.render(element.type,element.props);
+ render().flush();await settle();assert.match(textOf(render().tree),/Model details and distribution.*Token output speed/);
+ assert.ok(find(render().tree,node=>node.props?.['aria-label']==='Model detection'));
+ h.locale.switch('ja');assert.ok(h.invalidations()>0);assert.equal(h.meta.label(),'利用状況');assert.match(textOf(render().tree),/モデル別の詳細と分布/);
+ h.locale.switch('zh');assert.equal(h.meta.label(),'用量统计');assert.match(textOf(render().tree),/模型明细与分布.*token输出速度/);
 })
 
 test('quota labels and countdowns translate while custom metric labels stay verbatim', async () => {
@@ -295,23 +203,186 @@ test('quota refresh retains data on pending requests and failures, and rejects l
   assert.match(textOf(h.render(element.type, { ...props, revision: 1, snapshot: body(20) }).tree), /¥20.00/)
 })
 
+test('provider refresh isolates all card layouts and keeps concurrent results when responses arrive out of order', async () => {
+  const h = harness({ language: 'zh' })
+  find(h.page().tree, node => node.props?.id === 'dshus-tab-quota').props.onClick()
+  const { type } = h.component(h.page().tree, 'ProviderQuotasPanel')
+  const body = (balance = 10, percent = 40) => ({ ok: true, quotas: [
+    { provider: 'deepseek', name: 'DeepSeek', metrics: [{ label: '账户可用余额', kind: 'amount', remaining: balance, currency: 'CNY' }] },
+    { provider: 'balance-b', name: 'Balance B', metrics: [{ label: '账户可用余额', kind: 'amount', remaining: 20, total: 30, currency: 'USD' }] },
+    { provider: 'window-c', name: 'Window C', metrics: [{ label: '周剩余', kind: 'window', remainingPercent: percent }] },
+    { provider: 'empty-d', name: 'Empty D', status: 'unqueried', kind: 'balance', metrics: [] },
+  ] })
+  const requests = [], pending = new Map()
+  const props = { api: { providerQuotas: options => {
+    requests.push(options)
+    if (!options.fresh) return Promise.resolve(body())
+    return new Promise(resolve => pending.set(options.provider, resolve))
+  } } }
+  const render = () => h.render(type, props)
+  const button = (tree, name) => find(tree, node => node.type === 'button' && node.props['aria-label'] === `刷新 ${name} 配额`)
+  render().flush(); await settle()
+  const deepseek = button(render().tree, 'DeepSeek')
+  deepseek.props.onClick()
+  deepseek.props.onClick()
+  let panel = render()
+  assert.equal(button(panel.tree, 'DeepSeek').props.disabled, true)
+  for (const name of ['Balance B', 'Window C', 'Empty D']) {
+    assert.equal(button(panel.tree, name).props.disabled, false, `${name} remains available during a DeepSeek refresh`)
+    assert.ok(!find(button(panel.tree, name), node => node.props?.className === 'dshus-spin'))
+  }
+  button(panel.tree, 'Window C').props.onClick()
+  assert.deepEqual(requests.filter(options => options.fresh).map(options => options.provider), ['deepseek', 'window-c'])
+  for (const poll of h.intervals.values()) poll()
+  assert.equal(requests.length, 3, 'cached polling waits for manual provider refreshes')
+  pending.get('window-c')(body(10, 75)); await settle()
+  panel = render()
+  assert.equal(button(panel.tree, 'Window C').props.disabled, false)
+  assert.equal(button(panel.tree, 'DeepSeek').props.disabled, true)
+  pending.get('deepseek')(body(15, 40)); await settle()
+  panel = render()
+  assert.match(textOf(panel.tree), /¥15\.00/)
+  assert.equal(find(panel.tree, node => node.props?.role === 'progressbar').props['aria-valuenow'], 75)
+  assert.equal(button(panel.tree, 'DeepSeek').props.disabled, false)
+  assert.equal(button(panel.tree, 'Window C').props.disabled, false)
+})
+
+test('a failed provider refresh keeps its data and error local while another provider can finish', async () => {
+  const h = harness({ language: 'zh' })
+  find(h.page().tree, node => node.props?.id === 'dshus-tab-quota').props.onClick()
+  const { type } = h.component(h.page().tree, 'ProviderQuotasPanel')
+  const body = remaining => ({ ok: true, quotas: [
+    { provider: 'deepseek', name: 'DeepSeek', metrics: [{ label: '账户可用余额', kind: 'amount', remaining: 10, currency: 'CNY' }] },
+    { provider: 'balance-b', name: 'Balance B', metrics: [{ label: '账户可用余额', kind: 'amount', remaining, currency: 'USD' }] },
+  ] })
+  const pending = new Map()
+  const props = { api: { providerQuotas: options => !options.fresh ? Promise.resolve(body(20))
+    : new Promise((resolve, reject) => pending.set(options.provider, { resolve, reject })) } }
+  const render = () => h.render(type, props)
+  const button = (tree, name) => find(tree, node => node.type === 'button' && node.props['aria-label'] === `刷新 ${name} 配额`)
+  const card = (tree, name) => find(tree, node => node.type === 'div' && node.props?.className === 'dshus-module dshus-balance-module'
+    && find(node, child => child.type === 'h3' && textOf(child) === name))
+  render().flush(); await settle()
+  button(render().tree, 'DeepSeek').props.onClick()
+  button(render().tree, 'Balance B').props.onClick()
+  pending.get('deepseek').reject(new Error('查询返回 HTTP 503，请检查地址和供应商凭据。')); await settle()
+  let panel = render()
+  assert.match(textOf(card(panel.tree, 'DeepSeek')), /HTTP 503/)
+  assert.match(textOf(card(panel.tree, 'DeepSeek')), /¥10\.00/)
+  assert.doesNotMatch(textOf(card(panel.tree, 'Balance B')), /HTTP 503/)
+  assert.equal(button(panel.tree, 'DeepSeek').props.disabled, false)
+  assert.equal(button(panel.tree, 'Balance B').props.disabled, true)
+  pending.get('balance-b').resolve(body(25)); await settle()
+  panel = render()
+  assert.match(textOf(card(panel.tree, 'Balance B')), /\$25\.00/)
+  assert.match(textOf(card(panel.tree, 'DeepSeek')), /HTTP 503/)
+  button(panel.tree, 'DeepSeek').props.onClick()
+  assert.doesNotMatch(textOf(card(render().tree, 'DeepSeek')), /HTTP 503/)
+  pending.get('deepseek').resolve(body(20)); await settle()
+  assert.match(textOf(card(render().tree, 'Balance B')), /\$25\.00/)
+})
+
+test('a single-card refresh removes providers absent from the current response despite their old cached balances', async () => {
+  const h = harness({ language: 'zh' })
+  find(h.page().tree, node => node.props?.id === 'dshus-tab-quota').props.onClick()
+  const { type } = h.component(h.page().tree, 'ProviderQuotasPanel')
+  const quota = (provider, remaining) => ({ provider, name: provider, metrics: [{ kind: 'amount', label: '余额', remaining, currency: 'CNY' }] })
+  const calls = []
+  const props = { api: { providerQuotas: async options => {
+    calls.push(options)
+    return { ok: true, quotas: options.fresh ? [quota('gateway', 25), quota('other', 1)] : [quota('deepseek', 10), quota('gateway', 20), quota('other', 30)] }
+  } } }
+  const render = () => h.render(type, props)
+  render().flush(); await settle()
+  const before = render()
+  find(before.tree, node => node.type === 'button' && node.props['aria-label'] === '刷新 gateway 配额').props.onClick()
+  await settle()
+  const after = render()
+  assert.ok(!find(after.tree, node => node.type === 'button' && node.props['aria-label'] === '刷新 deepseek 配额'))
+  assert.doesNotMatch(textOf(after.tree), /¥10\.00|不存在/)
+  assert.match(textOf(after.tree), /¥25\.00/)
+  assert.match(textOf(after.tree), /¥30\.00/, 'an unrelated provider retains its newer displayed snapshot')
+  assert.equal(calls[1].provider, 'gateway')
+})
+
+test('a delayed provider response cannot recreate a card removed by a newer provider list', async () => {
+  const h = harness({ language: 'zh' })
+  find(h.page().tree, node => node.props?.id === 'dshus-tab-quota').props.onClick()
+  const { type } = h.component(h.page().tree, 'ProviderQuotasPanel')
+  const quota = (provider, remaining) => ({ provider, name: provider, metrics: [{ kind: 'amount', label: '余额', remaining, currency: 'CNY' }] })
+  const pending = new Map()
+  const props = { api: { providerQuotas: options => options.fresh ? new Promise(resolve => pending.set(options.provider, resolve))
+    : Promise.resolve({ ok: true, quotas: [quota('deepseek', 10), quota('gateway', 20)] }) } }
+  const render = () => h.render(type, props)
+  const button = (tree, name) => find(tree, node => node.type === 'button' && node.props['aria-label'] === `刷新 ${name} 配额`)
+  render().flush(); await settle()
+  button(render().tree, 'deepseek').props.onClick()
+  button(render().tree, 'gateway').props.onClick()
+  pending.get('gateway')({ ok: true, quotas: [quota('gateway', 25)] }); await settle()
+  assert.ok(!button(render().tree, 'deepseek'))
+  pending.get('deepseek')({ ok: true, quotas: [quota('deepseek', 999), quota('gateway', 20)] }); await settle()
+  assert.ok(!button(render().tree, 'deepseek'))
+  assert.match(textOf(render().tree), /¥25\.00/)
+  assert.doesNotMatch(textOf(render().tree), /¥999\.00/)
+})
+
+test('refresh-all and inactive quota pages discard pending single-provider responses and reset their buttons', async () => {
+  const h = harness({ language: 'zh' })
+  find(h.page().tree, node => node.props?.id === 'dshus-tab-quota').props.onClick()
+  const { type } = h.component(h.page().tree, 'ProviderQuotasPanel')
+  const body = balance => ({ ok: true, quotas: ['deepseek', 'balance-b'].map(provider => ({ provider, name: provider,
+    metrics: [{ label: '账户可用余额', kind: 'amount', remaining: balance, currency: 'CNY' }] })) })
+  const pending = []
+  const props = { active: true, api: { providerQuotas: options => options.fresh ? new Promise(resolve => pending.push(resolve)) : Promise.resolve(body(10)) } }
+  let current = props
+  const render = () => h.render(type, current)
+  const button = (tree, name) => find(tree, node => node.type === 'button' && node.props['aria-label'] === `刷新 ${name} 配额`)
+  render().flush(); await settle()
+  button(render().tree, 'deepseek').props.onClick()
+  current = { ...props, refreshing: true }
+  render().flush()
+  let panel = render()
+  assert.equal(button(panel.tree, 'deepseek').props.disabled, true)
+  assert.equal(button(panel.tree, 'balance-b').props.disabled, true)
+  const snapshot = body(30)
+  current = { ...props, snapshot, refreshing: false }
+  render().flush()
+  pending[0](body(1)); await settle()
+  panel = render()
+  assert.doesNotMatch(textOf(panel.tree), /¥1\.00/)
+  assert.match(textOf(panel.tree), /¥30\.00/)
+  assert.equal(button(panel.tree, 'deepseek').props.disabled, false)
+  button(panel.tree, 'deepseek').props.onClick()
+  current = { ...current, active: false }
+  render().flush()
+  pending[1](body(2)); await settle()
+  assert.doesNotMatch(textOf(render().tree), /¥2\.00/)
+  assert.equal(button(render().tree, 'deepseek').props.disabled, false)
+  current = { ...current, active: true }
+  render().flush(); await settle()
+  assert.equal(button(render().tree, 'deepseek').props.disabled, false)
+})
+
 test('quota tabs retain component identity and refresh-all feeds snapshots without duplicate reads', async () => {
   const requests = [], deferred = []
   const quota = remaining => ({ ok: true, quotas: [{ provider: 'deepseek', name: 'DeepSeek', metrics: [{ kind: 'amount', label: '账户可用余额', remaining, currency: 'CNY' }] }] })
-  const wb = credits => ({ ok: true, available: true, status: 'signed-in', credits: { total: credits, accounts: [] } })
-  const h = harness({ fetch: async url => {
+  let credits = 100
+  const accountView = () => ({ ok: true, channels: [{ id: 'buddy', kind: 'account', enabled: true, supportsQuota: true }, { id: 'workbuddy', kind: 'account', enabled: true, supportsQuota: true }],
+    accounts: [{ id: 'cn', channelId: 'buddy', enabled: true, version: 1 }, { id: 'intl', channelId: 'workbuddy', enabled: true, version: 1 }],
+    quotas: [{ channelId: 'buddy', accountId: 'cn', remaining: credits }, { channelId: 'workbuddy', accountId: 'intl', remaining: 150 }] })
+  const h = harness({ fetch: async (url, options) => {
     requests.push(url)
-    if (url.includes('fresh=1')) return new Promise((resolve, reject) => deferred.push({ url, resolve: body => resolve({ ok: true, json: async () => body }), reject }))
-    return { ok: true, json: async () => url.includes('/provider-quotas') ? quota(10) : url.includes('/workbuddy') ? wb(100) : url.includes('/controls')
+    if (url.includes('fresh=1') || options?.method === 'POST') return new Promise((resolve, reject) => deferred.push({ url, accountId: options?.body && JSON.parse(options.body).accountId, resolve: body => resolve({ ok: true, json: async () => body }), reject }))
+    return { ok: true, json: async () => url.includes('/provider-quotas') ? quota(10) : url.includes('/account-quotas') ? accountView() : url.includes('/controls')
       ? { ok: true, settings: { autoQuota: false, intervalMinutes: 60, showModelDetails: true, customQueries: [] } }
       : { ok: true, totals: null, byDay: [], byModel: [], byHour: [] } }
   } })
   assert.equal(h.component(h.page().tree, 'ProviderQuotasPanel'), undefined, 'quota polling starts only when the tab is first opened')
   find(h.page().tree, node => node.props?.id === 'dshus-tab-quota').props.onClick()
   let page = h.page().tree
-  const provider = h.component(page, 'ProviderQuotasPanel'), buddy = h.component(page, 'WorkBuddyPanel', node => !node.props.source)
+  const provider = h.component(page, 'ProviderQuotasPanel'), accounts = h.component(page, 'AccountQuotasPanel')
   h.render(provider.type, provider.props).flush()
-  h.render(buddy.type, buddy.props).flush()
+  h.render(accounts.type, accounts.props).flush()
   await settle()
   find(page, node => node.props?.id === 'dshus-tab-usage').props.onClick()
   page = h.page().tree
@@ -322,13 +393,14 @@ test('quota tabs retain component identity and refresh-all feeds snapshots witho
   assert.equal(find(page, node => node.props?.id === 'dshus-quota-panel').props.hidden, false)
   assert.match(textOf(h.render(provider.type, h.component(page, 'ProviderQuotasPanel').props).tree), /¥10.00/)
   find(page, node => node.props?.['aria-label'] === 'Refresh all quotas').props.onClick()
+  await settle()
   assert.equal(deferred.length, 3)
   page = h.page().tree
   assert.match(textOf(h.render(provider.type, h.component(page, 'ProviderQuotasPanel').props).tree), /¥10.00/)
   for (const request of deferred) {
     if (request.url.includes('/provider-quotas')) request.resolve(quota(20))
-    else if (request.url.includes('/workbuddy-ai')) request.reject(new Error('offline'))
-    else request.resolve(wb(200))
+    else if (request.accountId === 'intl') request.reject(new Error('offline'))
+    else { credits = 200; request.resolve({ ok: true, results: [{ channelId: 'buddy', accountId: 'cn', remaining: credits }] }) }
   }
   await settle()
   page = h.page().tree
@@ -336,11 +408,91 @@ test('quota tabs retain component identity and refresh-all feeds snapshots witho
   const updatedProvider = h.component(page, 'ProviderQuotasPanel')
   h.render(updatedProvider.type, updatedProvider.props).flush()
   assert.match(textOf(h.render(updatedProvider.type, updatedProvider.props).tree), /¥20.00/)
-  assert.equal(requests.filter(url => url.includes('fresh=1')).length, 3)
+  const updatedAccounts = h.component(page, 'AccountQuotasPanel')
+  h.render(updatedAccounts.type, updatedAccounts.props).flush()
+  const list = h.component(h.render(updatedAccounts.type, updatedAccounts.props).tree, 'AccountQuotaList')
+  assert.equal(list.props.data.quotas.find(row => row.accountId === 'cn').remaining, 200)
+  assert.equal(list.props.data.quotas.find(row => row.accountId === 'intl').remaining, 150)
+  assert.equal(list.props.data.quotas.find(row => row.accountId === 'intl').stale, true)
+  assert.equal(requests.filter(url => url.includes('/account-quotas/refresh')).length, 2)
   assert.equal(requests.filter(url => url.includes('/provider-quotas') && !url.includes('fresh=1')).length, 1)
 })
 
-test('build uses the scoped package identity and version in both installed client copies', () => {
+test('DeepSeek precedes enabled account channels while disabled accounts and duplicate windows stay hidden', async () => {
+  const h = harness()
+  find(h.page().tree, node => node.props?.id === 'dshus-tab-quota').props.onClick()
+  const providers = h.component(h.page().tree, 'ProviderQuotasPanel')
+  const props = { ...providers.props, api: { providerQuotas: async () => ({ ok: true, quotas: [
+    { provider: 'other', name: 'Other balance', metrics: [{ label: 'Balance', kind: 'amount', remaining: 10 }] },
+    { provider: 'deepseek', name: 'DeepSeek', metrics: [{ label: '周剩余', kind: 'window', remainingPercent: 80 }] },
+  ] }) } }
+  h.render(providers.type, props).flush(); await settle()
+  const providerTree = h.render(providers.type, props).tree
+  assert.equal(textOf(find(providerTree.props.children[1], node => node.type === 'h3')), 'DeepSeek')
+  assert.equal(h.component(providerTree.props.children[2], 'AccountQuotasPanel').props.key, 'accounts')
+  assert.equal(textOf(find(providerTree.props.children[3], node => node.type === 'h3')), 'Other balance')
+  const accounts = h.component(providerTree, 'AccountQuotasPanel')
+  const data = { ok: true, channels: [
+    { id: 'loomy', kind: 'account', enabled: true }, { id: 'buddy', kind: 'account', enabled: true, supportsQuota: true },
+    { id: 'codearts', kind: 'account', enabled: true, supportsQuota: true }, { id: 'workbuddy', kind: 'account', enabled: false },
+  ], accounts: [
+    { id: 'zero', channelId: 'buddy' }, { id: 'disabled', channelId: 'buddy', enabled: false },
+    { id: 'unknown', channelId: 'codearts' }, { id: 'hidden-channel', channelId: 'workbuddy' },
+  ], quotas: [
+    { channelId: 'buddy', accountId: 'zero', remaining: 0, unit: 'credits' },
+    { channelId: 'codearts', accountId: 'unknown', remaining: null, kinds: [{ id: 'copy', bucketId: 'shared', remaining: 20 }], windows: [{ id: 'window', bucketId: 'shared', remainingPercent: 42 }] },
+  ] }
+  const accountProps = { ...accounts.props, api: { accountQuotas: async () => data } }
+  h.render(accounts.type, accountProps).flush(); await settle()
+  const list = h.component(h.render(accounts.type, accountProps).tree, 'AccountQuotaList')
+  const sections = h.render(list.type, list.props).tree.props.children[0]
+  assert.deepEqual(Array.from(sections, section => section.props['data-quota-channel']), ['codearts', 'buddy', 'loomy'])
+  const unknown = h.component(sections[0], 'QuotaAccount'), zero = h.component(sections[1], 'QuotaAccount')
+  assert.match(textOf(h.render(unknown.type, unknown.props, 'unknown').tree), /Unknown.*42% remaining/s)
+  assert.doesNotMatch(textOf(h.render(unknown.type, unknown.props, 'unknown').tree), /20/)
+  assert.match(textOf(h.render(zero.type, zero.props, 'zero').tree), /0 credits/)
+  assert.match(textOf(sections[2]), /Signed out/)
+  assert.doesNotMatch(textOf(sections), /disabled|hidden-channel/)
+})
+
+test('quota refresh queries only enabled accounts and discards failures from a changed account version', async () => {
+  const posts = []
+  let version = 1, fail = false, changeVersion = false
+  const view = () => ({ ok: true, channels: [
+    { id: 'buddy', kind: 'account', enabled: true, supportsQuota: true },
+    { id: 'workbuddy', kind: 'account', enabled: false, supportsQuota: true },
+    { id: 'gemini', kind: 'account', enabled: true, supportsQuota: false },
+  ], accounts: [
+    { id: 'main', channelId: 'buddy', version, credentialVersion: version }, { id: 'off', channelId: 'buddy', enabled: false },
+    { id: 'hidden', channelId: 'workbuddy' }, { id: 'no-api', channelId: 'gemini' },
+  ], quotas: [{ channelId: 'buddy', accountId: 'main', remaining: fail ? null : 700, error: fail ? { message: 'offline' } : null }] })
+  const h = harness({ fetch: async (url, opts) => {
+    if (opts?.method === 'POST') {
+      posts.push(JSON.parse(opts.body))
+      if (changeVersion) version++
+      return { ok: true, json: async () => ({ ok: true, results: [{ channelId: 'buddy', accountId: 'main', error: { message: 'offline' } }] }) }
+    }
+    return { ok: true, json: async () => url.includes('/account-quotas') ? view() : {} }
+  } })
+  find(h.page().tree, node => node.props?.id === 'dshus-tab-quota').props.onClick()
+  const api = h.component(h.page().tree, 'AccountQuotasPanel').props.api
+  await api.accountQuotas({ fresh: false })
+  assert.equal(posts.length, 0, 'opening the quota page reads the host cache only')
+  fail = true
+  let snapshot = await api.accountQuotas({ fresh: true })
+  assert.deepEqual(posts, [{ channelId: 'buddy', accountId: 'main' }])
+  assert.equal(snapshot.quotas[0].remaining, 700)
+  assert.equal(snapshot.quotas[0].stale, true)
+  snapshot = await api.accountQuotas({ fresh: false })
+  assert.equal(snapshot.quotas[0].remaining, 700, 'passive polling retains the diagnosed last successful reading')
+  changeVersion = true
+  snapshot = await api.accountQuotas({ fresh: true })
+  assert.equal(snapshot.refreshErrors.length, 0, 'a failure from the old account generation cannot attach to the replacement')
+  assert.equal(snapshot.quotas[0].remaining, null, 'the previous account generation balance cannot be retained')
+  assert.equal(snapshot.quotas[0].stale, undefined)
+})
+
+test('build uses the scoped package identity and version in the installed client', () => {
   const directory = mkdtempSync(join(tmpdir(), 'dsh-version-test-'))
   try {
     mkdirSync(join(directory, 'scripts'))
@@ -349,7 +501,7 @@ test('build uses the scoped package identity and version in both installed clien
     writeFileSync(join(directory, 'package.json'), JSON.stringify({ name: '@fixture/usage-stats', version: '9.8.7-test', type: 'module' }))
     execFileSync(process.execPath, [join(directory, 'scripts/build.mjs')], { stdio: 'pipe' })
     const built = readFileSync(join(directory, 'lib/client.js'), 'utf8')
-    assert.equal(built, readFileSync(join(directory, 'client.js'), 'utf8'))
+    assert.equal(existsSync(join(directory, 'client.js')), false, 'only lib/ contains build output')
     let definition
     vm.runInNewContext(built, { window: { __ModuleLoader__: { load(value) { definition = value } } } })
     assert.equal(definition.id, '@fixture/usage-stats')
@@ -361,28 +513,36 @@ test('build uses the scoped package identity and version in both installed clien
   }
 })
 
-test('WorkBuddy preserves credits and expanded plans when an adapter reports a failed update', async () => {
+test('account quotas retain credits and expanded details when a query fails', async () => {
   const h = harness()
   find(h.page().tree, node => node.props?.id === 'dshus-tab-quota').props.onClick()
-  const element = h.component(h.page().tree, 'WorkBuddyPanel')
-  const connected = { ok: true, available: true, status: 'signed-in', credits: { total: 800, accounts: [
-    { packageName: 'Plan A', size: 300, remain: 200 },
-    { packageName: 'Plan B', size: 300, remain: 300 },
-    { packageName: 'Plan C', size: 300, remain: 300 },
-  ] } }
-  const props = { api: { workbuddyStatus: async ({ fresh }) => fresh ? { ok: true, available: true, status: 'error', error: '操作失败，请稍后重试。' } : connected } }
+  const element = h.component(h.page().tree, 'AccountQuotasPanel')
+  const connected = { ok: true, channels: [{ id: 'buddy', kind: 'account', enabled: true, supportsQuota: true }],
+    accounts: [{ id: 'cn', displayName: 'Main account', channelId: 'buddy' }],
+    quotas: [{ channelId: 'buddy', accountId: 'cn', remaining: 800, unit: 'credit', kinds: [
+      { id: 'a', label: 'Plan A', total: 300, remaining: 200 },
+      { id: 'b', label: 'Plan B', total: 300, remaining: 300 },
+      { id: 'c', label: 'Plan C', total: 300, remaining: 300 },
+      { id: 'd', label: 'Plan D', remaining: 0 },
+    ] }] }
+  const props = { api: { accountQuotas: async ({ fresh }) => fresh ? { ok: false, error: '操作失败，请稍后重试。' } : connected } }
   let panel = h.render(element.type, props)
   panel.flush(); await settle()
   panel = h.render(element.type, props)
-  find(panel.tree, node => node.type === 'button' && textOf(node) === 'Show 1 more plans').props.onClick()
-  panel = h.render(element.type, props)
-  assert.match(textOf(panel.tree), /Plan C/)
-  find(panel.tree, node => node.props?.['aria-label'] === 'Refresh WorkBuddy account and credits').props.onClick()
+  const list = h.component(panel.tree, 'AccountQuotaList')
+  const account = h.component(h.render(list.type, list.props).tree, 'QuotaAccount')
+  let row = h.render(account.type, account.props)
+  find(row.tree, node => node.type === 'button' && textOf(node) === 'Show 1 more quota details').props.onClick()
+  row = h.render(account.type, account.props)
+  assert.match(textOf(row.tree), /Plan D/)
+  find(row.tree, node => node.props?.['aria-label'] === 'Refresh Main account quota').props.onClick()
   await settle()
   panel = h.render(element.type, props)
-  assert.match(textOf(panel.tree), /800.*Plan C/s)
   assert.match(textOf(panel.tree), /The operation failed/)
-  assert.match(textOf(panel.tree), /Collapse other plans/)
+  const nextList = h.component(panel.tree, 'AccountQuotaList')
+  const nextAccount = h.component(h.render(nextList.type, nextList.props).tree, 'QuotaAccount')
+  row = h.render(nextAccount.type, nextAccount.props)
+  assert.match(textOf(row.tree), /800 credits.*Plan D.*0.*Collapse quota details/s)
 })
 
 test('a card refresh targets its provider and displays retained-data diagnostics', async () => {
@@ -403,32 +563,6 @@ test('a card refresh targets its provider and displays retained-data diagnostics
   assert.match(textOf(h.render(element.type, props).tree), /last successful data/i)
 })
 
-test('provider drafts survive provider changes and the controls panel remains mounted across tabs', async () => {
-  const h = harness({ language: 'zh' })
-  find(h.page().tree, node => node.props?.id === 'dshus-tab-control').props.onClick()
-  const element = h.component(h.page().tree, 'ControlsPanel')
-  const providers = [{ provider: 'one', name: 'One', template: { url: 'https://one.example' } }, { provider: 'two', name: 'Two', template: { url: 'https://two.example' } }]
-  const props = { ...element.props, ready: true, api: { quotaProviders: async () => ({ ok: true, providers }) } }
-  let panel = h.render(element.type, props); panel.flush(); await settle()
-  panel = h.render(element.type, props)
-  find(panel.tree, node => node.type?.name === 'ProviderPicker').props.onChange('one')
-  panel = h.render(element.type, props)
-  find(panel.tree, node => node.props?.id === 'dshus-query-template').props.onChange({ target: { value: '{"draft":1}' } })
-  panel = h.render(element.type, props)
-  find(panel.tree, node => node.type?.name === 'ProviderPicker').props.onChange('two')
-  panel = h.render(element.type, props)
-  find(panel.tree, node => node.props?.id === 'dshus-query-template').props.onChange({ target: { value: '{"draft":2}' } })
-  panel = h.render(element.type, props)
-  find(panel.tree, node => node.type?.name === 'ProviderPicker').props.onChange('one')
-  assert.equal(find(h.render(element.type, props).tree, node => node.props?.id === 'dshus-query-template').props.value, '{"draft":1}')
-  find(h.page().tree, node => node.props?.id === 'dshus-tab-usage').props.onClick()
-  const hidden = find(h.page().tree, node => node.props?.id === 'dshus-control-panel')
-  assert.equal(hidden.props.hidden, true)
-  assert.equal(h.component(hidden, 'ControlsPanel').type, element.type)
-  find(h.page().tree, node => node.props?.id === 'dshus-tab-control').props.onClick()
-  assert.equal(find(h.render(element.type, props).tree, node => node.props?.id === 'dshus-query-template').props.value, '{"draft":1}')
-})
-
 test('merged models remain searchable by any contributing provider', async () => {
   const h = harness({ language: 'zh', fetch: async url => ({ ok: true, json: async () => url.includes('/controls')
     ? { ok: true, settings: { showModelDetails: true, customQueries: [] } }
@@ -445,93 +579,16 @@ test('merged models remain searchable by any contributing provider', async () =>
   assert.match(textOf(table), /17/)
 })
 
-test('match page follows the current session model, only analyzes by default, and starts and cancels explicitly', async () => {
-  const h = harness(), requests = [], tests = []
-  let current = { key: 'one' }, model = { status: 'ready', current: { provider: 'gateway', model: 'model-a', reasoningEffort: 'high' } }
-  const store = get => ({ getSnapshot: get, subscribe: () => () => {} })
-  const analysis = { verdict: 'insufficient-evidence', strength: 'weak', counts: { samples: 0, missing: 0, exact: 0, different: 0, compatible: 0 }, records: [] }
-  const reference = { id: 'local/a', model: 'model-a', provider: 'trusted', origin: 'imported', date: '2026-10-04', count: 128, selfTotal: 128, selfMismatches: 0, effort: 'off', hasCapabilities: false, subsetAvailable: true }
-  const plan = { requests: 13, estimatedInputTokens: 3000, maxOutputTokens: 10240, budgetTokens: 120000 }
-  const props = { active: true, uiSession: { current: store(() => current) }, modelDirectories: { directoryFor: () => ({ store: store(() => model), load: async () => {} }) },
-    api: { modelBaselines: async () => ({ references: [reference] }), modelMatch: async opts => { requests.push(opts); return { ok: true, analysis, job: null } }, modelTest: async body => {
-      tests.push(body)
-      if (body.action === 'plan') return { quote: { id: 'quote', selection: model.current, testSelection: { ...model.current, reasoningEffort: 'off' }, plan } }
-      return { job: { id: 'job', status: body.action === 'cancel' ? 'cancelled' : 'running', selection: model.current, testSelection: model.current, plan, results: [], usage: {}, progress: 0 } }
-    } } }
-  const type = h.plugin.__components.MatchPanel
-  let panel = h.render(type, props); panel.flush(); await settle()
-  assert.equal(tests.length, 0)
-  assert.deepEqual(JSON.parse(JSON.stringify(requests[0])), { session: 'one', provider: 'gateway', model: 'model-a', reasoningEffort: 'high' })
-  panel = h.render(type, props)
-  assert.match(textOf(panel.tree), /Behavioral fingerprint/)
-  assert.doesNotMatch(textOf(panel.tree), /[\u4e00-\u9fff]/)
-  assert.equal(find(panel.tree, node => node.type === 'button' && textOf(node) === 'Start audit (uses tokens)').props.disabled, true)
-  find(panel.tree, node => node.type === 'button' && textOf(node) === 'Preview test budget').props.onClick(); await settle()
-  assert.equal(tests[0].action, 'plan'); assert.equal(tests[0].selection.reasoningEffort, 'high'); assert.equal(tests[0].ackCost, undefined)
-  panel = h.render(type, props); panel.flush()
-  assert.match(textOf(panel.tree), /Output limit 10,240 tokens/)
-  assert.equal(find(panel.tree, node => node.type === 'button' && textOf(node) === 'Start audit (uses tokens)').props.disabled, false)
-  find(panel.tree, node => node.type === 'button' && textOf(node) === 'Start audit (uses tokens)').props.onClick(); await settle()
-  assert.equal(tests[1].ackCost, true); assert.equal(tests[1].planId, 'quote')
-  panel = h.render(type, props); panel.flush()
-  find(panel.tree, node => node.type === 'button' && textOf(node) === 'Cancel test').props.onClick(); await settle()
-  panel = h.render(type, props); panel.flush()
-  assert.equal(tests[2].action, 'cancel')
-  assert.match(textOf(panel.tree), /Inconclusive/)
-  assert.match(textOf(panel.tree), /Audit cancelled; incurred usage is still counted/)
-  current = { key: 'two' }; model = { status: 'ready', current: { provider: 'other', model: 'model-b' } }
-  panel = h.render(type, props); panel.flush(); await settle()
-  assert.equal(requests.at(-1).session, 'two'); assert.equal(requests.at(-1).model, 'model-b')
-  assert.equal(tests.length, 3)
-  panel = h.render(type, props)
-  assert.match(textOf(panel.tree), /No reference for this model/)
-  assert.equal(find(panel.tree, node => node.type === 'button' && textOf(node) === 'Start audit (uses tokens)').props.disabled, true)
-})
-
-test('completed audit shows its verdict before the form, states the downgrade limitation and refreshes usage', async () => {
-  const h = harness(), store = get => ({ getSnapshot: get, subscribe: () => () => {} })
-  let current = { key: 'one' }
-  const selection = { provider: 'gateway', model: 'model-a' }, model = { status: 'ready', current: selection }
-  let notified = 0
-  const job = { id: 'saved', sessionId: 'one', status: 'complete', mode: 'audit', selection, plan: { requests: 10 }, progress: 10,
-    score: { value: 87.5, matched: 105, valid: 120, count: 128 },
-    conclusion: { verdict: 'no-anomaly', reason: 'behavior-consistent' }, usage: { inputTokens: 1000, outputTokens: 250 }, usageReported: true, usageSaved: true,
-    identity: { verdict: 'no-significant-difference', count: 128, valid: 120, mismatches: 15, coverage: 120 / 128, pValue: 0.25 },
-    capability: { verdict: 'current-sample', count: 16, passed: 8, valid: 16, paired: 0 }, channel: { tps: 100, ttftMs: 1000 } }
-  const requests = []
-  const props = { active: true, onUsageUpdated: () => notified++, uiSession: { current: store(() => current) }, modelDirectories: { directoryFor: () => ({ store: store(() => model), load: async () => {} }) },
-    api: { modelBaselines: async () => ({ references: [] }), modelMatch: async options => { requests.push(options); return { analysis: null, job } } } }
-  const type = h.plugin.__components.MatchPanel
-  let panel = h.render(type, props); panel.flush(); await settle()
-  panel = h.render(type, props); panel.flush()
-  const text = textOf(panel.tree)
-  assert.ok(text.indexOf('Audit result') < text.indexOf('Independent audit'))
-  assert.match(text, /No obvious anomaly/); assert.match(text, /No capability baseline exists.*8 \/ 16/)
-  assert.match(text, /87.5.*\/100/)
-  assert.match(text, /1.25k tokens used · Included in statistics/)
-  assert.equal(find(panel.tree, node => node.props?.title === '1,250').type, 'p')
-  const summary = find(panel.tree, node => node.props?.className === 'dshus-module dshus-audit-summary')
-  const details = find(summary, node => node.type === 'details')
-  assert.equal(details.props.open, undefined)
-  assert.equal(textOf(find(details, node => node.type === 'summary')), 'Audit details')
-  const visible = textOf(summary.props.children.filter(node => node?.type !== 'details'))
-  assert.doesNotMatch(visible, /Statistical p-value|Finished 10|Valid answers|Channel performance/)
-  assert.match(textOf(details), /Valid answers 120 \/ 128.*2.50e-1/s)
-  assert.doesNotMatch(text, /undefined|NaN|[\u4e00-\u9fff]/)
-  h.render(type, props).flush(); assert.equal(notified, 1)
-  current = { key: 'another' }
-  panel = h.render(type, props); panel.flush(); await settle()
-  panel = h.render(type, props)
-  assert.match(textOf(panel.tree), /Previous audit result/)
-  assert.match(find(panel.tree, node => node.type === 'h3' && textOf(node) === 'Previous audit result').props.title, /This saved result applies to the model and settings listed below/)
-  current = {}
-  panel = h.render(type, props); panel.flush(); await settle()
-  panel = h.render(type, props)
-  assert.equal(requests.at(-1).jobOnly, '1')
-  assert.match(textOf(panel.tree), /Previous audit result/)
-  assert.equal(find(panel.tree, node => node.type === 'button' && textOf(node) === 'Preview test budget').props.disabled, true)
-  assert.equal(notified, 1)
-})
+// Exercise the backend's native DSH ProviderInfo conversion in the UI tests.
+const detectionModels = provider => readDetectionModels({ get: () => ({
+  listProviders: () => [{ id: 'gateway', name: 'Gateway' }, { id: 'other', name: 'Other' }],
+  listModels: async route => (route === 'other' ? [{ id: 'model-b', name: 'Model B' }, { id: 'model-c', name: 'Model C' }] : [{ id: 'model-a', name: 'Model A' }]).map(model => ({ ...model, provider: route })),
+  stream() { assert.fail('reading detection selectors must not start inference') },
+}) }, provider)
+async function detectionPage(h, props) {
+  for (let i = 0; i < 3; i++) { h.render(h.plugin.__components.DetectionPanel, props).flush(); await settle() }
+  return h.render(h.plugin.__components.DetectionPanel, props)
+}
 
 test('overview expansion shows six metrics with localized values and empty states', () => {
   const h = harness()

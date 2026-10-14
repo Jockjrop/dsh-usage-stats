@@ -4,16 +4,17 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkRelease, verifyArchives } from './release-checks.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
 const npmCli = process.env.npm_execpath;
 assert.ok(npmCli, 'Run this script through npm run publish:release.');
-const archiveName = `${pkg.name.replace(/^@/, '').replace('/', '-')}-${pkg.version}.tgz`;
-const archivePath = path.join(root, 'release', archiveName);
+await checkRelease(root, process.env.GITHUB_REF_TYPE === 'tag' ? { tag: process.env.GITHUB_REF_NAME } : {});
+const archivePath = await verifyArchives(path.join(root, 'release'), pkg);
 const integrity = 'sha512-' + createHash('sha512').update(await fs.readFile(archivePath)).digest('base64');
 const registry = 'https://registry.npmjs.org/';
-const response = await fetch(`${registry}${encodeURIComponent(pkg.name)}/${encodeURIComponent(pkg.version)}`);
+const response = await fetch(`${registry}${encodeURIComponent(pkg.name)}/${encodeURIComponent(pkg.version)}`, { signal: AbortSignal.timeout(30_000) });
 
 if (response.ok) {
   const published = await response.json();

@@ -1,357 +1,187 @@
 <p align="center">
-  <img src="screenshots/icon.svg" alt="dsh-usage-stats" width="80" height="80">
+  <img src="screenshots/icon.svg" alt="DSH 用量统计" width="80" height="80">
 </p>
 
 <h1 align="center">dsh-usage-stats</h1>
 
 <p align="center">
-  <strong>See your token usage, balances, and quotas inside DSH.</strong><br>
-  A local usage dashboard for <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness Desktop</a>.
+  <strong>在 DSH 里，看清 Token 用量、账户余额与供应商配额。</strong><br>
+  为 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness 桌面端</a>打造的本地用量面板。
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH Desktop"></a>
-  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/github/v/release/Jockjrop/dsh-usage-stats?style=flat-square&amp;color=64748b" alt="Latest release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 license"></a>
+  <a href="#安装"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH 桌面端"></a>
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.1-64748b?style=flat-square" alt="插件版本 0.2.1"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 许可"></a>
 </p>
 
 <p align="center">
-  English · <a href="README.zh-CN.md">简体中文</a><br>
-  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest">Download</a> ·
-  <a href="#features">Features</a> ·
-  <a href="#installation">Installation</a> ·
-  <a href="#usage">Usage</a> ·
-  <a href="#faq">FAQ</a> ·
-  <a href="CHANGELOG.md">Changelog</a> ·
-  <a href="https://github.com/Jockjrop/dsh-usage-stats/issues">Feedback</a>
+  <a href="README.en.md">English</a><br>
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest">下载</a> ·
+  <a href="#功能">功能</a> ·
+  <a href="#安装">安装</a> ·
+  <a href="#使用">使用</a> ·
+  <a href="#常见问题">常见问题</a> ·
+  <a href="CHANGELOG.md">更新日志</a> ·
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/issues">反馈问题</a>
 </p>
 
 <p align="center">
-  <a href="screenshots/usage.png"><img src="screenshots/usage.png" alt="Usage dashboard with totals, hourly tokens and a calendar heatmap" width="800"></a>
+  <a href="screenshots/usage.png"><img src="screenshots/usage.png" alt="用量面板：概览指标、今日图表与使用量热力图" width="800"></a>
 </p>
 
-<p align="center"><sub>Today's usage, lifetime totals, and the patterns behind them. Screenshot versions and values have been edited for this release and use synthetic data.</sub></p>
+<p align="center"><sub>查看今日与累计 Token、小时趋势和使用量热力图。</sub></p>
 
 <table align="center">
   <thead>
-    <tr><th align="center">Quotas · 配额</th><th align="center">Controls · 控制</th></tr>
+    <tr><th align="center">配额</th><th align="center">控制</th></tr>
   </thead>
   <tbody>
     <tr>
-      <td align="center"><a href="screenshots/quotas.png"><img src="screenshots/quotas.png" alt="Provider balances and WorkBuddy credits" width="400"></a></td>
-      <td align="center"><a href="screenshots/controls.png"><img src="screenshots/controls.png" alt="Refresh settings and custom quota queries" width="400"></a></td>
+      <td align="center"><a href="screenshots/quotas.png"><img src="screenshots/quotas.png" alt="供应商余额与账号积分" width="400"></a></td>
+      <td align="center"><a href="screenshots/controls.png"><img src="screenshots/controls.png" alt="模型功能、展示偏好与查询来源" width="400"></a></td>
     </tr>
     <tr>
-      <td align="center">Check provider balances and WorkBuddy credits in one place.</td>
-      <td align="center">Set automatic refresh intervals and custom quota queries.</td>
+      <td align="center">集中查看供应商余额、账号积分和周期额度。</td>
+      <td align="center">设置模型功能、展示偏好和自定义配额查询。</td>
     </tr>
   </tbody>
 </table>
 
-<table align="center">
-  <thead>
-    <tr><th align="center">Token output speed · token输出速度</th><th align="center">Model match · 模型匹配</th></tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center"><a href="screenshots/token-speed.png"><img src="screenshots/token-speed.png" alt="Models ranked by TPS with average TTFT" width="400"></a></td>
-      <td align="center"><a href="screenshots/match.png"><img src="screenshots/match.png" alt="Reference similarity score, audit verdict and collapsed details" width="400"></a></td>
-    </tr>
-    <tr>
-      <td align="center">Compare output speed and first-token wait across providers.</td>
-      <td align="center">Review the score, verdict and counted audit usage.</td>
-    </tr>
-  </tbody>
-</table>
+<p align="center">
+  <a href="screenshots/detection.png"><img src="screenshots/detection.png" alt="模型检测：候选排名、库内置信度与采样状态" width="800"></a>
+</p>
 
-## Features
+<p align="center"><sub>查看 LM Fingerprint 候选排名、采样状态和已发生用量。</sub></p>
 
-| Tab | What you can do |
+## 功能
+
+| 页面 | 你可以做什么 |
 | --- | --- |
-| **Usage · 用量** | View today's and lifetime tokens, active days, hourly calls, a daily/weekly heatmap, model breakdowns, and token output speed. |
-| **Quotas · 配额** | Check configured account balances, subscription windows, and optional WorkBuddy / WorkBuddy AI credits. |
-| **Match · 匹配** | Enable Detect model match in Controls to show this tab (off by default). Analyze the current session's request settings and response-declared model; optionally run cancellable independent tests. |
-| **Controls · 控制** | Choose a refresh interval, configure custom quota queries, and toggle model details, model matching, token output speed, or the advanced model selector. |
+| **用量** | 查看今日与累计 Token、使用天数、小时调用次数、每日／每周热力图、趋势、模型明细与输出速度。 |
+| **配额** | 集中查看供应商余额、账号积分与周期配额，支持手动或定时刷新及自定义查询。 |
+| **检测** | 独立选择供应商和模型，确认预算后运行 LM Fingerprint 检测，查看候选排名、采样状态与历史记录。 |
+| **控制** | 调整展示偏好、配额查询设置、高级模型选择器与逐模型推理强度。 |
 
-- **Follow your usage:** switch the trend between 7 and 30 days, page through daily or weekly history, and compare providers and models.
-- **Keep quotas together:** use built-in readers or map a custom provider's JSON response.
-- **Refresh on your terms:** fetch manually or enable scheduled queries. Automatic quota refresh is off by default.
-- **Inspect overview metrics:** expand the overview for cache hit rate, historical daily token peak, longest completed user round, current and longest usage streaks, and the most-called model in the last seven days. Same model names merge across providers. Round timing requires complete start/end records and excludes idle gaps between messages; today's streak continues through yesterday until a full unused day. Retained historical totals stay included.
-- **Compare output speed:** Token output speed is on by default, sorting provider/model pairs by DSH TPS: cumulative output tokens divided by cumulative first-nonempty-output-to-response-completion time, in tok/s. TTFT shows the average time from call start to first non-empty token for completed timed calls, in seconds; missing records show a dash. Samples without valid decode timing are excluded from the ranking. Hide it in Controls.
-- **Keep successful results:** failed quota refreshes retain amounts and timestamps with safe diagnostics. Card refreshes query only their provider; query drafts survive tab changes.
-- **Choose models faster:** opt into a model/reasoning panel with an effort slider; disabling it restores the official selector.
-- **Fit the desktop:** light/dark themes, responsive charts, pinned tabs, and a keyboard-operable provider picker.
-- **Follow your language:** Chinese, English, and Japanese UI text updates with DSH's selected language. User-defined names and quota labels stay as configured.
+- **看清使用趋势**：按日／周浏览热力图，切换 7／30 天趋势，按供应商与模型查看用量。
+- **比较输出速度**：按 TPS 排序，显示平均首 Token 耗时（TTFT）；缺少有效时间记录的样本不参与速度排名。
+- **按需刷新配额**：通过 DSH 凭据服务查询已配置供应商，账号配额需要对应的账号插件或宿主服务。自动查询默认关闭。
+- **独立运行检测**：默认采样 3 次，也可选择 1 次初筛；先确认预算，再手动开始，支持取消、超时和用量预算控制。
+- **调整模型设置**：分别控制高级模型选择器与模型推理强度，保留已有的模型属性、参数映射和个人设置。
+- **跟随应用语言**：支持中文、英语和日语，随 DSH 所选语言切换；用户自定义名称与配额标签保持原样。
 
-## Installation
+检测通过随机数样本与参考库对照。排名和库内置信度表示与已知候选的接近程度，不能证明模型身份或能力。读取模型目录、预算和历史结果不会启动推理。
 
-**Recommended: install the [npm package `@sligqoer/dsh-usage-stats`](https://www.npmjs.com/package/@sligqoer/dsh-usage-stats) through DSH Desktop.** It includes prebuilt modules, needs no Git checkout or local build, and supports the plugin page's Check updates button when installed by package name.
+## 安装
 
-### 1. Open the plugin installer
+当前插件版本为 **0.2.1**，适配 **DSH Desktop `0.2.1-alpha.2` 和 `0.2.1-rc.2`**。版本不匹配时，宿主插件管理器会拒绝安装或启用。
 
-In DSH Desktop's main sidebar, open **插件 → 添加插件** (Plugins → Add plugin).
+**推荐通过 DSH Desktop 安装 [npm 包 `@sligqoer/dsh-usage-stats`](https://www.npmjs.com/package/@sligqoer/dsh-usage-stats)。** 已包含预构建模块，无需克隆仓库或在本机构建；通过包名安装后可使用插件页的「检查更新」。
 
-### 2. Enter the full npm package name
+### 1. 打开插件安装入口
+
+在 DSH Desktop 主界面侧栏进入 **插件 → 添加插件**。
+
+### 2. 填入完整 npm 包名
 
 ```text
 @sligqoer/dsh-usage-stats
 ```
 
-Paste it into **包名或地址** (Package name or address) and click **安装** (Install). Keep the full `@sligqoer/` scope.
+将包名粘贴到 **包名或地址**，点击 **安装**，保留完整的 `@sligqoer/` 前缀。
 
-### 3. Enable and open
+### 3. 启用并打开面板
 
-Click **立即启用** (Enable now), then open **Settings → 用量统计**. Restart DSH if its plugin manager asks you to.
-
-Usage statistics load from your local DSH sessions. Open **配额** and click a refresh button to query an account.
+点击 **立即启用**，进入 **设置 → 用量统计**。插件管理器提示需要重启时，完全退出并重新打开 DSH Desktop。
 
 <details>
-<summary>Install a specific version or a downloaded archive</summary>
+<summary>安装指定版本或已下载的压缩包</summary>
 
-To install version `0.2.0`, enter this in the same installer:
+安装本次版本时，在同一入口填入：
 
 ```text
-@sligqoer/dsh-usage-stats@0.2.0
+@sligqoer/dsh-usage-stats@0.2.1
 ```
 
-You can also manually install a [Release archive](https://github.com/Jockjrop/dsh-usage-stats/releases/latest). Enter the URL below, or download the `.tgz` and `SHA256SUMS`, verify the hash, and enter the archive's local absolute path. Do not extract it before installing.
-
-```text
-https://github.com/Jockjrop/dsh-usage-stats/releases/latest/download/dsh-usage-stats.tgz
-```
+也可从 [GitHub 发布页](https://github.com/Jockjrop/dsh-usage-stats/releases/latest)下载 `.tgz` 安装包和 `SHA256SUMS`，校验后填入压缩包的本地绝对路径，无需解压。
 
 ```powershell
-Get-FileHash ./sligqoer-dsh-usage-stats-0.2.0.tgz -Algorithm SHA256
+Get-FileHash ./sligqoer-dsh-usage-stats-0.2.1.tgz -Algorithm SHA256
 ```
+
+发布附件包含版本安装包 `sligqoer-dsh-usage-stats-0.2.1.tgz`、通用安装包 `dsh-usage-stats.tgz` 和校验文件 `SHA256SUMS`；两个安装包内容一致。
 
 </details>
 
 <details>
-<summary>Install from source / manually link a checkout</summary>
+<summary>更新与迁移</summary>
 
-For development, install Git, Node.js and pnpm, then build the checkout. This path is verified on Windows with Node.js 24:
+通过 npm 包名安装的用户可在插件页使用「检查更新」。通过 GitHub 地址、压缩包或本地路径安装的用户，需要下载新版重新安装。
+
+使用旧包名 `dsh-usage-stats` 的用户，先卸载旧包，再安装 `@sligqoer/dsh-usage-stats`。更新保留本地配置与用量数据；升级记录见 [CHANGELOG.md](CHANGELOG.md)。
+
+</details>
+
+## 使用
+
+1. 在「用量」查看概览、趋势、热力图和输出速度；在「控制」调整模型明细与速度的显示。
+2. 在「配额」点击供应商或账号卡片的刷新按钮。自动查询默认关闭，可在「控制」确认提示后开启。
+3. 在「检测」选择供应商与模型、设置采样次数和输出上限，确认预算后手动开始。读取目录或历史结果不会启动检测。
+4. 在「控制」分别开启或关闭高级模型选择器、模型推理强度和模型检测，编辑自定义配额查询。
+
+## 数据与兼容
+
+本地数据位于 `DSH_HOME/storages`：
+
+| 文件或目录 | 内容 |
+| --- | --- |
+| `usage-stats-corpus.json` | 会话用量汇总。 |
+| `usage-stats-display.json` | 用量展示偏好。 |
+| `usage-stats-quota-controls.json` | 查询和模型设置、供应商配额缓存。 |
+| `usage-stats-detections.json` | 检测结果与逐次样本用量。 |
+| `usage-stats-lm-fingerprint/` | 通过校验的指纹引擎与参考库更新。 |
+| `usage-stats-supplemental.json` | 按任务和样本 ID 去重的检测用量，重启后保留。 |
+
+普通对话从 DSH 会话日志计数，检测用量按任务和样本 ID 去重后计入统计。请求诊断日志不参与 Token 汇总。更新会保留已保存的配置与历史用量。
+
+从 0.2.0 升级后，模型检测使用 LM Fingerprint，不再提供旧版行为参考、KBF 导入／导出和能力基线测试；已发生的检测用量继续保留。发布安装包不包含个人会话、账号凭据、配额缓存或检测历史。
+
+## 常见问题
+
+**支持 DSH Web 吗？**
+
+当前版本仅支持 DSH Desktop 的 desktop profile。
+
+**为什么配额卡片不显示或无法获取？**
+
+先确认供应商已配置、凭据可用、账号插件已启用且账户支持对应配额接口。普通模型 API Key 可能没有账单查询权限。
+
+**Token 总数就是账单金额吗？**
+
+不是。Token 统计来自本地会话和已上报的检测用量，账户余额与周期额度来自供应商接口。
+
+**检测排名能证明真实模型身份吗？**
+
+不能。候选排名表示与参考库的接近程度；请求模型不在参考库时，候选仅供比较。
+
+## 接口
+
+宿主服务 `dshUsageStats` 使用 `protocolVersion: 1`，提供 `readStats`、`readControls`、`updateControls`、`readProviderQuotas` 和 `readSupplementalUsage`。
+
+HTTP 接口使用 `/api/dsh-usage-stats/*`，提供统计、控制、配额查询与检测功能，仅接受本机与可信来源请求，并禁用缓存。
+
+## 开发
+
+使用 Node.js 24，并安装 `package-lock.json` 锁定的依赖：
 
 ```sh
-git clone https://github.com/Jockjrop/dsh-usage-stats.git
-cd dsh-usage-stats
 npm ci
-npm run build
-```
-
-Keep the clone in a permanent location; DSH will link to it.
-
-In **插件 → 添加插件**, enter the clone's absolute path, install it, and click **立即启用**. To link it manually instead, fully exit DSH Desktop and back up its profile's `package.json`, then run this in **PowerShell from the cloned directory**:
-
-```powershell
-$pluginDir = (Get-Location).Path.Replace('\', '/')
-$dshDataDir = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $env:USERPROFILE '.dsh' }
-$profileDir = Join-Path $dshDataDir 'profiles/desktop'
-pnpm --dir $profileDir add "link:$pluginDir"
-```
-
-Open `$profileDir/package.json` and append `"@sligqoer/dsh-usage-stats"` to its existing `dsh.profile.bundles` array. Keep the other bundle entries.
-
-DSH Desktop manages its own profile; `dsh plugin --profile desktop` is unavailable. After a manual link, start the app and open **Settings → 用量统计**.
-
-</details>
-
-<details>
-<summary>Updating or uninstalling</summary>
-
-**Migrating an older installation:** uninstall the old `dsh-usage-stats` package from the Plugins page, then install and enable `@sligqoer/dsh-usage-stats` by name. This package-name migration is needed only once; the plugin keeps its existing data directory, quota routes, and settings identifiers.
-
-**npm installation:** use Check updates on the plugin page and restart if prompted. The current update checker only handles direct npm package-name installations. GitHub URLs, archive URLs, local paths, and `link:` installations need manual updates; “Already up to date” for these sources does not confirm that no newer release exists.
-
-**Release installation:** uninstall the package from the Plugins page, install the Release URL above again, and enable it. To uninstall permanently, use the same page's uninstall action.
-
-**Source installation:** fully exit DSH Desktop, run these commands in the clone, and restart:
-
-```sh
-git pull --ff-only
-npm ci
-npm run build
-```
-
-**Manual link removal:** exit DSH Desktop, remove only the `@sligqoer/dsh-usage-stats` dependency and bundle entry from its profile, run `pnpm install` there, and restart.
-
-</details>
-
-## Usage
-
-**用量** shows how much you use and when. Hover a chart or heatmap cell for its breakdown. The overview cards retain their today/lifetime meanings when you change a historical filter.
-
-**配额** shows data returned by connected platforms. Configured balances may show **未查询** until their first query; available cards depend on credentials and account permissions.
-
-**控制** lets you change display and refresh settings:
-
-| Setting | Default |
-| --- | --- |
-| Automatic quota refresh | Off |
-| Refresh interval | 1 hour; also supports 10 minutes, 5 hours, or daily |
-| Model details | On |
-| Detect model match | Off |
-| Token output speed | On |
-| Advanced model selector | Off |
-
-Enabling automatic queries asks you to acknowledge possible query costs. The schedule continues while the settings page is closed. Opening the quota page normally reads cached results.
-
-<details>
-<summary><strong>Supported providers and credentials</strong></summary>
-
-Built-in readers cover Claude, DeepSeek, StepFun, Codex, GitHub Copilot, OpenRouter, Moonshot China/global, Kimi Coding, MiniMax China/global, Z.AI, GLM Coding, Alibaba Cloud Token Plan China, xAI, and OpenCode Go.
-
-The corresponding provider must be configured in DSH. Supported OAuth readers use existing unexpired grants; this plugin does not refresh or modify logins.
-
-| Optional reader | Host credential references |
-| --- | --- |
-| OpenRouter account credits | `OPENROUTER_MANAGEMENT_API_KEY` |
-| xAI prepaid balance | `XAI_MANAGEMENT_API_KEY`, `XAI_TEAM_ID` |
-| Alibaba Cloud Token Plan China | `ALIBABA_CLOUD_ACCESS_KEY_ID`, `ALIBABA_CLOUD_ACCESS_KEY_SECRET`; optional `ALIBABA_CLOUD_SECURITY_TOKEN` |
-
-OpenCode Go uses only its own configured DSH credential. Zen has no built-in wallet balance reader, but supports custom queries. Alibaba Cloud's international Token Plan is not queried.
-
-WorkBuddy and WorkBuddy AI require the optional `dsh-workbuddy-connect` adapter. Their quotas are cached and refreshed separately.
-
-</details>
-
-<details>
-<summary><strong>Set up a custom quota query</strong></summary>
-
-1. Open **控制 → 配额查询** and select an existing provider.
-2. Enter the query URL and response mapping.
-3. Click **测试** and check the parsed result.
-4. Confirm the query to show it in **配额**.
-
-For an endpoint returning `{ "data": { "balance": 12.34 } }`:
-
-```json
-{
-  "url": "https://api.example.com/balance",
-  "method": "GET",
-  "auth": "provider",
-  "headers": { "accept": "application/json" },
-  "response": {
-    "metrics": [
-      {
-        "label": "Account balance",
-        "kind": "amount",
-        "remaining": "data.balance",
-        "currency": "USD"
-      }
-    ]
-  }
-}
-```
-
-Replace the example URL with the provider's working endpoint. `auth: "provider"` uses its configured DSH credential; authenticated URLs must share the configured or official quota origin.
-
-Templates support GET/POST, JSON bodies, amount/window metrics, and paths such as `data.items[0].balance`. Window metrics accept percentage fields or `total` with `remaining`/`used`; `response.rows` selects an array. Use `auth: "none"` for unauthenticated endpoints.
-
-Editing invalidates the test; successful tests expire after 15 minutes. A confirmed query overrides the built-in reader for that provider. Removing it restores the built-in reader.
-
-</details>
-
-## Privacy
-
-Usage aggregation runs locally. The plugin saves counts, model identifiers, usage timestamps, explicit session titles and working directories, and at most 30 bounded model-evidence records per session. It does not keep conversation bodies, private replay blocks or credentials. Credentials are resolved on the host and are not returned to the renderer. Independent tests persist reported usage and the most recent 10 results without prompts or raw responses.
-
-The Match tab follows the current session. Metadata declarations provide weak hints only. Reading logs, references and budget previews makes no inference calls.
-
-Behavioral auditing uses [KBF](https://github.com/Ooo0ption/KBF)-compatible knowledge-boundary fingerprints, including consistent wrong answers. The package includes 28 references and 10,327 probes with dates, deployment provenance and original-file SHA-256 hashes. Some references use third-party deployments; DeepSeek V4.1 Flash uses Novita. Import KBF JSON or create a reference through a trusted configured provider for additional models. Custom calibration filters three consensus passes and performs an independent self-test on the retained set. It does not reproduce the paper's full contrast-model screening experiment.
-
-Use the reference's CP99 upper error bound and a one-sided binomial test (p < 0.05), with at least 64 valid answers and 80% coverage on both sides. Recalibration is required when the reference's noise bound exceeds 30%. Results indicate significant difference, no significant difference, or insufficient evidence. A p-value is not the probability of model authenticity. Public references use temperature zero and suppressed reasoning; unsupported models need references calibrated with matching parameters. Behavioral changes may reflect versions, prompts or deployment configuration.
-
-Completed behavioral audits show a 0–100 reference similarity score: matching answers divided by valid answers, multiplied by 100. This is answer agreement, not an authenticity probability. Cancelled, interrupted or insufficient-evidence audits remain unscored. Saved results receive scores without another test. Audit details starts collapsed and contains the parameters, validation process, statistical test and channel measurements.
-
-Sixteen seeded capability tasks cover code tracing, path reasoning, context retrieval and constraint optimization. Custom references can retain their scores for paired decline tests under matching reasoning settings. Without a capability reference, results describe this run only. TPS/TTFT remain performance measurements.
-
-Select **Preview test budget** to inspect the actual parameters, call limit, input estimate, output cap and reported-token budget, then **Start audit (uses tokens)**. Quotes expire after five minutes and are single-use. Runs are cancellable with a 60-second per-call timeout; reported-token budgets stop subsequent calls. Reasoning, unreported usage and provider retries follow channel billing, so this is not an absolute invoice cap. Tests do not use conversation content or modify the session; each call's reported usage enters the statistics, including failed or cancelled calls. Store up to 20 private references atomically in `storages/usage-stats-model-baselines.json`; save usage and the last 10 results in `storages/usage-stats-model-tests.json`. A verdict above the form explains behavior, capability decline or an inconclusive result. Host-interrupted tests remain inconclusive. After switching or deleting the original conversation, the previous result stays available and applies only to its listed model and settings.
-
-Quota tests and refreshes contact the selected platform. There is no analytics or telemetry endpoint.
-
-<details>
-<summary>Storage and request safeguards</summary>
-
-Local files live under `<DSH_HOME>/storages/`, or the current user's `.dsh/storages/` when `DSH_HOME` is unset:
-
-| File | Contents |
-| --- | --- |
-| `usage-stats-corpus.json` | Per-session usage contributions |
-| `usage-stats-controls.json` | Controls, custom templates and quota snapshots |
-| `usage-stats-model-baselines.json` | Private behavioral and capability references |
-| `usage-stats-model-tests.json` | Reported audit usage and the last ten results |
-
-These are private local files, excluded from Git along with credentials, environment files, databases, logs, backups and previews.
-
-The API checks loopback addresses, Host, Origin and cross-site requests, sends `Cache-Control: no-store`, and hides unexpected host exception details. Another process under your account can access local data.
-
-Custom queries reject authentication headers and common credential fields in templates, require the appropriate origin for provider authentication, and do not follow redirects. They have an 8-second timeout and a 1 MB response limit. WorkBuddy adapters retain quota display fields only.
-
-</details>
-
-## FAQ
-
-**Does it work in DSH Web?**
-
-This version loads only in the desktop profile and Electron main window.
-
-**Why is a quota card missing or unavailable?**
-
-Check that the provider is configured, its credential is usable, and the account supports the quota API. A model API key may not have billing permissions.
-
-**Are displayed token totals a bill?**
-
-No. Usage totals sum input, output, cache-read and cache-write tokens. Account balances come from platform APIs.
-
-**Will it change DSH's files?**
-
-It registers an external bundle. The optional model selector takes over a UI slot while enabled; disabling it restores the official selector without changing DSH source files.
-
-## Contributing
-
-Bug reports and pull requests are welcome. For a bug, include your DSH version, plugin version, steps to reproduce, and a screenshot with private account details removed.
-
-<details>
-<summary><strong>Development and local API</strong></summary>
-
-Edit module sources in `src/`. `npm run build` synchronizes modules to `lib/` and root compatibility copies and injects the renderer package identity and header version from `package.json`; package exports load `lib/`.
-
-```sh
 npm run build
 npm test
-node scripts/render-heatmap-check.mjs
-node scripts/check-heat-tip-placement.mjs
-npm run preview:heatmap
-npm pack --dry-run
+npm run check:release
 npm run release
 ```
 
-Tests use synthetic data and temporary DSH homes; no live credentials or paid calls are required. Set `DSH_THEME_CLIENT` to validate an installed theme client instead of the checked-in alias contract. The synthetic preview writes an ignored `preview-heatmap.html`.
+修改 `src/` 后运行 `npm run build` 生成 `lib/`。`npm run check:release` 检查版本、构建一致性、第三方完整性与工作区隐私文件；`npm run release` 构建安装包并在独立临时项目中验证安装与加载，输出位于 `release/`。
 
-`npm run release` builds the package, writes `sligqoer-dsh-usage-stats-<version>.tgz`, the `dsh-usage-stats.tgz` alias and `SHA256SUMS` to the ignored `release/` directory, then verifies installation in a temporary profile. Release notes include the matching version entry from [CHANGELOG.md](CHANGELOG.md).
-
-A matching `v<package.json version>` tag triggers GitHub Actions to run the tests, publish the verified archive as a public npm package through trusted publishing, and attach the same files to a GitHub Release. Trust is bound to the `release.yml` workflow in `Jockjrop/dsh-usage-stats`; no npm token is stored in the repository. `npm run publish:release` publishes the prebuilt archive and skips an existing version only when its integrity matches; different contents fail the release.
-
-Routes use the `/api/dsh-usage-stats/` prefix:
-
-| Route | Method | Purpose |
-| --- | --- | --- |
-| `stats` | GET | Usage; `days`, `tz`, `model`, optional `fresh=1` |
-| `provider-quotas` | GET | Cached quotas; `fresh=1` refreshes |
-| `workbuddy`, `workbuddy-ai` | GET | Adapter caches; support `fresh=1` |
-| `controls` | GET / POST | Read/update controls; writes require JSON |
-| `quota-providers` | GET | Configured providers and credential-free templates |
-| `quota-test` | POST | Test a template and return an expiring confirmation ID |
-| `model-match` | GET | Existing response hints and the current/previous audit result |
-| `model-test` | POST | Preview a budget, start or cancel an audit |
-| `model-baselines` | GET / POST | List, import, export or remove behavioral references |
-
-The corpus refreshes every 30 seconds. Requests wait up to 1500 ms and may return `stale: true`/`partial: true`. SQLite fingerprints require `node:sqlite`; otherwise sessions are reread. Timezone changes re-bucket stored events, with possible approximation for old hourly-only history at fractional-hour boundaries.
-
-The `platform: "web"` declaration is DSH Desktop's renderer transport; both halves still require the desktop profile and the renderer's native bridge.
-
-</details>
-
-## License
-
-[Apache-2.0](LICENSE).
+GitHub 发布流程要求标签与包版本一致（本版为 `v0.2.1`），通过检查后使用同一份安装包发布 npm 与 GitHub Release。npm 可信发布对应的工作流文件为 `.github/workflows/release.yml`。第三方资源、来源版本和许可记录于 `third_party/` 与 [NOTICE](NOTICE)，本项目使用 [Apache-2.0 许可证](LICENSE)。

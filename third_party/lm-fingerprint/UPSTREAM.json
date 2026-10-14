@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "name": "lmfpd",
+  "version": "0.0.1791719537634",
+  "revision": "2d71e10cec030ca786dcbcd14eba84edb4ecf10c",
+  "integrity": "sha512-3rOPJHGF1y/eqvWezBKQNAXU6w6f8ZONczg022yLIEcfPRfjsYQ2CkWo1g85hlEt2V3s21bubm9+MQIOJuB2vg==",
+  "builtAt": "2026-10-08T13:07:32.556925+00:00",
+  "modelCount": 57,
+  "source": "https://github.com/Ikaleio/lm-detector/tree/2d71e10cec030ca786dcbcd14eba84edb4ecf10c",
+  "upstream": {
+    "url": "https://github.com/Ikaleio/lm-detector",
+    "commit": "2d71e10cec030ca786dcbcd14eba84edb4ecf10c"
+  },
+  "compiler": "TypeScript 5.9.3; type erasure and relative module extensions only",
+  "sourceHashes": {
+    "challenge-browser.js": "65884da44d29b7d5337993609414596272010cb07cffe98b0c5546b1fe9728e4",
+    "detector-codec.ts": "4ebc548f4c03f3a150e1d395c547ca84722af60a2a115bf05a17d448dd840acb",
+    "fingerprint-core.js": "f7a88e9b0141b0088608a2c86ba9f26cf6b916860e94c3c7f14028c94c165be7",
+    "positional.ts": "a44799a179e8eb0b19b83449f0bdb6fa914a64a27c7dc2e5cd71fad31e93719a",
+    "shared-detector.ts": "06698e67671f9539caa8e294774e82bb0b68e4a3ab6d1fca455073782b84bd43"
+  },
+  "files": {
+    "core/challenge-browser.mjs": "f51e437d5a6c043da0a06d60ba91b5d5dc2527fc2792b7f52ea9d294919edf03",
+    "core/detector-codec.mjs": "31f992f52ecad4f07e97d5f333e855ffde8c568aa6e587257071662d6c659502",
+    "core/fingerprint-core.mjs": "442703dc04af39b8f33fbab2cc5afb98f3ee683fa9de114f3cdd8cfacc7578d7",
+    "core/positional.mjs": "37d380f3b876a192864522d397261c00d09b8a16590b17fead151af53ba519e0",
+    "core/shared-detector.mjs": "73d9b2c11fee43fc0c45d16ab767fe517137246529d2bb9896ed97bee798c214",
+    "data/shared_detector.bin": "498663b658e080457f81476ee1ca1665417cb11038d6a3b1d2b6e74260539bbc",
+    "data/unified_bank.json": "ec2ccdac4401e28346958b39416d1e3569d0084788720418007e88f96856aa88",
+    "LICENSE": "238afb57e498990742f84b9ce6167b4e256ac06104a9938ce953bc41c14bea51"
+  }
+}

@@ -1,0 +1,5 @@
+Brand icons identify their respective owners; no affiliation is implied.
+PNG channel artwork: Ebony-Vinyl/dsh-our-free-model, MIT; redistributed artwork only.
+SVG model artwork: lobehub/lobe-icons, MIT, https://github.com/lobehub/lobe-icons.
+Kilo, LobsterAI, Loomy and the fallback glyph are locally drawn identifiers.
+Anthropic and Gemini artwork: Simple Icons (CC0), distributed by react-icons (MIT).

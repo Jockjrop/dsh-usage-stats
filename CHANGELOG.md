@@ -1,4 +1,74 @@
-# Changelog / 更新日志
+# 更新日志 / Changelog
+
+## 0.2.1 - 2026-10-14
+
+<a id="v021-zh"></a>
+**简体中文** · [English](#v021-en)
+
+### ✨ 新增功能
+
+- 模型检测改用 LM Fingerprint，通过随机数样本与参考库生成候选排名；独立选择已配置供应商与模型，默认带入当前会话模型。
+- 默认采样 3 次，支持 1 次初筛；单次输出上限默认 4,096 Token，可设为 1,024–16,384。支持预算确认、取消、超时与用量预算控制。
+- 内置指纹引擎与参考库，每日检查上游更新；代码与数据通过完整性和接口校验后共同启用，更新失败保留已验证版本，检测任务固定引擎版本。
+- 新增逐模型推理强度设置，支持关闭、极低、低、中、高、极高、最大七档，保留已有模型属性与参数映射；推理强度和高级模型选择器分别控制。
+
+### 🐛 问题修复
+
+- 检测停止、失败或重启后保留已发生用量，按任务与样本 ID 去重后计入统计，避免恢复历史结果时重复计数。
+- 参数变更使已确认预算失效，避免继续使用与当前设置不一致的检测计划。
+- 兼容读取已有控制设置与供应商配额缓存，查询失败时保留最近成功的数据和获取时间。
+- 单张供应商卡片刷新时，仅对应按钮显示加载状态；支持不同供应商并发刷新，失败提示局限于对应卡片，较旧响应不会覆盖其他供应商的新结果。
+- 配额页仅显示当前已有供应商，已移除供应商的历史缓存不再显示；刷新、重启和迟到响应不会恢复其卡片。
+
+### 🎨 体验优化
+
+- 展示候选排名、逐次采样状态及已发生用量，保留有效的部分样本。仅 3 个有效样本显示库内置信度，低于 75% 提示不足；排名和置信度不作为模型身份或能力证明。
+- 默认开启输出速度、模型推理强度、高级模型选择器和模型检测，关闭模型明细与分布、自动获取余额；查询间隔默认 10 分钟，自定义查询默认为空，保留已保存的个人设置。
+- 查询来源在浮层中编辑，已启用的自定义查询默认折叠。控制设置统一位于控制页，插件详情页提供简洁说明。
+- 配额页优先显示 DeepSeek，再按已开启账号的顺序展示账号积分与周期额度。
+
+### ⚠️ 其他变更
+
+- 不再提供旧版行为参考、KBF 导入／导出与能力基线测试。普通对话仍从 DSH 会话日志计数，读取模型目录、预算与历史结果不会启动推理。
+- 用量展示偏好保存于 usage-stats-display.json，查询与模型设置、供应商配额缓存保存于 usage-stats-quota-controls.json；检测历史与去重用量独立持久化。
+- 提供 protocolVersion: 1 的 dshUsageStats 服务，支持读取用量、模型速度、配额和控制设置。
+- 适配 DSH Desktop 0.2.1-alpha.2 和 0.2.1-rc.2，由宿主插件管理器拒绝不匹配版本的安装与启用。
+- 发布包包含指纹引擎、参考库、品牌资源、来源校验信息与第三方许可；使用 Undici 处理更新请求，使用 TypeScript 擦除上游引擎类型。
+- 补齐私人运行数据的忽略规则与发布隐私检查，校验版本、构建产物、第三方哈希及独立项目安装；提供版本安装包、通用安装包和 SHA256SUMS。
+
+<a id="v021-en"></a>
+**English** · [简体中文](#v021-zh)
+
+### ✨ New Features
+
+- Replace model detection with LM Fingerprint candidate rankings based on random-number samples and a reference library. Select a configured provider and model independently, with the current conversation model selected initially.
+- Use three samples by default or one for screening. The default per-sample output cap is 4,096 tokens, adjustable from 1,024 to 16,384, with budget confirmation, cancellation, timeouts and reported-usage limits.
+- Bundle the fingerprint engine and reference library and check upstream daily. Activate code and data together after integrity and interface checks; failed updates retain the verified version, and running tasks keep their engine version.
+- Add per-model reasoning settings with off, minimal, low, medium, high, xhigh and max levels. Preserve model properties and parameter mappings, and control reasoning features and the advanced model selector independently.
+
+### 🐛 Bug Fixes
+
+- Retain incurred detection usage after stops, failures and restarts, deduplicate it by task and sample ID, and avoid counting restored history twice.
+- Invalidate confirmed budgets when parameters change so a detection plan cannot run with mismatched settings.
+- Read existing control settings and provider quota caches compatibly, retaining the last successful data and fetch time after query failures.
+- Keep each provider's refresh indicator and errors on its own card, allow different providers to refresh concurrently, and prevent older responses from overwriting newer results from other providers.
+- Show quotas only for providers that still exist in the current configuration. Removed providers stay hidden despite cached balances, refreshes, restarts or delayed responses.
+
+### 🎨 Improvements
+
+- Show candidate rankings, per-sample status and incurred usage, retaining valid partial samples. Display library confidence only with three valid samples and warn below 75%; rankings and confidence do not prove model identity or capability.
+- Enable output speed, reasoning features, the advanced model selector and detection by default. Model breakdowns and automatic balance queries start off, the query interval starts at ten minutes, and custom queries start empty while saved preferences remain available.
+- Edit query sources in an overlay and collapse enabled custom queries by default. Keep settings together in Controls and provide a concise plugin description.
+- Show DeepSeek first in Quotas, followed by enabled accounts in their configured order, including account credits and quota windows.
+
+### ⚠️ Other Changes
+
+- Remove the earlier behavioral references, KBF import/export and capability baseline tests. Conversation usage still comes from DSH session logs; reading catalogs, budgets or saved results never starts inference.
+- Store display preferences in usage-stats-display.json and query/model settings and provider quota caches in usage-stats-quota-controls.json. Persist detection history and deduplicated usage separately.
+- Expose the dshUsageStats host service with protocolVersion: 1 for usage, model speed, quotas and control settings.
+- Support DSH Desktop 0.2.1-alpha.2 and 0.2.1-rc.2, with the host plugin manager rejecting installation and activation on mismatched versions.
+- Ship the fingerprint engine, reference library, brand assets, source checksums and third-party licenses. Use Undici for updates and TypeScript to erase upstream engine types.
+- Exclude private runtime data and validate release privacy, versions, generated files, third-party hashes and installation in an isolated project. Provide a versioned archive, a generic archive and SHA256SUMS.
 
 ## 0.2.0 - 2026-10-05
 

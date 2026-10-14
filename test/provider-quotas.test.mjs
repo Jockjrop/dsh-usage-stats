@@ -291,13 +291,8 @@ test('unexpired DSH OAuth grants expose subscription windows without refreshing 
 })
 
 /**
- * StepFun regression guard.
- *
- * StepFun has no `/balance` route and no `data` wrapper: the documented endpoint
- * is GET https://api.stepfun.com/v1/accounts and the amount is `balance` at the
- * response ROOT. Before this was a built-in the UI prefilled the generic
- * `<baseURL>/balance` + `data.balance` guess, which produced a 404 and then (on a
- * corrected URL) an empty metric list. Both halves are pinned here.
+ * StepFun uses GET /v1/accounts with balance at the response root.
+ * The endpoint and response mapping must both follow the provider contract.
  */
 test('StepFun is a built-in with the documented /v1/accounts endpoint and root balance', () => {
   const spec = officialQuotaSpec('stepfun')

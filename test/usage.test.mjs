@@ -8,7 +8,7 @@ import {
   defaultState,
   scanSessionEvents,
   foldResponse,
-  modelTestContribution,
+  modelDetectionContribution,
   foldSessionRows,
   syncCorpus,
   persistState,
@@ -109,17 +109,17 @@ test('overview metrics aggregate days across sessions, rank recent models by cal
     { type: 'turn/start', time: turnTime, data: { turn: 1 } },
     { type: 'turn/end', time: turnTime + 50000, data: { turn: 1 } },
   ], -480)
-  const audit = modelTestContribution({ usage: () => [{ time: Date.parse('2026-10-04T01:00:00Z'), selection: { provider: 'audit', model: 'model-a' }, usage: { outputTokens: 7 }, usageReported: true, ttftMs: null, decodeMs: null }] }, -480)
+  const detection = modelDetectionContribution({ usage: () => [{ time: Date.parse('2026-10-04T01:00:00Z'), selection: { provider: 'detection', model: 'model-a' }, usage: { outputTokens: 7 }, usageReported: true, ttftMs: null, decodeMs: null }] }, -480)
   const now = Date.parse('2026-10-04T12:00:00Z')
-  const all = foldResponse(state, 0, null, -480, now, [audit]).overview
+  const all = foldResponse(state, 0, null, -480, now, [detection]).overview
   assert.equal(all.cacheHitRate, 130 / 1105) // reasoning/output are excluded
   assert.equal(all.peakDailyBilled, 1500); assert.equal(all.peakDay, '2026-10-02') // 2 sessions, same day
   assert.equal(all.longestTaskMs, 50000)
   assert.equal(all.currentStreak, 5); assert.equal(all.longestStreak, 7)
-  assert.deepEqual(all.recentModel, { model: 'Model-A', calls: 4, providers: ['audit', 'one', 'two'], days: 7 })
-  assert.deepEqual(foldResponse(state, 1, 'one/expensive', -480, now, [audit]).overview, all)
-  assert.equal(foldResponse(state, 0, null, -480, now + 86400000, [audit]).overview.currentStreak, 5) // today not used yet
-  assert.equal(foldResponse(state, 0, null, -480, now + 2 * 86400000, [audit]).overview.currentStreak, 0)
+  assert.deepEqual(all.recentModel, { model: 'Model-A', calls: 4, providers: ['detection', 'one', 'two'], days: 7 })
+  assert.deepEqual(foldResponse(state, 1, 'one/expensive', -480, now, [detection]).overview, all)
+  assert.equal(foldResponse(state, 0, null, -480, now + 86400000, [detection]).overview.currentStreak, 5) // today not used yet
+  assert.equal(foldResponse(state, 0, null, -480, now + 2 * 86400000, [detection]).overview.currentStreak, 0)
   const empty = foldResponse(defaultState(), 0, null, 0, now).overview
   assert.deepEqual([empty.cacheHitRate, empty.peakDay, empty.longestTaskMs, empty.currentStreak, empty.longestStreak, empty.recentModel], [null, null, null, 0, 0, null])
 })
@@ -329,7 +329,7 @@ test('session details filter dates, models and projects, sort totals and clamp p
   assert.equal(foldSessionRows(state, { q: 'missing' }, now).total, 0)
 })
 
-test('session metadata and minimal model evidence survive persistence and timezone changes', async () => {
+test('session metadata survives persistence and timezone changes without response model evidence', async () => {
   const home = await mkdtemp(join(tmpdir(), 'dsh-usage-details-'))
   const oldHome = process.env.DSH_HOME; process.env.DSH_HOME = home
   try {
@@ -349,11 +349,11 @@ test('session metadata and minimal model evidence survive persistence and timezo
     await persistState(state, store)
     const loaded = await loadState(store)
     assert.equal(loaded.sessions.one.title, '明确标题'); assert.equal(loaded.sessions.one.cwd, 'D:\\project')
-    assert.equal(loaded.sessions.one.evidence.records[0].responseModel, 'raw-model')
-    assert.doesNotMatch(JSON.stringify(loaded), /PRIVATE/)
+    assert.equal(loaded.sessions.one.evidence, undefined)
+    assert.doesNotMatch(JSON.stringify(loaded), /PRIVATE|raw-model|responseModel/)
     await syncCorpus({ get: () => ({ listSessions: async () => [] }) }, 0, loaded)
     assert.equal(loaded.sessions.one.title, '明确标题')
-    assert.equal(loaded.sessions.one.evidence.records[0].responseModel, 'raw-model')
+    assert.equal(loaded.sessions.one.evidence, undefined)
     assert.equal(foldSessionRows(loaded).rows[0].retained, true)
   } finally {
     if (oldHome === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = oldHome

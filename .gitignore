@@ -16,12 +16,28 @@ storages/
 sessions/
 credentials/
 auth.json
+auth.yaml
+auth.yml
+credentials.json
+credentials.yaml
+credentials.yml
+secrets.json
+secrets.yaml
+secrets.yml
+.npmrc
+.ssh/
 .credentials.yaml
 .credentials.yml
 usage-stats-corpus.json
 usage-stats-controls.json
 usage-stats-model-tests.json
 usage-stats-model-baselines.json
+usage-stats-model-access-settings.json
+usage-stats-model-access-accounts.json
+usage-stats-model-access-catalog.json
+usage-stats-model-access-quota.json
+usage-stats-model-access-requests.jsonl
+usage-stats-model-access-requests.jsonl.*
 *.sqlite
 *.sqlite-*
 *.db
@@ -41,3 +57,18 @@ coverage/
 preview-*.html
 playwright-report/
 test-results/
+
+# Local verification artifacts
+.p0-evidence/
+
+# Runtime state and test scratch files
+usage-stats-display.json
+usage-stats-supplemental.json
+usage-stats-quota-controls.json
+usage-stats-detections.json
+usage-stats-detections.json.*
+usage-stats-lm-fingerprint/
+models-hub-features.json
+models-hub-controls.json
+.tmp-*/
+.tmp-*

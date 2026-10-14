@@ -34,7 +34,9 @@ jobs:
         run: |
           npm run build
           npm test
-          git diff --exit-code -- lib fingerprints index.js client.js provider-quotas.js quota-controls.js model-match.js model-fingerprints.js model-capabilities.js model-test-history.js
+          npm run check:release -- --tag "$GITHUB_REF_NAME"
+          git diff --exit-code -- lib
+          npm audit --omit=dev
       - name: Package and verify a consumer installation
         run: npm run release
       - name: Publish the verified package to npm
@@ -44,11 +46,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          version="$(node -p "require('./package.json').version")"
+          release_assets=("release/sligqoer-dsh-usage-stats-${version}.tgz" "release/dsh-usage-stats.tgz" "release/SHA256SUMS")
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             existing_dir="$RUNNER_TEMP/published-release"
             mkdir -p "$existing_dir"
             gh release download "$GITHUB_REF_NAME" --dir "$existing_dir" --pattern '*.tgz' --pattern SHA256SUMS
-            for asset in release/*.tgz release/SHA256SUMS; do
+            for asset in "${release_assets[@]}"; do
               cmp "$asset" "$existing_dir/$(basename "$asset")"
             done
             echo 'Existing Release assets match; leaving them unchanged.'
@@ -57,7 +61,7 @@ jobs:
             if [[ "$GITHUB_REF_NAME" == *-* ]]; then
               release_args+=(--prerelease)
             fi
-            gh release create "$GITHUB_REF_NAME" release/*.tgz release/SHA256SUMS \
+            gh release create "$GITHUB_REF_NAME" "${release_assets[@]}" \
               --verify-tag --title "$GITHUB_REF_NAME" \
               --notes-file release/RELEASE_NOTES.txt "${release_args[@]}"
           fi
