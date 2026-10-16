@@ -74,7 +74,7 @@ Detection compares random-number samples with a reference library. Rankings and 
 
 ## Installation
 
-Plugin version **0.2.1** requires **DSH Desktop `0.2.1-alpha.2` or `0.2.1-rc.2`**. The host plugin manager rejects installation or activation on a mismatched runtime.
+Plugin version **0.2.2** requires **DSH Desktop `0.2.1-alpha.2` or `0.2.0-rc.2`**. The host plugin manager rejects installation or activation on a mismatched runtime.
 
 **Recommended: install the [npm package `@sligqoer/dsh-usage-stats`](https://www.npmjs.com/package/@sligqoer/dsh-usage-stats) through DSH Desktop.** It includes prebuilt modules, needs no Git checkout or local build, and supports Check updates when installed by package name.
 

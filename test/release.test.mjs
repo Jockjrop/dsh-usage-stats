@@ -71,7 +71,7 @@ test('release notes keep Chinese first and English changes without installation 
   const rendered = renderReleaseNotes(notes)
   assert.ok(rendered.startsWith("## 本次更新 / What's changed\n"))
   assert.ok(!rendered.includes('## ' + pkg.version + ' - '))
-  assert.ok(rendered.indexOf('### ✨ 新增功能') < rendered.indexOf('### ✨ New Features'))
+  assert.match(rendered, /\*\*简体中文\*\*[\s\S]*\*\*English\*\*/)
   assert.doesNotMatch(rendered, /^## 安装|Optional prebuilt archive|Plugins → Add plugin|可选预构建安装包/m)
   for (const host of pkg.peerDependencies['@deepseek-ai/dsh'].split(' || ')) assert.ok(rendered.includes(host))
 })

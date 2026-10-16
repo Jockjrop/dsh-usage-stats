@@ -1,5 +1,23 @@
 # 更新日志 / Changelog
 
+## 0.2.2 - 2026-10-16
+
+<a id="v022-zh"></a>
+**简体中文** · [English](#v022-en)
+
+### 🐛 问题修复
+
+- 修正 DSH Desktop 兼容版本声明为 0.2.0-rc.2，避免该版本被宿主插件管理器误拒绝安装或启用。
+- 保留 0.2.1-alpha.2 支持，并同步安装说明与中英日插件描述。
+
+<a id="v022-en"></a>
+**English** · [简体中文](#v022-zh)
+
+### 🐛 Bug Fixes
+
+- Correct the DSH Desktop compatibility declaration to 0.2.0-rc.2 so the host plugin manager accepts installation and activation on that version.
+- Retain support for 0.2.1-alpha.2 and update installation instructions and Chinese, English and Japanese plugin descriptions.
+
 ## 0.2.1 - 2026-10-14
 
 <a id="v021-zh"></a>

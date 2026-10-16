@@ -74,7 +74,7 @@
 
 ## 安装
 
-当前插件版本为 **0.2.1**，适配 **DSH Desktop `0.2.1-alpha.2` 和 `0.2.1-rc.2`**。版本不匹配时，宿主插件管理器会拒绝安装或启用。
+当前插件版本为 **0.2.2**，适配 **DSH Desktop `0.2.1-alpha.2` 和 `0.2.0-rc.2`**。版本不匹配时，宿主插件管理器会拒绝安装或启用。
 
 **推荐通过 DSH Desktop 安装 [npm 包 `@sligqoer/dsh-usage-stats`](https://www.npmjs.com/package/@sligqoer/dsh-usage-stats)。** 已包含预构建模块，无需克隆仓库或在本机构建；通过包名安装后可使用插件页的「检查更新」。
 
