@@ -4773,7 +4773,14 @@ function registerLocale(ctx) {
 }
 
 function apply(ctx) {
-  if (!window.dshDesktop || typeof window.dshDesktop.deviceInfo !== 'function') return
+  // DSH Desktop marks its renderer through the preload bridge dshDesktop.
+  // 0.2.0-rc.2 exposes only { protocolVersion: 1 }; older builds carried a
+  // deviceInfo() function. Accept either marker so the settings section
+  // registers on both, while plain browser tabs (no bridge) still bail out.
+  if (typeof window === 'undefined' || !window.dshDesktop) return
+  var hasDeviceInfo = typeof window.dshDesktop.deviceInfo === 'function'
+  var hasProtocolVersion = typeof window.dshDesktop.protocolVersion === 'number'
+  if (!hasDeviceInfo && !hasProtocolVersion) return
   var slots = ctx.get('slots'); if (!slots) return
   registerLocale(ctx)
   var api = new UsageApi()

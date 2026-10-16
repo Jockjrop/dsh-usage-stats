@@ -1,5 +1,21 @@
 # 更新日志 / Changelog
 
+## 0.2.3 - 2026-10-16
+
+<a id="v023-zh"></a>
+**简体中文** · [English](#v023-en)
+
+### 🐛 问题修复
+
+- 适配 DSH Desktop 0.2.0-rc.2 的桌面渲染器标记：preload 桥 `dshDesktop` 只暴露 `protocolVersion`，不再提供 `deviceInfo` 函数。「用量统计」设置页此前因此不注册，现在新旧两种标记都接受，纯浏览器访问仍保持不挂载。`0.2.1-alpha.2` 与 `0.2.0-rc.2` 两个宿主版本均受支持。
+
+<a id="v023-en"></a>
+**English** · [简体中文](#v023-zh)
+
+### 🐛 Bug Fixes
+
+- Adapt to the DSH Desktop 0.2.0-rc.2 renderer marker: the `dshDesktop` preload bridge exposes only `protocolVersion` and no longer carries a `deviceInfo` function. The usage statistics settings page failed to register because of this; both markers are now accepted, while plain browser tabs still never mount. Both `0.2.1-alpha.2` and `0.2.0-rc.2` hosts remain supported.
+
 ## 0.2.2 - 2026-10-16
 
 <a id="v022-zh"></a>

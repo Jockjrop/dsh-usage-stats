@@ -35,7 +35,7 @@ test('non-desktop hosts never register routes, start timers or access usage and 
 
 test('browser clients never mount settings, restore a cached model seat or request host data', () => {
   const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
-  for (const bridge of [undefined, { protocolVersion: 1 }, { deviceInfo: 'unavailable' }]) {
+  for (const bridge of [undefined, { deviceInfo: 'unavailable' }, { protocolVersion: 'broken' }]) {
     let plugin
     const context = {
       window: {
