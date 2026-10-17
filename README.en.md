@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="#installation"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH Desktop"></a>
-  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.1-64748b?style=flat-square" alt="Plugin version 0.2.1"></a>
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.4-64748b?style=flat-square" alt="Plugin version 0.2.4"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 license"></a>
 </p>
 
@@ -60,13 +60,13 @@
 | --- | --- |
 | **Usage** | View today's and lifetime tokens, active days, hourly calls, daily/weekly heatmaps, trends, model breakdowns and output speed. |
 | **Quotas** | Check provider balances, account credits and quota windows, with manual or scheduled refresh and custom queries. |
-| **Detection** | Select a provider and model independently, confirm a budget, then run LM Fingerprint sampling and review candidate rankings, sample status and history. |
+| **Detection** | Select a provider and model independently, confirm a budget, then run LM Fingerprint sampling and review request progress, sample status, candidate rankings and saved results. |
 | **Controls** | Adjust display preferences, quota query settings, the advanced model selector and per-model reasoning levels. |
 
 - **Follow usage trends:** browse daily/weekly heatmaps, switch between 7/30-day trends and compare providers and models.
 - **Compare output speed:** rank models by TPS and show average time to first token (TTFT); samples without valid timing are excluded from speed rankings.
 - **Refresh quotas on demand:** use DSH credentials for configured providers. Account quotas require the corresponding plugin or host service. Automatic refresh is off by default.
-- **Run independent detection:** use three samples by default or one for screening. Confirm the budget before manually starting; cancellation, timeouts and usage budgets are supported.
+- **Run independent detection:** follow model selection, budget confirmation and results. Use three samples by default or one for screening, with progress, cancellation, timeouts and usage budgets.
 - **Adjust model settings:** control the advanced model selector and reasoning features independently while retaining model properties, parameter mappings and saved preferences.
 - **Follow the application language:** Chinese, English and Japanese UI text follows DSH's selected language; custom names and quota labels remain unchanged.
 
@@ -74,7 +74,7 @@ Detection compares random-number samples with a reference library. Rankings and 
 
 ## Installation
 
-Plugin version **0.2.3** requires **DSH Desktop `0.2.1-alpha.2` or `0.2.0-rc.2`**. The host plugin manager rejects installation or activation on a mismatched runtime.
+Plugin version **0.2.4** supports **DSH Desktop `0.2.1-rc.2`** and retains compatibility with `0.2.1-rc.1`, `0.2.1-alpha.2`, `0.2.0-rc.2` and `0.2.0-rc.1`. The host plugin manager rejects installation or activation on a mismatched runtime.
 
 **Recommended: install the [npm package `@sligqoer/dsh-usage-stats`](https://www.npmjs.com/package/@sligqoer/dsh-usage-stats) through DSH Desktop.** It includes prebuilt modules, needs no Git checkout or local build, and supports Check updates when installed by package name.
 
@@ -100,16 +100,16 @@ Click **Enable now**, then open **Settings → Usage Stats**. Fully exit and reo
 Enter this in the same installer for this release:
 
 ```text
-@sligqoer/dsh-usage-stats@0.2.1
+@sligqoer/dsh-usage-stats@0.2.4
 ```
 
 Alternatively, download a `.tgz` and `SHA256SUMS` from the [GitHub release page](https://github.com/Jockjrop/dsh-usage-stats/releases/latest), verify the hash and enter the archive's local absolute path. Do not extract it before installation.
 
 ```powershell
-Get-FileHash ./sligqoer-dsh-usage-stats-0.2.1.tgz -Algorithm SHA256
+Get-FileHash ./sligqoer-dsh-usage-stats-0.2.4.tgz -Algorithm SHA256
 ```
 
-Assets include `sligqoer-dsh-usage-stats-0.2.1.tgz`, the equivalent `dsh-usage-stats.tgz`, and `SHA256SUMS`. Both archives contain identical modules.
+Assets include `sligqoer-dsh-usage-stats-0.2.4.tgz`, the equivalent `dsh-usage-stats.tgz`, and `SHA256SUMS`. Both archives contain identical modules.
 
 </details>
 
@@ -126,8 +126,10 @@ If you use the old `dsh-usage-stats` package name, uninstall it once and install
 
 1. Open Usage for the overview, trends, heatmaps and output speed. Use Controls to adjust model breakdown and speed visibility.
 2. Refresh provider or account cards in Quotas. Automatic refresh is off by default; enable it in Controls after confirming the notice.
-3. Select a provider and model in Detection, set sample counts and output limits, confirm a budget, then start manually. Reading catalogs or saved results never starts detection.
+3. Select a provider and model in Detection, set sample counts and output limits, click **Preview detection budget**, then confirm with **Start detection (uses tokens)**. Reading catalogs or saved results never starts detection.
 4. Use Controls to toggle the advanced model selector, reasoning features and detection independently, or edit custom quota queries.
+
+Detection guides you through choosing a model, confirming the budget and reviewing results. Changing the model or parameters requires a new budget preview. While a test runs, you can follow request progress and sample status or cancel it. Saved results retain their original model and parameters; detection details and engine information expand on demand.
 
 ## Data and compatibility
 
@@ -184,4 +186,4 @@ npm run release
 
 Edit `src/` and run `npm run build` to generate `lib/`. `npm run check:release` checks versions, generated files, third-party integrity and private workspace files. `npm run release` builds the package and verifies installation and loading in an isolated temporary project; artifacts go to `release/`.
 
-The GitHub workflow requires the tag to match the package version (`v0.2.1` for this release) and publishes the same verified archive to npm and GitHub Releases. The npm trusted publisher workflow file is `.github/workflows/release.yml`. Third-party assets, source revisions and licenses are recorded in `third_party/` and [NOTICE](NOTICE). This project uses the [Apache-2.0 license](LICENSE).
+The GitHub workflow requires the tag to match the package version (`v0.2.4` for this release) and publishes the same verified archive to npm and GitHub Releases. The npm trusted publisher workflow file is `.github/workflows/release.yml`. Third-party assets, source revisions and licenses are recorded in `third_party/` and [NOTICE](NOTICE). This project uses the [Apache-2.0 license](LICENSE).

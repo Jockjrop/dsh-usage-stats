@@ -53,3 +53,30 @@ test('browser clients never mount settings, restore a cached model seat or reque
     })
   }
 })
+
+test('desktop clients register settings with either supported preload marker', () => {
+  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  for (const bridge of [{ protocolVersion: 1 }, { deviceInfo() {} }]) {
+    let plugin
+    const registrations = []
+    const slots = {
+      inject(_name, callback) { return callback() },
+      register(options) { registrations.push(options.id); return () => {} },
+    }
+    vm.runInNewContext(source, {
+      window: {
+        dshDesktop: bridge,
+        localStorage: { getItem: () => null },
+        __ModuleLoader__: { load(definition) { plugin = definition.factory(() => ({})) } },
+      },
+      document: { getElementById: () => null, createElement: () => ({}), head: { appendChild() {} } },
+      URLSearchParams,
+      fetch() { assert.fail('registering the desktop settings section must not issue requests') },
+    })
+    plugin.apply({
+      get: name => name === 'slots' ? slots : undefined,
+      effect(callback, label) { return label === 'dsh-usage-stats: settings section' ? callback() : () => {} },
+    })
+    assert.deepEqual(registrations, ['usage-stats'])
+  }
+})

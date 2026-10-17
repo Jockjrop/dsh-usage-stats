@@ -1,5 +1,33 @@
 # 更新日志 / Changelog
 
+## 0.2.4 - 2026-10-17
+
+<a id="v024-zh"></a>
+**简体中文** · [English](#v024-en)
+
+### 🎨 体验优化
+
+- 检测页按「选择检测模型 → 确认预算 → 检测结果」显示当前步骤，突出预算与开始操作，增加请求进度、取消入口和空状态。
+- 调整字体、间距和状态颜色，适配深浅主题与窄窗口；预算参数、检测详情和指纹引擎信息默认折叠，更新异常仍直接显示。
+
+### 🐛 问题修复
+
+- 适配 DSH Desktop 0.2.1-rc.2，并兼容 0.2.1-rc.1、0.2.1-alpha.2、0.2.0-rc.2 和 0.2.0-rc.1，保留已有桌面渲染器标记兼容。
+- 更换模型或参数后重新确认预算，历史结果保留原检测条件；检测运行中不再提前显示无法判定的说明，精简重复提示。
+
+<a id="v024-en"></a>
+**English** · [简体中文](#v024-zh)
+
+### 🎨 Improvements
+
+- Guide detection through model selection, budget confirmation and results, with clearer primary actions, request progress, cancellation and empty states.
+- Refine typography, spacing and status colors for light and dark themes and narrow windows. Collapse budget parameters, technical details and engine information by default while keeping update warnings visible.
+
+### 🐛 Bug Fixes
+
+- Support DSH Desktop 0.2.1-rc.2 alongside 0.2.1-rc.1, 0.2.1-alpha.2, 0.2.0-rc.2 and 0.2.0-rc.1, retaining both desktop renderer markers.
+- Require a new budget after model or parameter changes and keep saved results tied to their original settings. Avoid premature inconclusive explanations while detection runs and remove repeated notices.
+
 ## 0.2.3 - 2026-10-16
 
 <a id="v023-zh"></a>

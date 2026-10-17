@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="#安装"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH 桌面端"></a>
-  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.1-64748b?style=flat-square" alt="插件版本 0.2.1"></a>
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.4-64748b?style=flat-square" alt="插件版本 0.2.4"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 许可"></a>
 </p>
 
@@ -60,13 +60,13 @@
 | --- | --- |
 | **用量** | 查看今日与累计 Token、使用天数、小时调用次数、每日／每周热力图、趋势、模型明细与输出速度。 |
 | **配额** | 集中查看供应商余额、账号积分与周期配额，支持手动或定时刷新及自定义查询。 |
-| **检测** | 独立选择供应商和模型，确认预算后运行 LM Fingerprint 检测，查看候选排名、采样状态与历史记录。 |
+| **检测** | 独立选择供应商和模型，确认预算后运行 LM Fingerprint 检测，查看请求进度、采样状态、候选排名与历史结果。 |
 | **控制** | 调整展示偏好、配额查询设置、高级模型选择器与逐模型推理强度。 |
 
 - **看清使用趋势**：按日／周浏览热力图，切换 7／30 天趋势，按供应商与模型查看用量。
 - **比较输出速度**：按 TPS 排序，显示平均首 Token 耗时（TTFT）；缺少有效时间记录的样本不参与速度排名。
 - **按需刷新配额**：通过 DSH 凭据服务查询已配置供应商，账号配额需要对应的账号插件或宿主服务。自动查询默认关闭。
-- **独立运行检测**：默认采样 3 次，也可选择 1 次初筛；先确认预算，再手动开始，支持取消、超时和用量预算控制。
+- **独立运行检测**：按步骤选择模型、确认预算并查看结果；默认采样 3 次，也可选择 1 次初筛，支持进度查看、取消、超时和用量预算控制。
 - **调整模型设置**：分别控制高级模型选择器与模型推理强度，保留已有的模型属性、参数映射和个人设置。
 - **跟随应用语言**：支持中文、英语和日语，随 DSH 所选语言切换；用户自定义名称与配额标签保持原样。
 
@@ -74,7 +74,7 @@
 
 ## 安装
 
-当前插件版本为 **0.2.3**，适配 **DSH Desktop `0.2.1-alpha.2` 和 `0.2.0-rc.2`**。版本不匹配时，宿主插件管理器会拒绝安装或启用。
+当前插件版本为 **0.2.4**，适配 **DSH Desktop `0.2.1-rc.2`**，并保留 `0.2.1-rc.1`、`0.2.1-alpha.2`、`0.2.0-rc.2` 和 `0.2.0-rc.1` 支持。版本不匹配时，宿主插件管理器会拒绝安装或启用。
 
 **推荐通过 DSH Desktop 安装 [npm 包 `@sligqoer/dsh-usage-stats`](https://www.npmjs.com/package/@sligqoer/dsh-usage-stats)。** 已包含预构建模块，无需克隆仓库或在本机构建；通过包名安装后可使用插件页的「检查更新」。
 
@@ -100,16 +100,16 @@
 安装本次版本时，在同一入口填入：
 
 ```text
-@sligqoer/dsh-usage-stats@0.2.1
+@sligqoer/dsh-usage-stats@0.2.4
 ```
 
 也可从 [GitHub 发布页](https://github.com/Jockjrop/dsh-usage-stats/releases/latest)下载 `.tgz` 安装包和 `SHA256SUMS`，校验后填入压缩包的本地绝对路径，无需解压。
 
 ```powershell
-Get-FileHash ./sligqoer-dsh-usage-stats-0.2.1.tgz -Algorithm SHA256
+Get-FileHash ./sligqoer-dsh-usage-stats-0.2.4.tgz -Algorithm SHA256
 ```
 
-发布附件包含版本安装包 `sligqoer-dsh-usage-stats-0.2.1.tgz`、通用安装包 `dsh-usage-stats.tgz` 和校验文件 `SHA256SUMS`；两个安装包内容一致。
+发布附件包含版本安装包 `sligqoer-dsh-usage-stats-0.2.4.tgz`、通用安装包 `dsh-usage-stats.tgz` 和校验文件 `SHA256SUMS`；两个安装包内容一致。
 
 </details>
 
@@ -126,8 +126,10 @@ Get-FileHash ./sligqoer-dsh-usage-stats-0.2.1.tgz -Algorithm SHA256
 
 1. 在「用量」查看概览、趋势、热力图和输出速度；在「控制」调整模型明细与速度的显示。
 2. 在「配额」点击供应商或账号卡片的刷新按钮。自动查询默认关闭，可在「控制」确认提示后开启。
-3. 在「检测」选择供应商与模型、设置采样次数和输出上限，确认预算后手动开始。读取目录或历史结果不会启动检测。
+3. 在「检测」选择供应商与模型，设置采样次数和输出上限，点击「查看检测预算」，确认后点击「开始检测（会消耗 Token）」。读取目录或历史结果不会启动检测。
 4. 在「控制」分别开启或关闭高级模型选择器、模型推理强度和模型检测，编辑自定义配额查询。
+
+检测页按「选择检测模型 → 确认预算 → 检测结果」提示当前步骤。更改模型或参数后，需要重新查看预算；检测中可查看请求进度、逐次采样状态并取消。历史结果保留原模型与参数，检测详情和指纹引擎信息可按需展开。
 
 ## 数据与兼容
 
@@ -184,4 +186,4 @@ npm run release
 
 修改 `src/` 后运行 `npm run build` 生成 `lib/`。`npm run check:release` 检查版本、构建一致性、第三方完整性与工作区隐私文件；`npm run release` 构建安装包并在独立临时项目中验证安装与加载，输出位于 `release/`。
 
-GitHub 发布流程要求标签与包版本一致（本版为 `v0.2.1`），通过检查后使用同一份安装包发布 npm 与 GitHub Release。npm 可信发布对应的工作流文件为 `.github/workflows/release.yml`。第三方资源、来源版本和许可记录于 `third_party/` 与 [NOTICE](NOTICE)，本项目使用 [Apache-2.0 许可证](LICENSE)。
+GitHub 发布流程要求标签与包版本一致（本版为 `v0.2.4`），通过检查后使用同一份安装包发布 npm 与 GitHub Release。npm 可信发布对应的工作流文件为 `.github/workflows/release.yml`。第三方资源、来源版本和许可记录于 `third_party/` 与 [NOTICE](NOTICE)，本项目使用 [Apache-2.0 许可证](LICENSE)。

@@ -1,7 +1,7 @@
 {
   "name": "@sligqoer/dsh-usage-stats",
   "description": "DSH Desktop 的用量统计、供应商配额、模型检测与控制插件。",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "repository": {
     "type": "git",
@@ -54,7 +54,7 @@
   "license": "Apache-2.0",
   "icon": "screenshots/icon.svg",
   "peerDependencies": {
-    "@deepseek-ai/dsh": "0.2.1-alpha.2 || 0.2.0-rc.2"
+    "@deepseek-ai/dsh": "0.2.1-rc.2 || 0.2.1-rc.1 || 0.2.1-alpha.2 || 0.2.0-rc.2 || 0.2.0-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh": {
