@@ -66,6 +66,7 @@
 - **Follow usage trends:** browse daily/weekly heatmaps, switch between 7/30-day trends and compare providers and models.
 - **Compare output speed:** rank models by TPS and show average time to first token (TTFT); samples without valid timing are excluded from speed rankings.
 - **Refresh quotas on demand:** use DSH credentials for configured providers. Account quotas require the corresponding plugin or host service. Automatic refresh is off by default.
+- **Consistent number units:** large values use `k` / `M` / `B` across Chinese, English and Japanese.
 - **Run independent detection:** follow model selection, budget confirmation and results. Use three samples by default or one for screening, with progress, cancellation, timeouts and usage budgets.
 - **Adjust model settings:** control the advanced model selector and reasoning features independently while retaining model properties, parameter mappings and saved preferences.
 - **Follow the application language:** Chinese, English and Japanese UI text follows DSH's selected language; custom names and quota labels remain unchanged.
@@ -144,9 +145,9 @@ Local data is stored under `DSH_HOME/storages`:
 | `usage-stats-lm-fingerprint/` | Verified engine and reference updates. |
 | `usage-stats-supplemental.json` | Detection usage deduplicated by task and sample ID and retained across restarts. |
 
-Conversation tokens come from DSH session logs. Detection usage is deduplicated by task and sample ID before aggregation. Request diagnostics are excluded from token totals. Updates retain saved configuration and usage history.
+Conversation tokens come from DSH session logs. Detection usage is deduplicated by task and sample ID before aggregation. Request diagnostics are excluded from token totals. Updates retain saved configuration and usage history. On platforms that support it, these files are written owner-only.
 
-After upgrading from 0.2.0, detection uses LM Fingerprint. The earlier behavioral references, KBF import/export and capability baseline tests are no longer provided; previously incurred detection usage remains available. Release packages exclude personal sessions, account credentials, quota caches and detection history.
+After upgrading from 0.2.0, detection uses LM Fingerprint. The earlier behavioral references, KBF import/export and capability baseline tests are no longer provided; previously incurred detection usage remains available. Release packages exclude personal sessions, account credentials, quota caches and detection history; local caches are written with owner-only permissions.
 
 ## FAQ
 
@@ -185,6 +186,6 @@ npm run check:release
 npm run release
 ```
 
-Edit `src/` and run `npm run build` to generate `lib/`. `npm run lint` checks syntax, JSON documents and the three-language table; `npm run check:release` checks versions, generated files, third-party integrity and private workspace files. `npm run release` builds the package and verifies installation and loading in an isolated temporary project; artifacts go to `release/`.
+Edit `src/` and run `npm run build` to generate `lib/`. `src/client.js` is the renderer template; the build inlines `client-messages.js`, `client-styles.js`, `client-format.js` and the other modules at their markers, so the shipped artifact is still a single `lib/client.js`. `npm run lint` checks syntax, JSON documents and the three-language table; `npm run check:release` checks versions, generated files, third-party integrity and private workspace files. `npm run release` builds the package and verifies installation and loading in an isolated temporary project; artifacts go to `release/`.
 
 The GitHub workflow requires the tag to match the package version (`v0.2.5` for this release) and publishes the same verified archive to npm and GitHub Releases. The npm trusted publisher workflow file is `.github/workflows/release.yml`. Third-party assets, source revisions and licenses are recorded in `third_party/` and [NOTICE](NOTICE). This project uses the [Apache-2.0 license](LICENSE).

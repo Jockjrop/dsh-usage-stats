@@ -2,9 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
-const client = fs.readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+const messages = fs.readFileSync(new URL('../src/client-messages.js', import.meta.url), 'utf8')
 const keys = new Set()
-for (const match of client.slice(0, client.indexOf('function t(')).matchAll(/['"]([^'"]+)['"]\s*:\s*\[/g)) keys.add(match[1])
+for (const match of messages.matchAll(/['"]([^'"]+)['"]\s*:\s*\[/g)) keys.add(match[1])
 
 // Host-side validation and detection messages that reach the renderer through
 // an API error body. Without a matching key, t() returns the Chinese source

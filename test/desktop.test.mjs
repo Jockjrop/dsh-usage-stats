@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
+import { renderClient } from '../scripts/build.mjs'
 import { apply, inject } from '../src/index.js'
 
 test('the bundle enables both plugin halves only in the desktop profile', () => {
@@ -34,7 +35,7 @@ test('non-desktop hosts never register routes, start timers or access usage and 
 })
 
 test('browser clients never mount settings, restore a cached model seat or request host data', () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
   for (const bridge of [undefined, { deviceInfo: 'unavailable' }, { protocolVersion: 'broken' }]) {
     let plugin
     const context = {
@@ -55,7 +56,7 @@ test('browser clients never mount settings, restore a cached model seat or reque
 })
 
 test('desktop clients register settings with either supported preload marker', () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
   for (const bridge of [{ protocolVersion: 1 }, { deviceInfo() {} }]) {
     let plugin
     const registrations = []

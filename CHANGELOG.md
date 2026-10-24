@@ -5,6 +5,12 @@
 <a id="v025-zh"></a>
 **简体中文** · [English](#v025-en)
 
+### ✨ 新增与改进
+
+- 用量数值统一使用 `k` / `M` / `B` 单位，中英日界面显示一致，不再使用「亿 / 億」。
+- 渲染器翻译表、样式表与格式化函数拆分为 `src/client-messages.js`、`src/client-styles.js`、`src/client-format.js`，构建时内联，发布产物仍是单个 `lib/client.js`。
+- 配额指标的模型/席位前缀与 `本月密钥额度`、`席位 积分剩余` 等动态文案纳入中英日翻译。
+
 ### 🐛 问题修复
 
 - 适配 DSH Desktop 0.2.1-rc.3，兼容范围改为 `>=0.2.1-rc.1 <=0.2.1-rc.3`（含 0.2.1-rc.1、0.2.1-rc.2、0.2.1-rc.3），不再列入 0.2.1-alpha.2 与 0.2.0 系列。
@@ -28,6 +34,12 @@
 
 <a id="v025-en"></a>
 **English** · [简体中文](#v025-zh)
+
+### ✨ Improvements
+
+- Format usage numbers with `k` / `M` / `B` units in Chinese, English and Japanese alike, replacing `亿 / 億`.
+- Split the renderer translation table, stylesheets and formatters into `src/client-messages.js`, `src/client-styles.js` and `src/client-format.js`; the build inlines them, so the shipped artifact is still a single `lib/client.js`.
+- Translate quota-label model/seat prefixes and dynamic labels such as `本月密钥额度` and `席位 积分剩余`.
 
 ### 🐛 Bug Fixes
 

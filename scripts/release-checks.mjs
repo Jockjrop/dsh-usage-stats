@@ -7,7 +7,7 @@ import { verifyEngine } from '../src/lm-fingerprint-engine.js'
 
 export const archiveName = pkg => `${pkg.name.replace(/^@/, '').replace('/', '-')}-${pkg.version}.tgz`
 export const archiveAlias = 'dsh-usage-stats.tgz'
-const templates = new Set(['client.js', 'reasoning-settings.js', 'account-quotas-client.js', 'quota-brand-icons.js'])
+const templates = new Set(['client.js', 'client-messages.js', 'client-styles.js', 'client-format.js', 'reasoning-settings.js', 'account-quotas-client.js', 'quota-brand-icons.js'])
 const packageFiles = new Set(['package.json', 'cordis.patch.yml', 'README.md', 'README.en.md', 'CHANGELOG.md', 'LICENSE', 'NOTICE', 'screenshots/icon.svg'])
 const privateDirectories = /(?:^|\/)(?:storages|sessions|credentials|\.dsh|\.workbuddy|\.codex|\.ssh|\.local-archive|\.p0-evidence|usage-stats-lm-fingerprint)(?:\/|$)/i
 const privateNames = /^(?:\.env(?:\..+)?|\.npmrc|\.?auth\.(?:json|ya?ml)|\.?credentials?\.(?:json|ya?ml)|secrets?\.(?:json|ya?ml)|tokens?\.json|id_rsa|id_ed25519|(?:usage-stats|models-hub)-.+\.json(?:l)?(?:\..+)?)$/i

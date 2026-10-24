@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const templates = new Set(['client.js', 'reasoning-settings.js', 'account-quotas-client.js', 'quota-brand-icons.js'])
+const templates = new Set(['client.js', 'client-messages.js', 'client-styles.js', 'client-format.js', 'reasoning-settings.js', 'account-quotas-client.js', 'quota-brand-icons.js'])
 
 export function renderClient(directory = root) {
   const pkg = JSON.parse(fs.readFileSync(path.join(directory, 'package.json'), 'utf8'))
@@ -19,6 +19,9 @@ export function renderClient(directory = root) {
     module = module.replace('export function ' + factory, 'function ' + factory).replace(/^export \{[^}]*\}\s*$/m, '')
     client = client.replace('// ' + marker, () => module)
   }
+  inline('__DSH_USAGE_STATS_MESSAGES__', 'client-messages.js', 'createClientMessages')
+  inline('__DSH_USAGE_STATS_STYLES__', 'client-styles.js', 'createClientStyles')
+  inline('__DSH_USAGE_STATS_FORMAT__', 'client-format.js', 'createClientFormat')
   inline('__DSH_USAGE_STATS_REASONING_SETTINGS__', 'reasoning-settings.js', 'createReasoningSettings')
   inline('__DSH_ACCOUNT_QUOTAS_CLIENT__', 'account-quotas-client.js', 'createAccountQuotasClient', 'quota-brand-icons.js')
   if (/^\s*\/\/ __DSH_[A-Z_]+__\s*$/m.test(client)) throw new Error('Unresolved client bundle marker')

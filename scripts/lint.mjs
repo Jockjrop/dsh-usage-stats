@@ -39,8 +39,7 @@ for (const file of ['package.json', 'package-lock.json', ...['zh', 'en', 'ja'].m
   }
 }
 
-const client = fs.readFileSync(path.join(root, 'src/client.js'), 'utf8')
-const table = client.slice(0, client.indexOf('function t('))
+const table = fs.readFileSync(path.join(root, 'src/client-messages.js'), 'utf8')
 const entries = new Map()
 for (const line of table.split('\n')) {
   const match = /^\s*(['"])(.+?)\1\s*:\s*\[(.*)\]\s*,?\s*$/.exec(line)

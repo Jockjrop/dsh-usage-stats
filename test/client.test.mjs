@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import vm from 'node:vm'
+import { renderClient } from '../scripts/build.mjs'
 
 const desktopBridge = { protocolVersion: 1, deviceInfo() {} }
 const fallbackTranslation = (text, params) => text.replace(/\{(\w+)\}/g, (match, key) => params && key in params ? String(params[key]) : match)
@@ -135,7 +136,7 @@ function stripJsComments(text) {
 }
 
 test('every theme alias used by the client exists in the DSH theme', () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
   const code = stripJsComments(source)
   const used = [...new Set(code.match(/--dsw-alias-[a-zA-Z0-9-]+/g) || [])]
   assert.ok(used.length > 0, 'client must style through theme aliases')
@@ -156,7 +157,7 @@ test('every theme alias used by the client exists in the DSH theme', () => {
 })
 
 test('switch on and off states stay distinguishable in either theme', () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
   // Match a rule whose selector list contains the given selector, then return its body.
   const rule = (selector) => {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -195,7 +196,7 @@ test('switch on and off states stay distinguishable in either theme', () => {
 })
 
 test('the page title and tabs stay pinned while the panels scroll', () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
   const rule = (selector) => {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const m = source.match(new RegExp(escaped + '[^{}]*\\{([^}]*)\\}'))
@@ -423,7 +424,7 @@ test('usage page keeps chart controls independent and shows only connected panel
   assert.equal(overviewStats.length, 3)
   assert.deepEqual(overviewStats.map((node) => textOf(walk(node, (c) => c.props?.className === 'k'))),
     ['今日tokens数', '使用天数', '累计tokens数'])
-  assert.match(textOf(overviewCards), /30 今日tokens数.*12 使用天数.*4\.28亿 累计tokens数/s)
+  assert.match(textOf(overviewCards), /30 今日tokens数.*12 使用天数.*427\.68M 累计tokens数/s)
   assert.doesNotMatch(textOf(overviewCards), /最常使用模型/)
   const overviewDetails = walk(page, (node) => node.props?.id === 'dshus-overview-details')
   assert.equal(overviewDetails.props.hidden, true)

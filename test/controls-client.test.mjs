@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import vm from 'node:vm'
+import { renderClient } from '../scripts/build.mjs'
 
 const desktopBridge = { protocolVersion: 1, deviceInfo() {} }
 const fallbackTranslation = (text, params) => text.replace(/\{(\w+)\}/g, (match, key) => params && key in params ? String(params[key]) : match)
@@ -302,7 +303,7 @@ function stripJsComments(text) {
 }
 
 test('control panel fields and switches follow the theme background', () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
   // Inputs, textareas and selects must resolve a themed surface, not a hard white one.
   assert.match(source, /\.dshus-field \{[^}]*background: var\(--dsw-alias-bg-layer-2/)
   assert.match(source, /\.dshus-field option \{[^}]*background: var\(--dsw-alias-bg-layer-2/)
@@ -311,7 +312,7 @@ test('control panel fields and switches follow the theme background', () => {
 })
 
 test('control rows use concise labels and theme the interval selector', () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
   const rule = (selector) => {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const m = source.match(new RegExp(escaped + '[^{}]*\\{([^}]*)\\}'))
@@ -344,7 +345,7 @@ test('control rows use concise labels and theme the interval selector', () => {
 })
 
 test('the template editor offers a copyable AI prompt and keeps the cost warning last', async () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
   const start = source.indexOf('function buildTemplatePrompt(')
   const end = source.indexOf('function ControlDialog(', start)
   assert.ok(start >= 0 && end > start, 'the prompt builder must exist')
@@ -556,7 +557,7 @@ test('the 高级模型选择器 switch preserves saved preferences and releases 
 })
 
 test('the slider keeps auto as the lowest stop when a model has no default effort', () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
   const at = source.indexOf('function seatEffortStops(')
   const end = source.indexOf('\n    }', at)
   assert.ok(at >= 0 && end > at)
@@ -569,7 +570,7 @@ test('the slider keeps auto as the lowest stop when a model has no default effor
 })
 
 test('ordinary efforts keep their dots while the highest effort releases them and streams particles', () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
   const start = source.indexOf('function SeatSlider(props)')
   const end = source.indexOf('function ModelSeat(props)', start)
   assert.ok(start >= 0 && end > start)
@@ -627,7 +628,7 @@ test('ordinary efforts keep their dots while the highest effort releases them an
  * `--dsw-alias-brand-primary-new-colorprimary-new-color`.
  */
 test('the seat slider paints its fill with the real accent token, never the monochrome brand-primary alias', () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
 
   // The accent must be the -new-color token, and must carry a literal blue
   // fallback: an undefined var() would void the whole gradient.
@@ -672,7 +673,7 @@ test('the seat slider paints its fill with the real accent token, never the mono
  * SEAT_SURFACE provides an opaque fallback when backdrop filters are unsupported.
  */
 test('the seat popover paints the theme material, never the mid-grey bg-overlay alias', () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
 
   const material = source.match(/var SEAT_MATERIAL = '([^']+)'/)
   assert.ok(material, 'SEAT_MATERIAL must be defined as a single-quoted constant')
@@ -738,7 +739,7 @@ test('the seat popover paints the theme material, never the mid-grey bg-overlay 
  * The popover centers on the complete trigger and is clamped at viewport edges.
  */
 test('the seat collapses with the host compact mode and clamps its popover on narrow screens', () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
 
   // The two variables the official model seat consumes.
   assert.match(source, /var SEAT_ICON_DISPLAY = 'var\(--dsh-composer-model-icon-display/,
@@ -797,7 +798,7 @@ test('the seat collapses with the host compact mode and clamps its popover on na
  * through the frozen React mock.
  */
 test('the popover clamp keeps the panel inside the viewport at every width', () => {
-  const source = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8')
+  const source = renderClient()
   const at = source.indexOf('function seatClamp')
   assert.ok(at >= 0, 'seatClamp must be defined')
   // The function ends at the first line that is exactly two spaces + }.

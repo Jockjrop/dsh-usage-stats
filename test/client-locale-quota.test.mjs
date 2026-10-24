@@ -608,3 +608,15 @@ test('overview expansion shows six metrics with localized values and empty state
   assert.match(textOf(empty.tree), /当前连续天数 0 天/)
   assert.match(textOf(empty.tree), /最长任务时长 —/)
 })
+
+test('usage numbers use k, M and B units in every language', () => {
+  const h = harness()
+  const render = billed => textOf(h.render(h.plugin.__components.OverviewDetails, { overview: { peakDailyBilled: billed, peakDay: '2026-10-01' } }).tree)
+  for (const language of ['en', 'zh', 'ja']) {
+    h.locale.switch(language)
+    assert.match(render(1_250_000_000), /1\.25B/, language)
+    assert.match(render(427_680_000), /427\.68M/, language)
+    assert.match(render(12_500), /12\.5k/, language)
+    assert.doesNotMatch(render(427_680_000), /[亿万]|億/, language)
+  }
+})
