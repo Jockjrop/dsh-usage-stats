@@ -560,3 +560,22 @@ test('persisted sync time survives a restart', async () => {
     await rmdir(dir)
   }
 })
+
+test('the corpus document with session titles and cwd is written owner-only', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-usage-mode-'))
+  const file = join(dir, 'corpus.json')
+  try {
+    const state = defaultState()
+    state.sessions.private = { ...scanSessionEvents([usageEvent('2026-10-01T10:00:00Z', 'm', 5)], 0), title: 'private chat', cwd: '/workspace/secret-project' }
+    await persistState(state, file)
+    const { stat } = await import('node:fs/promises')
+    const { mode } = await stat(file)
+    // Windows does not enforce POSIX mode bits; the release CI (Linux) does.
+    if (process.platform !== 'win32') assert.equal(mode & 0o077, 0, 'other users must not be able to read the usage corpus')
+    const text = await (await import('node:fs/promises')).readFile(file, 'utf8')
+    assert.ok(text.includes('private chat') && text.includes('/workspace/secret-project'), 'precondition: the corpus really stores title and cwd')
+  } finally {
+    await unlink(file).catch(() => {})
+    await rmdir(dir).catch(() => {})
+  }
+})

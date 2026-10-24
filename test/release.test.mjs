@@ -73,7 +73,13 @@ test('release notes keep Chinese first and English changes without installation 
   assert.ok(!rendered.includes('## ' + pkg.version + ' - '))
   assert.match(rendered, /\*\*简体中文\*\*[\s\S]*\*\*English\*\*/)
   assert.doesNotMatch(rendered, /^## 安装|Optional prebuilt archive|Plugins → Add plugin|可选预构建安装包/m)
-  for (const host of pkg.peerDependencies['@deepseek-ai/dsh'].split(' || ')) assert.ok(rendered.includes(host))
+  // The peer range may be a disjunction of exact versions or a semver range
+  // such as `>=0.2.1-rc.1 <=0.2.1-rc.3`; both endpoints must appear in the notes.
+  const hosts = pkg.peerDependencies['@deepseek-ai/dsh']
+  const endpoints = hosts.match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?/g) || []
+  assert.ok(endpoints.length > 0, 'peer range must name at least one explicit version')
+  for (const host of endpoints) assert.ok(rendered.includes(host), 'release notes must mention ' + host)
+  assert.match(hosts, /^>=0\.2\.1-rc\.1 <=0\.2\.1-rc\.3$/, 'compatibility range should be the rc.1–rc.3 window')
 })
 
 test('verified archives reject tampered bytes and stale checksums', async t => {

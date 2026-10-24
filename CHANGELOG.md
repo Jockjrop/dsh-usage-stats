@@ -1,5 +1,55 @@
 # 更新日志 / Changelog
 
+## 0.2.5 - 2026-10-24
+
+<a id="v025-zh"></a>
+**简体中文** · [English](#v025-en)
+
+### 🐛 问题修复
+
+- 适配 DSH Desktop 0.2.1-rc.3，兼容范围改为 `>=0.2.1-rc.1 <=0.2.1-rc.3`（含 0.2.1-rc.1、0.2.1-rc.2、0.2.1-rc.3），不再列入 0.2.1-alpha.2 与 0.2.0 系列。
+- 用量语料缓存只对当前用户可读（0600），避免会话标题与工作目录被其他本地账号读取。
+- 补齐设置、配额与检测接口错误串的中英日翻译，英文/日文界面不再混入中文报错。
+- 统一 `/api/dsh-usage-stats` 各路由的本机来源校验与 403 文案。
+- 指纹引擎更新改用语义化版本比较，预发布或跨主版本号不会再被误判为更旧而跳过。
+
+### ⚡ 性能与健壮性
+
+- SQLite 会话指纹可用且覆盖全部会话时，跳过 `sessions/` 目录的全量遍历。
+- 高级模型选择器与推理面板所需的宿主服务改为可选获取，单个服务缺失不再导致整个设置页不挂载。
+- 指纹引擎完整性校验按文件签名缓存，检测与目录读取不再重复哈希 16 MB 参考库。
+- 统计接口仅在首次请求等待检测用量同步，之后交给后台定时与事件刷新，慢模型枢纽不再拖慢每次页面加载。
+- 协议版本号统一引用 `PROTOCOL_VERSION`，避免多处硬编码漂移。
+
+### 🧰 工程化
+
+- 新增 `npm run lint`（语法、JSON、三语条目）与 `engines.node`。
+- 新增 push/PR CI（lint、构建一致性、测试、发布检查）与 Dependabot、`.editorconfig`。
+
+<a id="v025-en"></a>
+**English** · [简体中文](#v025-zh)
+
+### 🐛 Bug Fixes
+
+- Support DSH Desktop 0.2.1-rc.3 and narrow the compatibility range to `>=0.2.1-rc.1 <=0.2.1-rc.3` (covering 0.2.1-rc.1, 0.2.1-rc.2 and 0.2.1-rc.3), dropping 0.2.1-alpha.2 and the 0.2.0 series.
+- Write the usage corpus cache owner-only (0600) so session titles and working directories stay unreadable to other local accounts.
+- Localize the remaining settings, quota and detection API errors in Chinese, English and Japanese instead of leaking Chinese text into the English/Japanese UI.
+- Unify the loopback trust check and 403 message across all `/api/dsh-usage-stats` routes.
+- Compare fingerprint engine versions semantically so prereleases or cross-major releases are no longer mistaken for older builds and skipped.
+
+### ⚡ Performance and robustness
+
+- Skip the full `sessions/` directory walk when SQLite fingerprints are available and cover every listed session.
+- Acquire the services used by the model seat and reasoning panel optionally, so one missing service no longer prevents the whole settings section from mounting.
+- Cache engine integrity verification by file signature so detection and catalog reads no longer re-hash the 16 MB reference bank.
+- Wait for detection usage only on the first stats request; later requests rely on the background interval and hub events, so a slow model hub no longer delays every page load.
+- Reference `PROTOCOL_VERSION` instead of scattering protocol literals.
+
+### 🧰 Tooling
+
+- Add `npm run lint` (syntax, JSON documents, three-language table) and `engines.node`.
+- Add push/PR CI (lint, build freshness, tests, release checks) plus Dependabot and `.editorconfig`.
+
 ## 0.2.4 - 2026-10-17
 
 <a id="v024-zh"></a>

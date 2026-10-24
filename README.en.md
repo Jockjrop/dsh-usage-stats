@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="#installation"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH Desktop"></a>
-  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.4-64748b?style=flat-square" alt="Plugin version 0.2.4"></a>
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.5-64748b?style=flat-square" alt="Plugin version 0.2.5"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 license"></a>
 </p>
 
@@ -74,7 +74,7 @@ Detection compares random-number samples with a reference library. Rankings and 
 
 ## Installation
 
-Plugin version **0.2.4** supports **DSH Desktop `0.2.1-rc.2`** and retains compatibility with `0.2.1-rc.1`, `0.2.1-alpha.2`, `0.2.0-rc.2` and `0.2.0-rc.1`. The host plugin manager rejects installation or activation on a mismatched runtime.
+Plugin version **0.2.5** supports **DSH Desktop `0.2.1-rc.3`** with the compatibility range `>=0.2.1-rc.1 <=0.2.1-rc.3` (0.2.1-rc.1, 0.2.1-rc.2 and 0.2.1-rc.3). The host plugin manager rejects installation or activation on a mismatched runtime.
 
 **Recommended: install the [npm package `@sligqoer/dsh-usage-stats`](https://www.npmjs.com/package/@sligqoer/dsh-usage-stats) through DSH Desktop.** It includes prebuilt modules, needs no Git checkout or local build, and supports Check updates when installed by package name.
 
@@ -100,16 +100,16 @@ Click **Enable now**, then open **Settings → Usage Stats**. Fully exit and reo
 Enter this in the same installer for this release:
 
 ```text
-@sligqoer/dsh-usage-stats@0.2.4
+@sligqoer/dsh-usage-stats@0.2.5
 ```
 
 Alternatively, download a `.tgz` and `SHA256SUMS` from the [GitHub release page](https://github.com/Jockjrop/dsh-usage-stats/releases/latest), verify the hash and enter the archive's local absolute path. Do not extract it before installation.
 
 ```powershell
-Get-FileHash ./sligqoer-dsh-usage-stats-0.2.4.tgz -Algorithm SHA256
+Get-FileHash ./sligqoer-dsh-usage-stats-0.2.5.tgz -Algorithm SHA256
 ```
 
-Assets include `sligqoer-dsh-usage-stats-0.2.4.tgz`, the equivalent `dsh-usage-stats.tgz`, and `SHA256SUMS`. Both archives contain identical modules.
+Assets include `sligqoer-dsh-usage-stats-0.2.5.tgz`, the equivalent `dsh-usage-stats.tgz`, and `SHA256SUMS`. Both archives contain identical modules.
 
 </details>
 
@@ -174,16 +174,17 @@ HTTP routes under `/api/dsh-usage-stats/*` provide statistics, controls, quotas 
 
 ## Development
 
-Use Node.js 24 and the dependencies pinned in `package-lock.json`:
+Use Node.js 22 or later (development and CI use 24) and the dependencies pinned in `package-lock.json`:
 
 ```sh
 npm ci
+npm run lint
 npm run build
 npm test
 npm run check:release
 npm run release
 ```
 
-Edit `src/` and run `npm run build` to generate `lib/`. `npm run check:release` checks versions, generated files, third-party integrity and private workspace files. `npm run release` builds the package and verifies installation and loading in an isolated temporary project; artifacts go to `release/`.
+Edit `src/` and run `npm run build` to generate `lib/`. `npm run lint` checks syntax, JSON documents and the three-language table; `npm run check:release` checks versions, generated files, third-party integrity and private workspace files. `npm run release` builds the package and verifies installation and loading in an isolated temporary project; artifacts go to `release/`.
 
-The GitHub workflow requires the tag to match the package version (`v0.2.4` for this release) and publishes the same verified archive to npm and GitHub Releases. The npm trusted publisher workflow file is `.github/workflows/release.yml`. Third-party assets, source revisions and licenses are recorded in `third_party/` and [NOTICE](NOTICE). This project uses the [Apache-2.0 license](LICENSE).
+The GitHub workflow requires the tag to match the package version (`v0.2.5` for this release) and publishes the same verified archive to npm and GitHub Releases. The npm trusted publisher workflow file is `.github/workflows/release.yml`. Third-party assets, source revisions and licenses are recorded in `third_party/` and [NOTICE](NOTICE). This project uses the [Apache-2.0 license](LICENSE).

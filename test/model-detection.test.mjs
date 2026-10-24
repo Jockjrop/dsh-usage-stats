@@ -6,7 +6,7 @@ import { join, resolve, dirname, basename } from 'node:path'
 import { createHash } from 'node:crypto'
 import { gzipSync } from 'node:zlib'
 import { createModelDetectionRunner, readDetectionModels, normalizeFingerprintIdentity, summarizeModelDetection, PROBE_PLAN } from '../src/model-detection.js'
-import { createFingerprintEngine, verifyEngine } from '../src/lm-fingerprint-engine.js'
+import { createFingerprintEngine, verifyEngine, compareVersions } from '../src/lm-fingerprint-engine.js'
 import { releaseFiles, validateRelease } from '../src/lm-fingerprint-source.js'
 import { createModelDetectionHistory } from '../src/model-detection-history.js'
 import { analyzeSharedOutputs } from '../third_party/lm-fingerprint/core/shared-detector.mjs'
@@ -335,4 +335,17 @@ test('verified upstream update persists and a prepared quote keeps its prior eng
   const fallback = createFingerprintEngine({ path: cache }); t.after(() => fallback.dispose())
   const lease = await fallback.acquire(); t.after(() => lease.dispose())
   assert.equal(lease.manifest.version, manifest.version); assert.equal(fallback.status().source, 'bundled')
+})
+
+test('engine version comparison follows semver instead of the trailing numeric segment', () => {
+  assert.equal(compareVersions('0.0.2', '0.0.1'), 1)
+  assert.equal(compareVersions('0.0.1', '0.0.2'), -1)
+  assert.equal(compareVersions('0.0.2', '0.0.2'), 0)
+  assert.equal(compareVersions('0.1.0', '0.0.9'), 1)
+  assert.equal(compareVersions('0.0.2-beta.1', '0.0.2'), -1, 'a prerelease is older than its release')
+  assert.equal(compareVersions('0.0.2-beta.2', '0.0.2-beta.1'), 1)
+  // The old trailing-segment comparison treated `0.0.1791719537634` as newer than
+  // `0.0.5` only by accident of the last number; semver keeps major/minor/patch order.
+  assert.equal(compareVersions('0.1.0', '0.0.9999999999999'), 1)
+  assert.equal(compareVersions('1.0.0', '0.9.9'), 1)
 })

@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="#安装"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH 桌面端"></a>
-  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.4-64748b?style=flat-square" alt="插件版本 0.2.4"></a>
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.5-64748b?style=flat-square" alt="插件版本 0.2.5"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 许可"></a>
 </p>
 
@@ -74,7 +74,7 @@
 
 ## 安装
 
-当前插件版本为 **0.2.4**，适配 **DSH Desktop `0.2.1-rc.2`**，并保留 `0.2.1-rc.1`、`0.2.1-alpha.2`、`0.2.0-rc.2` 和 `0.2.0-rc.1` 支持。版本不匹配时，宿主插件管理器会拒绝安装或启用。
+当前插件版本为 **0.2.5**，适配 **DSH Desktop `0.2.1-rc.3`**，兼容范围为 `>=0.2.1-rc.1 <=0.2.1-rc.3`（含 0.2.1-rc.1、0.2.1-rc.2、0.2.1-rc.3）。版本不匹配时，宿主插件管理器会拒绝安装或启用。
 
 **推荐通过 DSH Desktop 安装 [npm 包 `@sligqoer/dsh-usage-stats`](https://www.npmjs.com/package/@sligqoer/dsh-usage-stats)。** 已包含预构建模块，无需克隆仓库或在本机构建；通过包名安装后可使用插件页的「检查更新」。
 
@@ -100,16 +100,16 @@
 安装本次版本时，在同一入口填入：
 
 ```text
-@sligqoer/dsh-usage-stats@0.2.4
+@sligqoer/dsh-usage-stats@0.2.5
 ```
 
 也可从 [GitHub 发布页](https://github.com/Jockjrop/dsh-usage-stats/releases/latest)下载 `.tgz` 安装包和 `SHA256SUMS`，校验后填入压缩包的本地绝对路径，无需解压。
 
 ```powershell
-Get-FileHash ./sligqoer-dsh-usage-stats-0.2.4.tgz -Algorithm SHA256
+Get-FileHash ./sligqoer-dsh-usage-stats-0.2.5.tgz -Algorithm SHA256
 ```
 
-发布附件包含版本安装包 `sligqoer-dsh-usage-stats-0.2.4.tgz`、通用安装包 `dsh-usage-stats.tgz` 和校验文件 `SHA256SUMS`；两个安装包内容一致。
+发布附件包含版本安装包 `sligqoer-dsh-usage-stats-0.2.5.tgz`、通用安装包 `dsh-usage-stats.tgz` 和校验文件 `SHA256SUMS`；两个安装包内容一致。
 
 </details>
 
@@ -174,16 +174,17 @@ HTTP 接口使用 `/api/dsh-usage-stats/*`，提供统计、控制、配额查�
 
 ## 开发
 
-使用 Node.js 24，并安装 `package-lock.json` 锁定的依赖：
+使用 Node.js 22 或更高（开发与 CI 使用 24），并安装 `package-lock.json` 锁定的依赖：
 
 ```sh
 npm ci
+npm run lint
 npm run build
 npm test
 npm run check:release
 npm run release
 ```
 
-修改 `src/` 后运行 `npm run build` 生成 `lib/`。`npm run check:release` 检查版本、构建一致性、第三方完整性与工作区隐私文件；`npm run release` 构建安装包并在独立临时项目中验证安装与加载，输出位于 `release/`。
+修改 `src/` 后运行 `npm run build` 生成 `lib/`。`npm run lint` 校验语法、JSON 文档与三语条目；`npm run check:release` 检查版本、构建一致性、第三方完整性与工作区隐私文件；`npm run release` 构建安装包并在独立临时项目中验证安装与加载，输出位于 `release/`。
 
-GitHub 发布流程要求标签与包版本一致（本版为 `v0.2.4`），通过检查后使用同一份安装包发布 npm 与 GitHub Release。npm 可信发布对应的工作流文件为 `.github/workflows/release.yml`。第三方资源、来源版本和许可记录于 `third_party/` 与 [NOTICE](NOTICE)，本项目使用 [Apache-2.0 许可证](LICENSE)。
+GitHub 发布流程要求标签与包版本一致（本版为 `v0.2.5`），通过检查后使用同一份安装包发布 npm 与 GitHub Release。npm 可信发布对应的工作流文件为 `.github/workflows/release.yml`。第三方资源、来源版本和许可记录于 `third_party/` 与 [NOTICE](NOTICE)，本项目使用 [Apache-2.0 许可证](LICENSE)。

@@ -1,7 +1,7 @@
 /** Persist and deduplicate reported detection usage across plugin restarts. */
 import { readFile, mkdir, writeFile, rename } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { getBridge, HUB_SERVICE } from './bridge.js'
+import { getBridge, HUB_SERVICE, PROTOCOL_VERSION } from './bridge.js'
 
 const keys = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'reasoningTokens']
 function sanitize(raw) {
@@ -60,7 +60,7 @@ export function createSupplementalUsage(ctx, path, legacyPath, history) {
             Promise.resolve().then(() => hub.readSupplementalUsage()),
             new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Supplemental usage timeout')), 1500); timer.unref?.() }),
           ])
-          if (snapshot.protocolVersion !== 1 || !Array.isArray(snapshot.records)) throw new Error('Invalid interface')
+          if (snapshot.protocolVersion !== PROTOCOL_VERSION || !Array.isArray(snapshot.records)) throw new Error('Invalid interface')
           const before = JSON.stringify([...records.values()])
           merge(snapshot.records)
           if (before !== JSON.stringify([...records.values()])) await persist()

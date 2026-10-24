@@ -35,7 +35,7 @@ import { createProviderQuotaReader } from './provider-quotas.js'
 import { createQuotaControls, QuotaControlError, workBuddyQuotaSource } from './quota-controls.js'
 import { createModelDetectionRunner, readDetectionModels, ModelDetectionError } from './model-detection.js'
 import { createModelDetectionHistory } from './model-detection-history.js'
-import { getBridge, requireBridge, publishBridge, HUB_SERVICE, USAGE_SERVICE, HUB_UPDATED, IntegrationError } from './bridge.js'
+import { getBridge, requireBridge, publishBridge, HUB_SERVICE, USAGE_SERVICE, HUB_UPDATED, PROTOCOL_VERSION, IntegrationError } from './bridge.js'
 
 export const name = 'usage-stats'
 
@@ -71,6 +71,8 @@ function loadSqlite() {
 /* ------------------------------------------------------------------ */
 /* Loopback trust fence for /api/dsh-usage-stats (family shared helper) */
 /* ------------------------------------------------------------------ */
+/** Single 403 body shared by every route so denials read consistently. */
+const FORBIDDEN = '请求来源不受信任。'
 function isLoopbackRequest(req) {
   const addr = req.socket && req.socket.remoteAddress
   if (typeof addr !== 'string') return false
@@ -390,7 +392,9 @@ export async function persistState(state, storePath) {
   try {
     await mkdir(dirname(storePath), { recursive: true })
     const tmp = storePath + '.tmp'
-    await writeFile(tmp, JSON.stringify(state), 'utf8')
+    // The corpus carries session titles and working directories; keep it
+    // owner-only like every other persisted document in this plugin.
+    await writeFile(tmp, JSON.stringify(state), { encoding: 'utf8', mode: 0o600 })
     await rename(tmp, storePath)
   } catch (error) {
     // Persistence is best-effort: aggregation still works, it just costs a
@@ -402,7 +406,6 @@ export async function persistState(state, storePath) {
 /** Validate + normalize a stored contribution so a corrupt file cannot crash. */
 function normalizeSession(s) {
   if (!s || typeof s !== 'object') return null
-  const base = emptyBucket()
   const totals = {
     inputTokens: s.totals && s.totals.inputTokens || 0,
     outputTokens: s.totals && s.totals.outputTokens || 0,
@@ -412,7 +415,6 @@ function normalizeSession(s) {
     billed: s.totals && s.totals.billed || 0,
     calls: s.totals && s.totals.calls || 0,
   }
-  void base
   const norm = {
     detailsVersion: s.detailsVersion === 1 ? 1 : 0,
     ownUsageVersion: s.ownUsageVersion === 1 ? 1 : 0,
@@ -638,10 +640,25 @@ export async function syncCorpus(ctx, reqTz, state) {
     for (const id of Object.keys(nextSessions)) nextSessions[id] = rekeyLegacySession(nextSessions[id], state.tz, tz)
   }
 
-  // SQLite fingerprints take precedence; JSONL covers sessions absent from SQLite.
-  const fps = await collectFileFps()
+  // SQLite fingerprints take precedence; JSONL covers sessions absent from
+  // SQLite. Walking the whole sessions directory is expensive, so only do it
+  // when SQLite is unavailable or leaves a listed session uncovered.
   const sqlFps = await collectSqliteFps()
-  for (const [id, fp] of sqlFps) fps.set(id, fp)
+  let fps
+  if (sqlFps.size === 0) {
+    fps = await collectFileFps()
+  } else {
+    const uncovered = (records || []).some((rec) => {
+      const id = rec && rec.header && rec.header.id
+      return id && !sqlFps.has(id)
+    })
+    if (uncovered) {
+      fps = await collectFileFps()
+      for (const [id, fp] of sqlFps) fps.set(id, fp)
+    } else {
+      fps = sqlFps
+    }
+  }
   const toRead = []
   for (const rec of records || []) {
     const id = rec && rec.header && rec.header.id
@@ -714,7 +731,6 @@ export function modelDetectionContribution(history, tz) {
 export function foldResponse(state, days, modelKey, tz, now, additional = []) {
   // syncCorpus has already re-keyed all contributions to the requested offset.
   const bucketTz = state.tz
-  void tz
   const filterModel = modelKey
   const contributions = [...Object.values(state.sessions), ...additional]
   const fromKey = (() => {
@@ -1092,6 +1108,10 @@ export function apply(ctx) {
   let state = defaultState()
   let syncPromise = null
   let syncTz = null
+  // The first stats request waits for detection usage once; later requests read
+  // the warm snapshot and let the background interval/event keep it fresh, so a
+  // slow model-hub read never delays every page load.
+  let detectionPrimed = false
 
   let loadPromise = null
   const ensureLoaded = () => {
@@ -1153,7 +1173,7 @@ export function apply(ctx) {
 
   const guard = (req, res, method) => {
     if (!isLoopbackRequest(req)) {
-      writeJson(res, 403, { error: 'forbidden: loopback-only' })
+      writeJson(res, 403, { error: FORBIDDEN })
       return false
     }
     if ((req.method || 'GET') !== method) {
@@ -1191,7 +1211,9 @@ const fresh = params.get('fresh') === '1'
   }
   if (state.tz !== requestedTz) throw new Error('requested timezone is not ready')
   const now = Date.now()
-  await modelDetectionHistory.refresh()
+  const detectionRefresh = modelDetectionHistory.refresh()
+  if (detectionPrimed) void detectionRefresh
+  else { await detectionRefresh; detectionPrimed = true }
   const data = foldResponse(state, days, modelKey, state.tz, now, [modelDetectionContribution(modelDetectionHistory, state.tz)])
   const stale = syncPromise !== null || state.partial || now - (state.syncedAt || 0) > CACHE_TTL_MS
   return {
@@ -1226,14 +1248,11 @@ const fresh = params.get('fresh') === '1'
     catch { writeJson(res, 500, { ok: false, error: '用量统计暂时不可用，请稍后重试。' }) }
   } }), 'dsh-usage-stats: statistics')
 
+  // Single trust gate: isLoopbackRequest already rejects non-loopback hosts,
+  // mismatched origins and cross-site requests, so control routes reuse it
+  // instead of re-deriving the same checks with a different message.
   const trustedControlRequest = (req, res) => {
-    if (!isLoopbackRequest(req)) { writeJson(res, 403, { ok: false, error: 'forbidden: loopback-only' }); return false }
-    try {
-      const host = new URL('http://' + req.headers.host).hostname
-      if (!['localhost', '127.0.0.1', '[::1]'].includes(host)) throw new Error()
-      if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) throw new Error()
-      if (req.headers['sec-fetch-site'] === 'cross-site') throw new Error()
-    } catch { writeJson(res, 403, { ok: false, error: '请求来源不受信任。' }); return false }
+    if (!isLoopbackRequest(req)) { writeJson(res, 403, { ok: false, error: FORBIDDEN }); return false }
     return true
   }
   const readControlBody = async req => {
@@ -1320,7 +1339,7 @@ const fresh = params.get('fresh') === '1'
     if (guard(req, res, 'POST')) writeJson(res, 200, { ok: true, ...await requireBridge(ctx).refreshAccountQuota(await readControlBody(req)) })
   })
   registerControl('integration', async (req, res) => {
-    if (guard(req, res, 'GET')) writeJson(res, 200, { ok: true, protocolVersion: 1, modelsHub: !!getBridge(ctx, HUB_SERVICE) })
+    if (guard(req, res, 'GET')) writeJson(res, 200, { ok: true, protocolVersion: PROTOCOL_VERSION, modelsHub: !!getBridge(ctx, HUB_SERVICE) })
   })
 
   registerControl('sessions', async (req, res) => {
@@ -1339,7 +1358,7 @@ const fresh = params.get('fresh') === '1'
     readControls: async () => { const quota = await quotaControls.get(), display = await preferences.get(); return { ...quota, settings: { ...quota.settings, ...display.settings } } },
     updateControls: patch => quotaControls.update(patch),
     readProviderQuotas: ({ fresh = false, provider = null } = {}) => quotaControls.read('providers', fresh, provider),
-    readSupplementalUsage: () => ({ protocolVersion: 1, records: history.usageRecords(), warning: history.warning() }),
+    readSupplementalUsage: () => ({ protocolVersion: PROTOCOL_VERSION, records: history.usageRecords(), warning: history.warning() }),
   })
   ctx.effect(() => async () => { runner.dispose(); await quotaControls.dispose(); await Promise.all([preferences.flush(), modelDetectionHistory.flush(), history.flush()]) }, 'dsh-usage-stats: integration cleanup')
   ctx.effect(() => {
