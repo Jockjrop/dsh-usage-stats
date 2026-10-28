@@ -97,6 +97,31 @@ test('background notifications retain new spend before the statistics page is op
   assert.equal(result.body.totals.calls, 1)
 })
 
+test('the default-model route carries the model a not-yet-created session starts with', async t => {
+  const f = await fixture(t, ['stats'])
+  // The composer seat of a brand-new session has no session directory to read,
+  // so it drives the deployment default instead; the route has to exist even
+  // before a host mounts the service, and it must say so rather than 500.
+  assert.equal((await f.get('/api/dsh-usage-stats/default-model')).status, 503)
+  const writes = []
+  let current = { provider: 'p', model: 'm1' }
+  const llm = f.services.get('llm')
+  // Mirrors the host resolver: it materializes the model's default effort.
+  llm.resolveCallConfig = async (config) => ({ provider: config.provider, model: config.model, reasoningEffort: config.reasoningEffort === undefined ? 'medium' : config.reasoningEffort })
+  f.services.set('agentDefaultModel', { currentSelection: () => ({ ...current }), saveSelection: async (next) => { writes.push(next); current = next } })
+
+  assert.deepEqual((await f.get('/api/dsh-usage-stats/default-model')).body, { ok: true, selection: { provider: 'p', model: 'm1' }, persisted: false })
+  const accepted = await f.post('/api/dsh-usage-stats/default-model', { provider: 'p', model: 'm2' })
+  assert.equal(accepted.status, 200)
+  assert.deepEqual(writes, [{ provider: 'p', model: 'm2' }], 'an "auto" effort is not pinned to the materialized default')
+  assert.deepEqual(accepted.body.selection, { provider: 'p', model: 'm2' })
+
+  await f.post('/api/dsh-usage-stats/default-model', { provider: 'p', model: 'm2', reasoningEffort: 'high' })
+  assert.deepEqual(writes[1], { provider: 'p', model: 'm2', reasoningEffort: 'high' })
+  assert.equal((await f.post('/api/dsh-usage-stats/default-model', { provider: 'p' })).status, 400, 'an incomplete selection is refused')
+  assert.equal((await f.post('/api/dsh-usage-stats/default-model', { provider: '  ', model: 'm2' })).status, 400)
+})
+
 test('model hub starts alone without session scanning and keeps the legacy model routes', { skip: !hub && 'Set DSH_MODELS_HUB_DIR to run the paired-plugin checks' }, async t => {
   const f = await fixture(t, ['hub'])
   assert.equal((await f.get('/api/dsh-models-hub/integration')).body.usageStats, false)

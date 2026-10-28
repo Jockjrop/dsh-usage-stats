@@ -33,9 +33,12 @@ import { createUsagePreferences, validateDisplayPatch, PreferenceError } from '.
 import { createSupplementalUsage } from './supplemental-usage.js'
 import { createProviderQuotaReader } from './provider-quotas.js'
 import { createQuotaControls, QuotaControlError, workBuddyQuotaSource } from './quota-controls.js'
+import { createPriceOverrides, PriceOverrideError } from './price-overrides.js'
+import { createModelRules, createModelResolver, modelRuleGroups, ModelRuleError } from './model-rules.js'
 import { createModelDetectionRunner, readDetectionModels, ModelDetectionError } from './model-detection.js'
 import { createModelDetectionHistory } from './model-detection-history.js'
 import { getBridge, requireBridge, publishBridge, HUB_SERVICE, USAGE_SERVICE, HUB_UPDATED, PROTOCOL_VERSION, IntegrationError } from './bridge.js'
+import { findModelPrice, usageCost } from './model-pricing.js'
 
 export const name = 'usage-stats'
 
@@ -728,10 +731,22 @@ export function modelDetectionContribution(history, tz) {
   return contribution
 }
 
-export function foldResponse(state, days, modelKey, tz, now, additional = []) {
+export function foldResponse(state, days, modelKey, tz, now, additional = [], rules = null) {
   // syncCorpus has already re-keyed all contributions to the requested offset.
   const bucketTz = state.tz
   const filterModel = modelKey
+  // Model rules rename raw model names at fold time, so the corpus itself never
+  // needs rewriting when a rule is added or removed.
+  const resolveModel = createModelResolver(rules)
+  const canonicalKey = (key) => {
+    const slash = key.indexOf('/')
+    return slash < 0 ? resolveModel(key) : key.slice(0, slash) + '/' + resolveModel(key.slice(slash + 1))
+  }
+  const canonicalMeta = (meta, fallback) => ({
+    provider: meta && meta.provider || fallback.provider,
+    model: resolveModel(meta && meta.model || fallback.model),
+    lastTime: meta && meta.lastTime || 0,
+  })
   const contributions = [...Object.values(state.sessions), ...additional]
   const fromKey = (() => {
     if (!(days > 0)) return null
@@ -790,11 +805,11 @@ export function foldResponse(state, days, modelKey, tz, now, additional = []) {
     for (const event of s.usageEvents || []) {
       const outputTokens = event[4], outputMs = event[8]
       if (!Number.isFinite(outputTokens) || outputTokens < 0 || !Number.isFinite(outputMs) || outputMs <= 0) continue
-      const key = event[1] + '/' + event[2]
+      const model = resolveModel(event[2]), key = event[1] + '/' + model
       if (filterModel && key !== filterModel || fromKey && localDayKey(event[0], bucketTz) < fromKey) continue
       let speed = speedSum.get(key)
       if (!speed) {
-        speed = { key, provider: event[1], model: event[2], outputTokens: 0, outputMs: 0, samples: 0 }
+        speed = { key, provider: event[1], model, outputTokens: 0, outputMs: 0, samples: 0 }
         speedSum.set(key, speed)
       }
       speed.outputTokens += outputTokens
@@ -803,7 +818,7 @@ export function foldResponse(state, days, modelKey, tz, now, additional = []) {
     }
     for (const event of s.ttftEvents || []) {
       if (!Number.isFinite(event[3]) || event[3] < 0) continue
-      const key = event[1] + '/' + event[2]
+      const key = event[1] + '/' + resolveModel(event[2])
       if (filterModel && key !== filterModel || fromKey && localDayKey(event[0], bucketTz) < fromKey) continue
       let timing = ttftSum.get(key)
       if (!timing) { timing = { ttftMs: 0, ttftSamples: 0 }; ttftSum.set(key, timing) }
@@ -821,18 +836,20 @@ export function foldResponse(state, days, modelKey, tz, now, additional = []) {
     for (const [key, bucket] of Object.entries(s.byDayModel || {})) {
       const sep = key.indexOf('|'), date = key.slice(0, sep)
       if (sep < 0 || date < recentFrom || date > todayKey || !(bucket.calls > 0)) continue
-      const mk = key.slice(sep + 1), meta = s.byModel?.[mk], slash = mk.indexOf('/')
-      const model = (meta?.model || mk.slice(slash + 1)).split('/').pop(), id = model.toLowerCase()
+      const rawKey = key.slice(sep + 1), meta = s.byModel?.[rawKey], slash = rawKey.indexOf('/')
+      const model = resolveModel(meta?.model || rawKey.slice(slash + 1)).split('/').pop(), id = model.toLowerCase()
       let row = recentModels.get(id)
       if (!row) { row = { model, calls: 0, providers: new Set() }; recentModels.set(id, row) }
       row.calls += bucket.calls
-      row.providers.add(meta?.provider || mk.slice(0, slash))
+      row.providers.add(meta?.provider || rawKey.slice(0, slash))
     }
-    for (const mk of Object.keys(s.byModel || {})) {
-      const model = s.byModel[mk]
+    for (const rawKey of Object.keys(s.byModel || {})) {
+      const slash = rawKey.indexOf('/')
+      const meta = canonicalMeta(s.byModel[rawKey], { provider: slash >= 0 ? rawKey.slice(0, slash) : 'unknown', model: slash >= 0 ? rawKey.slice(slash + 1) : rawKey })
+      const mk = canonicalKey(rawKey)
       const current = overviewModels.get(mk)
-      if (current) current.billed += model.bucket && model.bucket.billed || 0
-      else overviewModels.set(mk, { key: mk, provider: model.provider, model: model.model, billed: model.bucket && model.bucket.billed || 0 })
+      if (current) current.billed += s.byModel[rawKey].bucket && s.byModel[rawKey].bucket.billed || 0
+      else overviewModels.set(mk, { key: mk, provider: meta.provider, model: meta.model, billed: s.byModel[rawKey].bucket && s.byModel[rawKey].bucket.billed || 0 })
     }
     let sessionMessages = 0
     const daySource = filterModel ? (s.byDayModel || {}) : (s.byDay || {})
@@ -840,7 +857,7 @@ export function foldResponse(state, days, modelKey, tz, now, additional = []) {
       let date = key
       if (filterModel) {
         const sep = key.indexOf('|')
-        if (sep < 0 || key.slice(sep + 1) !== filterModel) continue
+        if (sep < 0 || canonicalKey(key.slice(sep + 1)) !== filterModel) continue
         date = key.slice(0, sep)
       }
       const bucket = daySource[key]
@@ -857,7 +874,7 @@ export function foldResponse(state, days, modelKey, tz, now, additional = []) {
       const sep = key.indexOf('|')
       if (sep < 0) continue
       const date = key.slice(0, sep)
-      const mk = key.slice(sep + 1)
+      const mk = canonicalKey(key.slice(sep + 1))
       if (filterModel && mk !== filterModel) continue
       if (byDayCutoff !== null && date < byDayCutoff) continue
       let perDay = dayModelSum.get(date)
@@ -871,18 +888,28 @@ export function foldResponse(state, days, modelKey, tz, now, additional = []) {
     if (sessionMessages > 0 && !s.detection) sessionsWithUsage += 1
 
     if (fromKey === null) {
-      for (const mk of Object.keys(s.byModel || {})) {
+      for (const rawKey of Object.keys(s.byModel || {})) {
+        const mk = canonicalKey(rawKey)
         if (filterModel && mk !== filterModel) continue
-        const mb = s.byModel[mk]
-        addModelBucket(mk, mb.bucket || emptyBucket(), mb)
+        const mb = s.byModel[rawKey], slash = rawKey.indexOf('/')
+        addModelBucket(mk, mb.bucket || emptyBucket(), {
+          provider: mb.provider || (slash >= 0 ? rawKey.slice(0, slash) : 'unknown'),
+          model: resolveModel(mb.model || (slash >= 0 ? rawKey.slice(slash + 1) : rawKey)),
+          lastTime: mb.lastTime,
+        })
       }
     } else {
       for (const key of Object.keys(s.byDayModel || {})) {
         const sep = key.indexOf('|')
         if (sep < 0 || key.slice(0, sep) < fromKey) continue
-        const mk = key.slice(sep + 1)
+        const rawKey = key.slice(sep + 1), mk = canonicalKey(rawKey)
         if (filterModel && mk !== filterModel) continue
-        addModelBucket(mk, s.byDayModel[key], s.byModel && s.byModel[mk])
+        const meta = s.byModel && s.byModel[rawKey], slash = rawKey.indexOf('/')
+        addModelBucket(mk, s.byDayModel[key], {
+          provider: meta && meta.provider || (slash >= 0 ? rawKey.slice(0, slash) : 'unknown'),
+          model: resolveModel(meta && meta.model || (slash >= 0 ? rawKey.slice(slash + 1) : rawKey)),
+          lastTime: meta && meta.lastTime,
+        })
       }
     }
 
@@ -895,7 +922,7 @@ export function foldResponse(state, days, modelKey, tz, now, additional = []) {
       let hour
       if (filterModel) {
         const lastSep = key.lastIndexOf('|')
-        if (lastSep < 0 || key.slice(lastSep + 1) !== filterModel) continue
+        if (lastSep < 0 || canonicalKey(key.slice(lastSep + 1)) !== filterModel) continue
         const midSep = key.lastIndexOf('|', lastSep - 1)
         if (midSep < 0) continue
         date = key.slice(0, midSep)
@@ -954,7 +981,7 @@ export function foldResponse(state, days, modelKey, tz, now, additional = []) {
       if (midSep < 0) continue
       const date = key.slice(0, midSep)
       const hour = key.slice(midSep + 1, lastSep)
-      const mk = key.slice(lastSep + 1)
+      const mk = canonicalKey(key.slice(lastSep + 1))
       if (date !== todayKey) continue
       if (filterModel && mk !== filterModel) continue
       let per = hourModelSum.get(hour)
@@ -1081,11 +1108,427 @@ export function foldSessionRows(state, options = {}, now = Date.now()) {
     projects: [...projects].sort(), sort, model: model || null, day: selectedDay || null }
 }
 
+/* ------------------------------------------------------------------ */
+/* Per-request log + model cost folds                                  */
+/* ------------------------------------------------------------------ */
+
+/** Local calendar day key, rejecting values a Date would silently roll over. */
+function validDayKey(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const time = Date.parse(value + 'T00:00:00Z')
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value
+}
+
+/**
+ * One row per recorded request. Only sessions that carry `usageEvents` can be
+ * shown here; legacy retained sessions keep their aggregate cost but have no
+ * per-request detail. TTFT samples pair with their request by time+model, so
+ * retries that reuse a timestamp consume a queue instead of a single value.
+ */
+export function foldLogs(state, options = {}, additional = [], overrides = null, rules = null) {
+  const provider = safeSessionText(options.provider, 200)
+  const model = safeSessionText(options.model, 300)
+  const resolveModel = createModelResolver(rules)
+  const rows = []
+  const providers = new Set()
+  const models = new Set()
+  for (const contribution of [...Object.values(state.sessions), ...additional]) {
+    const events = Array.isArray(contribution.usageEvents) ? contribution.usageEvents : []
+    if (events.length === 0) continue
+    const title = contribution.detection ? '' : safeSessionText(contribution.title, 300)
+    const ttft = new Map()
+    for (const sample of contribution.ttftEvents || []) {
+      if (!Array.isArray(sample) || sample.length !== 4) continue
+      const key = sample[0] + '|' + sample[1] + '|' + resolveModel(String(sample[2] || 'unknown'))
+      const queue = ttft.get(key)
+      if (queue) queue.push(sample[3])
+      else ttft.set(key, [sample[3]])
+    }
+    const used = new Map()
+    for (const event of events) {
+      const time = event[0]
+      if (!(time > 0)) continue
+      const eventProvider = String(event[1] || 'unknown')
+      const rawModel = String(event[2] || 'unknown')
+      const eventModel = resolveModel(rawModel)
+      providers.add(eventProvider)
+      models.add(eventModel)
+      if (provider && eventProvider !== provider) continue
+      if (model && eventModel !== model) continue
+      const inputTokens = Number(event[3]) || 0
+      const outputTokens = Number(event[4]) || 0
+      const cacheReadTokens = Number(event[5]) || 0
+      const cacheWriteTokens = Number(event[6]) || 0
+      const outputMs = Number(event[8]) || 0
+      const key = time + '|' + eventProvider + '|' + eventModel
+      const queue = ttft.get(key)
+      let ttftMs = null
+      if (queue) {
+        const index = used.get(key) || 0
+        if (index < queue.length) {
+          ttftMs = queue[index]
+          used.set(key, index + 1)
+        }
+      }
+      const price = findModelPrice(eventModel, overrides)
+      rows.push({
+        time, provider: eventProvider, model: eventModel, rawModel: rawModel === eventModel ? undefined : rawModel,
+        title, detection: !!contribution.detection,
+        inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,
+        reasoningTokens: Number(event[7]) || 0, outputMs,
+        tokensPerSecond: outputMs > 0 && outputTokens > 0 ? outputTokens / (outputMs / 1000) : null,
+        ttftMs,
+        cost: price ? usageCost({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }, price) : null,
+      })
+    }
+  }
+  rows.sort((a, b) => b.time - a.time || a.model.localeCompare(b.model))
+  const pageSize = Math.min(200, Math.max(1, Math.round(Number(options.pageSize) || 10)))
+  const pages = Math.max(1, Math.ceil(rows.length / pageSize))
+  const page = Math.min(pages, Math.max(1, Math.round(Number(options.page) || 1)))
+  return { rows: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length, page, pageSize, pages,
+    providers: [...providers].sort(), models: [...models].sort(), provider: provider || null, model: model || null }
+}
+
+/**
+ * Cost per provider/model over all time and over [from, to] (inclusive local
+ * days). Only catalog-priced models contribute to the sums; unpriced rows stay
+ * in the table with a null cost so free or unknown models remain visible.
+ */
+export function foldCosts(state, options = {}, now = Date.now(), additional = [], overrides = null, rules = null) {
+  const today = localDayKey(now, state.tz)
+  const provider = safeSessionText(options.provider, 200)
+  const from = options.from || today.slice(0, 8) + '01'
+  const to = options.to || today
+  const resolveModel = createModelResolver(rules)
+  const canonicalRowKey = (key) => {
+    const slash = key.indexOf('/')
+    if (slash < 0) return resolveModel(key)
+    return key.slice(0, slash) + '/' + resolveModel(key.slice(slash + 1))
+  }
+  const rows = new Map()
+  for (const contribution of [...Object.values(state.sessions), ...additional]) {
+    const range = new Map()
+    for (const [key, bucket] of Object.entries(contribution.byDayModel || {})) {
+      const date = key.slice(0, 10)
+      if (date < from || date > to) continue
+      const modelKey = canonicalRowKey(key.slice(11))
+      const existing = range.get(modelKey)
+      if (existing) mergeBucket(existing, bucket)
+      else range.set(modelKey, copyBucket(bucket))
+    }
+    // Range buckets are keyed by canonical name, so several raw models folded
+    // into one row must merge that bucket once, not once per raw model.
+    const ranged = new Set()
+    for (const [key, entry] of Object.entries(contribution.byModel || {})) {
+      if (!entry || !entry.bucket) continue
+      const rowKey = canonicalRowKey(key)
+      let row = rows.get(rowKey)
+      if (row === undefined) {
+        const slash = key.indexOf('/')
+        row = { key: rowKey, provider: entry.provider || 'unknown', model: resolveModel(entry.model || (slash >= 0 ? key.slice(slash + 1) : key)), total: emptyBucket(), range: emptyBucket() }
+        rows.set(rowKey, row)
+      }
+      mergeBucket(row.total, entry.bucket)
+      const rangeBucket = range.get(rowKey)
+      if (rangeBucket && !ranged.has(rowKey)) {
+        ranged.add(rowKey)
+        mergeBucket(row.range, rangeBucket)
+      }
+    }
+  }
+  const out = []
+  const providers = new Set()
+  const models = new Map()
+  for (const row of rows.values()) {
+    if (row.total.calls === 0) continue
+    const price = findModelPrice(row.model, overrides)
+    out.push({ key: row.key, provider: row.provider, model: row.model, price,
+      totalCost: price ? usageCost(row.total, price) : null, rangeCost: price ? usageCost(row.range, price) : null,
+      total: serializeBucket(row.total), range: serializeBucket(row.range) })
+    providers.add(row.provider)
+    const model = models.get(row.model)
+    if (model) {
+      if (!model.providers.includes(row.provider)) model.providers.push(row.provider)
+    } else models.set(row.model, { model: row.model, providers: [row.provider], price })
+  }
+  // The provider picker and price table describe the whole history; a selected
+  // provider only narrows the cost totals and rows.
+  const selected = provider ? out.filter((row) => row.provider === provider) : out
+  selected.sort((a, b) => (b.totalCost === null ? -1 : b.totalCost) - (a.totalCost === null ? -1 : a.totalCost) || b.total.billed - a.total.billed)
+  let totalCost = 0
+  let rangeCost = 0
+  for (const row of selected) {
+    if (row.totalCost !== null) totalCost += row.totalCost
+    if (row.rangeCost !== null) rangeCost += row.rangeCost
+  }
+  const priceModels = [...models.values()].sort((a, b) => (a.price ? 0 : 1) - (b.price ? 0 : 1) || a.model.localeCompare(b.model))
+  return { from, to, totalCost, rangeCost, rows: selected, providers: [...providers].sort(), provider: provider || null,
+    priceModels, pricedModels: priceModels.filter((row) => row.price !== null).length, totalModels: priceModels.length }
+}
+
+/**
+ * Single-call fold for the sidebar dashboard: the range totals, the metric
+ * series, the 53-week heatmap and the paged request log all share the
+ * provider/model filters, price overrides and name rules. Retained sessions
+ * without per-request events still contribute their daily aggregates to the
+ * totals, series and heatmap, but they cannot appear in the request log.
+ */
+export function foldDashboard(state, options = {}, now = Date.now(), additional = [], overrides = null, rules = null) {
+  const tz = state.tz
+  const all = options.all === '1' || options.all === 'true' || options.all === true
+  const timestamp = (value) => {
+    const time = Number(value)
+    return Number.isFinite(time) && time > 0 ? Math.round(time) : 0
+  }
+  let from = timestamp(options.from)
+  let to = timestamp(options.to)
+  if (from > 0 && to === 0) to = from
+  else if (to > 0 && from === 0) from = to
+  else if (from > 0 && to > 0 && from > to) { const swap = from; from = to; to = swap }
+  if (all) { from = 0; to = 0 }
+  else if (from === 0) { from = keyMidnight(localDayKey(now, tz), tz); to = now }
+  const today = localDayKey(now, tz)
+  const provider = safeSessionText(options.provider, 200)
+  const model = safeSessionText(options.model, 300)
+  const resolveModel = createModelResolver(rules)
+  const contributions = [...Object.values(state.sessions), ...additional]
+  const spanDaysOf = (a, b) => Math.max(1, Math.round((keyMidnight(localDayKey(b, tz), tz) - keyMidnight(localDayKey(a, tz), tz)) / 86400000) + 1)
+  const granularity = all ? 'heatmap'
+    : to - from <= 36 * 3600000 ? 'hour'
+      : spanDaysOf(from, to) > 62 ? 'month' : 'day'
+
+  const totals = emptyBucket()
+  const series = []
+  const seriesIndex = new Map()
+  const newPoint = () => ({ cost: 0, billed: 0, calls: 0, inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+  if (granularity === 'hour') {
+    const dayStart = keyMidnight(localDayKey(from, tz), tz)
+    for (let start = dayStart + Math.floor((from - dayStart) / 3600000) * 3600000; start <= to; start += 3600000) {
+      const key = String(start)
+      seriesIndex.set(key, series.length)
+      series.push({ key, ...newPoint() })
+    }
+  } else if (granularity === 'day') {
+    const start = keyMidnight(localDayKey(from, tz), tz)
+    const end = keyMidnight(localDayKey(to, tz), tz)
+    for (let time = start; time <= end; time += 86400000) {
+      const key = localDayKey(time, tz)
+      seriesIndex.set(key, series.length)
+      series.push({ key, ...newPoint() })
+    }
+  } else if (granularity === 'month') {
+    const startDay = localDayKey(from, tz), endDay = localDayKey(to, tz)
+    let year = Number(startDay.slice(0, 4)), month = Number(startDay.slice(5, 7)) - 1
+    const endYear = Number(endDay.slice(0, 4)), endMonth = Number(endDay.slice(5, 7)) - 1
+    while (year < endYear || (year === endYear && month <= endMonth)) {
+      const key = year + '-' + String(month + 1).padStart(2, '0')
+      seriesIndex.set(key, series.length)
+      series.push({ key, ...newPoint() })
+      month += 1
+      if (month === 12) { month = 0; year += 1 }
+    }
+  }
+
+  const heatmapStart = keyMidnight(localMondayKey(now, tz), tz) - 52 * 7 * 86400000
+  const heatmapEnd = keyMidnight(today, tz)
+  const heatmapDays = new Map()
+  if (all) {
+    for (let time = heatmapStart; time <= heatmapEnd; time += 86400000) {
+      const day = localDayKey(time, tz)
+      heatmapDays.set(day, { date: day, billed: 0, calls: 0, cost: 0, inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+    }
+  }
+  // Hourly points have no room for a day-granular bucket; the first visible
+  // hour of its day carries it so totals and the cost bars stay in sync.
+  const hourDayPoint = new Map()
+  if (granularity === 'hour') {
+    for (let index = 0; index < series.length; index += 1) {
+      const day = localDayKey(Number(series[index].key), tz)
+      if (!hourDayPoint.has(day)) hourDayPoint.set(day, index)
+    }
+  }
+
+  let cost = 0
+  let earliest = 0
+  const rows = []
+  const providers = new Set()
+  const models = new Set()
+  for (const contribution of contributions) {
+    const events = Array.isArray(contribution.usageEvents) ? contribution.usageEvents : []
+    if (events.length === 0) {
+      // Retained sessions keep aggregate day buckets but no per-request detail.
+      // Fold them at day resolution so the dashboard totals, series and heatmap
+      // agree with the cost table; the request log itself stays event-only.
+      for (const [key, bucket] of Object.entries(contribution.byDayModel || {})) {
+        if (!bucket || !bucket.calls) continue
+        const day = key.slice(0, 10)
+        const modelKey = key.slice(11)
+        const slash = modelKey.indexOf('/')
+        const legacyProvider = slash >= 0 ? modelKey.slice(0, slash) : 'unknown'
+        const legacyModel = resolveModel(slash >= 0 ? modelKey.slice(slash + 1) : modelKey)
+        providers.add(legacyProvider)
+        if (!provider || legacyProvider === provider) models.add(legacyModel)
+        if (provider && legacyProvider !== provider) continue
+        if (model && legacyModel !== model) continue
+        const time = keyMidnight(day, tz)
+        if (!earliest || time < earliest) earliest = time
+        if (!all && (day < localDayKey(from, tz) || day > localDayKey(to, tz))) continue
+        const price = findModelPrice(legacyModel, overrides)
+        const bucketCost = price ? usageCost(bucket, price) : null
+        mergeBucket(totals, bucket)
+        if (bucketCost !== null) cost += bucketCost
+        if (granularity !== 'heatmap') {
+          const point = series[granularity === 'hour' ? hourDayPoint.get(day)
+            : seriesIndex.get(granularity === 'month' ? day.slice(0, 7) : day)]
+          if (point) {
+            point.calls += bucket.calls || 0
+            point.billed += bucket.billed || 0
+            point.inputTokens += bucket.inputTokens || 0
+            point.cacheReadTokens += bucket.cacheReadTokens || 0
+            point.cacheWriteTokens += bucket.cacheWriteTokens || 0
+            if (bucketCost !== null) point.cost += bucketCost
+          }
+        }
+        if (all) {
+          const heat = heatmapDays.get(day)
+          if (heat) {
+            heat.calls += bucket.calls || 0
+            heat.billed += bucket.billed || 0
+            heat.inputTokens += bucket.inputTokens || 0
+            heat.cacheReadTokens += bucket.cacheReadTokens || 0
+            heat.cacheWriteTokens += bucket.cacheWriteTokens || 0
+            if (bucketCost !== null) heat.cost += bucketCost
+          }
+        }
+      }
+      continue
+    }
+    const title = contribution.detection ? '' : safeSessionText(contribution.title, 300)
+    const ttft = new Map()
+    for (const sample of contribution.ttftEvents || []) {
+      if (!Array.isArray(sample) || sample.length !== 4) continue
+      const key = sample[0] + '|' + sample[1] + '|' + resolveModel(String(sample[2] || 'unknown'))
+      const queue = ttft.get(key)
+      if (queue) queue.push(sample[3])
+      else ttft.set(key, [sample[3]])
+    }
+    const used = new Map()
+    for (const event of events) {
+      const time = event[0]
+      if (!(time > 0)) continue
+      const eventProvider = String(event[1] || 'unknown')
+      const rawModel = String(event[2] || 'unknown')
+      const eventModel = resolveModel(rawModel)
+      providers.add(eventProvider)
+      if (!provider || eventProvider === provider) models.add(eventModel)
+      if (provider && eventProvider !== provider) continue
+      if (model && eventModel !== model) continue
+      if (!earliest || time < earliest) earliest = time
+      if (!all && (time < from || time > to)) continue
+      const day = localDayKey(time, tz)
+      const inputTokens = Number(event[3]) || 0
+      const outputTokens = Number(event[4]) || 0
+      const cacheReadTokens = Number(event[5]) || 0
+      const cacheWriteTokens = Number(event[6]) || 0
+      const reasoningTokens = Number(event[7]) || 0
+      const outputMs = Number(event[8]) || 0
+      const key = time + '|' + eventProvider + '|' + eventModel
+      const queue = ttft.get(key)
+      let ttftMs = null
+      if (queue) {
+        const index = used.get(key) || 0
+        if (index < queue.length) {
+          ttftMs = queue[index]
+          used.set(key, index + 1)
+        }
+      }
+      const price = findModelPrice(eventModel, overrides)
+      const rowCost = price ? usageCost({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }, price) : null
+      addUsage(totals, { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens })
+      if (rowCost !== null) cost += rowCost
+      if (granularity !== 'heatmap') {
+        let seriesKey = day
+        if (granularity === 'hour') {
+          const dayStart = keyMidnight(day, tz)
+          seriesKey = String(dayStart + Math.floor((time - dayStart) / 3600000) * 3600000)
+        } else if (granularity === 'month') seriesKey = day.slice(0, 7)
+        const point = series[seriesIndex.get(seriesKey)]
+        if (point) {
+          point.calls += 1
+          point.billed += inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens
+          point.inputTokens += inputTokens
+          point.cacheReadTokens += cacheReadTokens
+          point.cacheWriteTokens += cacheWriteTokens
+          if (rowCost !== null) point.cost += rowCost
+        }
+      }
+      if (all) {
+        const bucket = heatmapDays.get(day)
+        if (bucket) {
+          bucket.calls += 1
+          bucket.billed += inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens
+          bucket.inputTokens += inputTokens
+          bucket.cacheReadTokens += cacheReadTokens
+          bucket.cacheWriteTokens += cacheWriteTokens
+          if (rowCost !== null) bucket.cost += rowCost
+        }
+      }
+      rows.push({
+        time, provider: eventProvider, model: eventModel, rawModel: rawModel === eventModel ? undefined : rawModel,
+        title, detection: !!contribution.detection,
+        inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, outputMs,
+        tokensPerSecond: outputMs > 0 && outputTokens > 0 ? outputTokens / (outputMs / 1000) : null,
+        ttftMs,
+        cost: rowCost,
+      })
+    }
+  }
+  if (all) { from = earliest > 0 ? earliest : keyMidnight(today, tz); to = now }
+  const cacheRate = (input, cacheRead, cacheWrite) => {
+    const base = input + cacheRead + cacheWrite
+    return base > 0 ? cacheRead / base : null
+  }
+  for (const point of series) {
+    point.cacheHitRate = cacheRate(point.inputTokens, point.cacheReadTokens, point.cacheWriteTokens)
+    delete point.inputTokens
+    delete point.cacheReadTokens
+    delete point.cacheWriteTokens
+  }
+  let heatmap = null
+  if (all) {
+    const days = [...heatmapDays.values()].map((day) => ({
+      date: day.date, billed: day.billed, calls: day.calls, cost: day.cost,
+      cacheHitRate: cacheRate(day.inputTokens, day.cacheReadTokens, day.cacheWriteTokens),
+    }))
+    const heatmapTotals = days.reduce((acc, day) => {
+      acc.billed += day.billed
+      acc.calls += day.calls
+      acc.cost += day.cost
+      return acc
+    }, { billed: 0, calls: 0, cost: 0 })
+    heatmap = { start: localDayKey(heatmapStart, tz), end: today, totals: heatmapTotals, days }
+  }
+  rows.sort((a, b) => b.time - a.time || a.model.localeCompare(b.model))
+  const pageSize = Math.min(100, Math.max(1, Math.round(Number(options.pageSize) || 10)))
+  const pages = Math.max(1, Math.ceil(rows.length / pageSize))
+  const page = Math.min(pages, Math.max(1, Math.round(Number(options.page) || 1)))
+  return {
+    spanDays: spanDaysOf(from, to), granularity, from, to, earliest,
+    totals: { ...serializeBucket(totals), cost, cacheHitRate: cacheRate(totals.inputTokens, totals.cacheReadTokens, totals.cacheWriteTokens) },
+    series, heatmap,
+    rows: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length, page, pageSize, pages,
+    providers: [...providers].sort(), models: [...models].sort(), provider: provider || null, model: model || null,
+  }
+}
+
 export function apply(ctx) {
   if (ctx.get('profileContext')?.name !== 'desktop') return
 
   const storage = join(resolveHome(), 'storages')
   const preferences = createUsagePreferences(join(storage, 'usage-stats-display.json'), join(storage, 'usage-stats-controls.json'))
+  const priceOverrides = createPriceOverrides(join(storage, 'usage-stats-prices.json'))
+  const modelRules = createModelRules(join(storage, 'usage-stats-rules.json'))
   const history = createModelDetectionHistory(join(storage, 'usage-stats-detections.json'))
   const modelDetectionHistory = createSupplementalUsage(ctx, join(storage, 'usage-stats-supplemental.json'), join(storage, 'usage-stats-detections.json'), history)
   const runner = createModelDetectionRunner(ctx, { enginePath: join(storage, 'usage-stats-lm-fingerprint'),
@@ -1214,7 +1657,7 @@ const fresh = params.get('fresh') === '1'
   const detectionRefresh = modelDetectionHistory.refresh()
   if (detectionPrimed) void detectionRefresh
   else { await detectionRefresh; detectionPrimed = true }
-  const data = foldResponse(state, days, modelKey, state.tz, now, [modelDetectionContribution(modelDetectionHistory, state.tz)])
+  const data = foldResponse(state, days, modelKey, state.tz, now, [modelDetectionContribution(modelDetectionHistory, state.tz)], await modelRules.get())
   const stale = syncPromise !== null || state.partial || now - (state.syncedAt || 0) > CACHE_TTL_MS
   return {
     ok: true,
@@ -1272,7 +1715,7 @@ const fresh = params.get('fresh') === '1'
     handler: async (req, res) => {
       if (!trustedControlRequest(req, res)) return
       try { await handler(req, res) } catch (error) {
-        const expected = error instanceof PreferenceError || error instanceof IntegrationError || error instanceof QuotaControlError || error instanceof ModelDetectionError
+        const expected = error instanceof PreferenceError || error instanceof IntegrationError || error instanceof QuotaControlError || error instanceof ModelDetectionError || error instanceof PriceOverrideError || error instanceof ModelRuleError
         writeJson(res, error instanceof IntegrationError ? 503 : expected ? 400 : 500, { ok: false, error: expected ? error.message : '操作失败，请稍后重试。' })
       }
     },
@@ -1294,6 +1737,68 @@ const fresh = params.get('fresh') === '1'
     }
     const display = await preferences.get(), model = await quotaControls.get()
     writeJson(res, 200, { ...model, ...display, settings: { ...model.settings, ...display.settings }, connected: !!hub })
+  })
+  // A session that has not been created yet owns no model directory — the host
+  // only resolves one for a retained session scope — so the composer seat has
+  // nothing to switch on the new-session screen. What such a session inherits is
+  // the deployment default (`agentDefaultModel`), which is also what the host
+  // writes after every session-level switch, so the seat controls that instead.
+  const defaultModelService = () => {
+    const service = ctx.get('agentDefaultModel')
+    if (service === undefined || typeof service.currentSelection !== 'function' || typeof service.saveSelection !== 'function') return undefined
+    return service
+  }
+  const defaultModelPayload = service => ({ ok: true, selection: service.currentSelection(), persisted: ctx.get('configEditor') !== undefined })
+  // Diagnostics channel for the composer seat. The client half cannot log to a
+  // file and the desktop renderer console is not reachable from the host, so the
+  // seat reports its mount/inject/register decisions here and they land in one
+  // append-only file next to the profile's data.
+  const seatDiagFile = join(homedir(), '.dsh', 'usage-stats-seat-diag.log')
+  registerControl('seat-diag', async (req, res) => {
+    if (!guard(req, res, 'POST')) return
+    const body = await readControlBody(req)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) { writeJson(res, 400, { ok: false, error: '诊断记录应为 JSON 对象。' }); return }
+    const line = JSON.stringify({ at: new Date().toISOString(), ...body }).slice(0, 4000) + '\n'
+    try {
+      await mkdir(dirname(seatDiagFile), { recursive: true })
+      const existing = await readFile(seatDiagFile, 'utf8').catch(() => '')
+      // Keep the trail short: the newest 200 lines are enough to explain a mount.
+      const kept = existing.split('\n').filter(Boolean).slice(-199)
+      await writeFile(seatDiagFile, kept.join('\n') + (kept.length ? '\n' : '') + line, 'utf8')
+    } catch {
+      /* diagnostics must never break the control routes */
+    }
+    writeJson(res, 202, { ok: true })
+  })
+  registerControl('seat-diag-read', async (req, res) => {
+    if (!guard(req, res, 'GET')) return
+    const text = await readFile(seatDiagFile, 'utf8').catch(() => '')
+    writeJson(res, 200, { ok: true, log: text })
+  })
+  registerControl('default-model', async (req, res) => {
+    const service = defaultModelService()
+    if (service === undefined) { writeJson(res, 503, { ok: false, error: '当前部署未挂载默认模型服务。' }); return }
+    if (req.method === 'GET') { writeJson(res, 200, defaultModelPayload(service)); return }
+    if (!guard(req, res, 'POST')) return
+    const body = await readControlBody(req)
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new PreferenceError('模型选择应为 JSON 对象。')
+    const provider = typeof body.provider === 'string' ? body.provider.trim() : ''
+    const model = typeof body.model === 'string' ? body.model.trim() : ''
+    if (!provider || !model) throw new PreferenceError('请选择有效的模型。')
+    const effort = typeof body.reasoningEffort === 'string' && body.reasoningEffort.trim() ? body.reasoningEffort.trim() : undefined
+    let next = { provider, model, ...effort === undefined ? {} : { reasoningEffort: effort } }
+    const llm = ctx.get('llm')
+    if (llm !== undefined && typeof llm.resolveCallConfig === 'function') {
+      // Validate exactly like the host does for a session-level switch, so an
+      // unsupported provider/model pair never reaches the settings. Canonicalize
+      // the route, but keep "auto" as "auto": the resolver materializes the
+      // model's default effort, which would otherwise be written as a pin.
+      const resolved = await llm.resolveCallConfig(next)
+      next = { provider: resolved.provider, model: resolved.model }
+      if (effort !== undefined) next.reasoningEffort = resolved.reasoningEffort === undefined ? effort : resolved.reasoningEffort
+    }
+    await service.saveSelection(next)
+    writeJson(res, 200, defaultModelPayload(service))
   })
   registerControl('provider-quotas', async (req, res) => {
     if (guard(req, res, 'GET')) writeJson(res, 200, await quotaControls.read('providers', readQuery(req).get('fresh') === '1', readQuery(req).get('provider')))
@@ -1352,6 +1857,82 @@ const fresh = params.get('fresh') === '1'
     writeJson(res, 200, { ok: true, ...foldSessionRows(state, Object.fromEntries(params)), syncedAt: state.syncedAt,
       stale: syncPromise !== null || state.partial || Date.now() - state.syncedAt > CACHE_TTL_MS, partial: state.partial })
   })
+
+  // Logs and costs read the same warm corpus as the statistics panel. The
+  // first call waits for detection usage once, exactly like readStats.
+  // `background` lets latency-sensitive reads (the sidebar dashboard) answer
+  // from the current snapshot instead of waiting for an in-flight scan, which
+  // can take seconds; an explicit refresh still waits for the new scan.
+  const prepareCorpus = async (params, options = {}) => {
+    const tzParam = params.get('tz')
+    const tz = tzParam === null ? SYSTEM_TZ : clampTz(tzParam)
+    await ensureLoaded()
+    if (state.tz !== tz) await sync(tz)
+    else if (params.get('fresh') === '1' || state.partial || Date.now() - state.syncedAt > CACHE_TTL_MS) {
+      if (options.background === true && state.syncedAt > 0) void sync(tz)
+      else await syncWithBudget(tz)
+    }
+    const detectionRefresh = modelDetectionHistory.refresh()
+    if (detectionPrimed) void detectionRefresh
+    else { await detectionRefresh; detectionPrimed = true }
+    return { detection: modelDetectionContribution(modelDetectionHistory, state.tz),
+      syncedAt: state.syncedAt,
+      stale: syncPromise !== null || state.partial || Date.now() - state.syncedAt > CACHE_TTL_MS,
+      partial: state.partial }
+  }
+  registerControl('logs', async (req, res) => {
+    if (!guard(req, res, 'GET')) return
+    const params = readQuery(req)
+    const corpus = await prepareCorpus(params)
+    writeJson(res, 200, { ok: true, ...foldLogs(state, Object.fromEntries(params), [corpus.detection], await priceOverrides.get(), await modelRules.get()),
+      tz: state.tz, syncedAt: corpus.syncedAt, stale: corpus.stale, partial: corpus.partial })
+  })
+  registerControl('costs', async (req, res) => {
+    if (!guard(req, res, 'GET')) return
+    const params = readQuery(req), from = (params.get('from') || '').trim(), to = (params.get('to') || '').trim()
+    if (from && !validDayKey(from) || to && !validDayKey(to)) throw new PreferenceError('日期范围无效。')
+    if (from && to && from > to) throw new PreferenceError('日期范围无效。')
+    const corpus = await prepareCorpus(params)
+    writeJson(res, 200, { ok: true, ...foldCosts(state, { from, to, provider: (params.get('provider') || '').trim() }, Date.now(), [corpus.detection], await priceOverrides.get(), await modelRules.get()),
+      tz: state.tz, syncedAt: corpus.syncedAt, stale: corpus.stale, partial: corpus.partial })
+  })
+  registerControl('dashboard', async (req, res) => {
+    if (!guard(req, res, 'GET')) return
+    const params = readQuery(req), from = (params.get('from') || '').trim(), to = (params.get('to') || '').trim()
+    const validStamp = (value) => value === '' || /^\d{1,16}$/.test(value) && Number(value) > 0
+    if (!validStamp(from) || !validStamp(to)) throw new PreferenceError('时间范围无效。')
+    const corpus = await prepareCorpus(params, { background: params.get('fresh') !== '1' })
+    writeJson(res, 200, { ok: true, ...foldDashboard(state, Object.fromEntries(params), Date.now(), [corpus.detection], await priceOverrides.get(), await modelRules.get()),
+      tz: state.tz, syncedAt: corpus.syncedAt, stale: corpus.stale, partial: corpus.partial })
+  })
+  registerControl('prices', async (req, res) => {
+    if (!guard(req, res, 'POST')) return
+    writeJson(res, 200, await priceOverrides.update(await readControlBody(req)))
+  })
+  // Rule pickers need the raw model names the corpus recorded, because the
+  // statistics response only carries the already-canonical names.
+  const knownModels = () => {
+    const found = new Map()
+    for (const contribution of Object.values(state.sessions)) {
+      for (const entry of Object.values(contribution.byModel || {})) {
+        const name = entry && typeof entry.model === 'string' ? entry.model.trim() : ''
+        if (name === '' || name.length > 300) continue
+        const key = name.toLowerCase()
+        if (!found.has(key)) found.set(key, name)
+      }
+    }
+    return [...found.values()].sort((a, b) => a.localeCompare(b))
+  }
+  registerControl('rules', async (req, res) => {
+    if (req.method === 'GET') {
+      await ensureLoaded()
+      writeJson(res, 200, { ok: true, rules: modelRuleGroups(await modelRules.get()), models: knownModels() })
+      return
+    }
+    if (!guard(req, res, 'POST')) return
+    await ensureLoaded()
+    writeJson(res, 200, { ...await modelRules.update(await readControlBody(req)), models: knownModels() })
+  })
   publishBridge(ctx, USAGE_SERVICE, {
     capabilities: ['usage-snapshot', 'model-speed', 'provider-quota', 'model-detection', 'model-controls'],
     readStats,
@@ -1360,7 +1941,7 @@ const fresh = params.get('fresh') === '1'
     readProviderQuotas: ({ fresh = false, provider = null } = {}) => quotaControls.read('providers', fresh, provider),
     readSupplementalUsage: () => ({ protocolVersion: PROTOCOL_VERSION, records: history.usageRecords(), warning: history.warning() }),
   })
-  ctx.effect(() => async () => { runner.dispose(); await quotaControls.dispose(); await Promise.all([preferences.flush(), modelDetectionHistory.flush(), history.flush()]) }, 'dsh-usage-stats: integration cleanup')
+  ctx.effect(() => async () => { runner.dispose(); await quotaControls.dispose(); await Promise.all([preferences.flush(), priceOverrides.flush(), modelRules.flush(), modelDetectionHistory.flush(), history.flush()]) }, 'dsh-usage-stats: integration cleanup')
   ctx.effect(() => {
     if (typeof ctx.on !== 'function') return
     return ctx.on(HUB_UPDATED, () => { void modelDetectionHistory.refresh() })

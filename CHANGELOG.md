@@ -1,5 +1,81 @@
 # 更新日志 / Changelog
 
+## 0.2.6 - 2026-10-28
+
+<a id="v026-zh"></a>
+**简体中文** · [English](#v026-en)
+
+### ✨ 新增与改进
+
+- 新增「日志」页：按时间倒序查看每次请求的应用、供应商、模型、成本、输入/输出/缓存 Token、输出速度与首字耗时，支持供应商/模型筛选、每页行数、翻页和刷新。
+- 新增「成本」页与价格表：按内置价格表和自定义单价折算成本，展示总成本、区间成本、区间 Tokens 与逐模型汇总；可为未收录或价格变动的模型维护输入、输出、缓存读写单价（美元/百万 Tokens），保存后立即反映到成本与日志。
+- 新增「规则」页：把同一模型的不同原始名称归并为一个名称，用量、日志和成本统一按归并后的名称统计；支持新增、编辑、移除，最多 1000 条并阻止循环归并。
+- 新增侧边栏「用量统计」仪表盘：四张指标卡（成本、请求数、真实 Tokens、缓存命中率），按小时、天、月展示柱状图，选择「全部」时切换为 53 周热力图；内置请求日志、供应商/模型筛选、每页行数与翻页。
+- 新增日期范围选择器：仪表盘与成本页使用同一套预设、月历和起止日期控件；仪表盘额外支持具体时间与「结束时间跟随当前时刻」，成本页按天选择。
+- 新增「快速上手」：右上角按钮打开左侧目录、右侧说明的引导窗口，按当前启用的模块介绍每个页面和按钮的用法。
+- 新增「问题反馈」按钮与「控制」页顶部的 GitHub Star 提示，可直接前往 Issues 和仓库。
+- 下拉框统一为自绘组件，支持键盘搜索、状态点、来源提示与主题色选择；悬浮提示改为跟随鼠标的圆角气泡，替换系统原生 tooltip，靠近窗口边缘自动翻转。
+- 统一分叉会话、保留会话、检测用量与名称归并后的统计口径，Token、成本与速度不再重复或遗漏。
+- 新页面、错误提示与动态文案补齐中文、英语、日语翻译。
+- 兼容 DSH Desktop `>=0.2.1-rc.1 <=0.2.1-rc.3`（含 0.2.1-rc.1、0.2.1-rc.2、0.2.1-rc.3）。
+
+### 🐛 问题修复
+
+- 修复仪表盘请求与后台语料同步重叠时被阻塞、偶发卡顿的问题：仪表盘先返回缓存数据，手动刷新才等待同步完成。
+- 修复成本页日期范围弹层在设置面板内向左溢出、被侧边栏遮挡并裁掉日期字段与日历首列的问题。
+- 修复检测、配额、成本、规则与日志接口错误串在英文/日文界面中仍显示中文的问题。
+- 修复成本页与仪表盘日期范围控件样式、交互不一致的问题。
+
+### ⚡ 性能与健壮性
+
+- 仪表盘读取优先使用热缓存并在后台增量同步，打开、筛选和翻页不再等待会话扫描。
+- 悬浮提示在绘制帧内定位，避免在密集图表上读取布局导致输入卡顿。
+- 价格表与名称规则分别持久化到独立文件，并以仅当前用户可读的权限（0600）写入；价格与规则最多 1000 条，写入前校验非法值、重复与循环。
+- 名称解析按原始模型缓存结果，减少逐事件重复计算。
+- 仪表盘「全部」范围复用 53 周热力图聚合结果，减少重复折叠。
+
+### 🧰 工程化
+
+- 测试增至 181 项，覆盖价格表、名称规则、请求日志、成本区间、仪表盘、时区、分叉会话与速度统计。
+- 发布流程继续执行工作区隐私扫描、第三方完整性与独立安装验证；新增设置文件同样按仅当前用户可读权限保存。
+
+<a id="v026-en"></a>
+**English** · [简体中文](#v026-zh)
+
+### ✨ New and improved
+
+- New **Logs** tab: review every request in reverse chronological order with app, provider, model, cost, input/output/cache tokens, output speed and time to first token, plus provider/model filters, page size, paging and refresh.
+- New **Costs** tab and price table: convert tokens into money using the built-in catalog and custom rates, and review total cost, range cost, range tokens and per-model totals. Add or adjust input, output, cache-read and cache-write rates (USD per million tokens) for unpriced or changed models; saved rates apply to costs and logs immediately.
+- New **Rules** tab: merge different raw names of the same model into one name so usage, logs and costs are counted together. Add, edit and remove rules, capped at 1000 entries with cycle detection.
+- New sidebar **Usage Stats** dashboard: four metric cards (cost, requests, real tokens, cache hit rate), hourly/daily/monthly bar charts and a 53-week heatmap for the all-time range, plus the built-in request log, provider/model filters, page size and paging.
+- New date-range picker shared by the dashboard and Costs: presets, a calendar and start/end fields; the dashboard also supports exact times and an "end follows now" option, while Costs works at day granularity.
+- New **Quick start** guide: a left-hand index with a detail pane that explains every page and button currently visible, opened from the header.
+- New **Feedback** button and GitHub Star note at the top of Controls, linking to GitHub Issues and the repository.
+- Custom-rendered dropdowns with keyboard search, status dots, source hints and accent colors; hover hints now use a rounded bubble that follows the cursor instead of native tooltips and flips near window edges.
+- Unified accounting for forked and retained sessions, detection usage and merged model names so tokens, costs and speed are neither duplicated nor dropped.
+- Chinese, English and Japanese translations for all new pages, errors and dynamic labels.
+- Compatible with DSH Desktop `>=0.2.1-rc.1 <=0.2.1-rc.3` (0.2.1-rc.1, 0.2.1-rc.2 and 0.2.1-rc.3).
+
+### 🐛 Bug fixes
+
+- Fixed dashboard requests being blocked and occasionally stalling while a background corpus sync runs: the dashboard now returns the warm snapshot and only manual refresh waits for a sync.
+- Fixed the Costs date-range popover sliding under the sidebar in the settings pane and clipping its date fields and the first calendar column.
+- Fixed detection, quota, cost, rule and log API errors still appearing in Chinese in the English and Japanese UI.
+- Unified the date-range control's styling and behavior between Costs and the dashboard.
+
+### ⚡ Performance and robustness
+
+- Dashboard reads use the warm cache and sync incrementally in the background; opening, filtering and paging no longer wait for a session scan.
+- Hover hints position themselves in the paint frame, avoiding layout reads that made dense charts feel sluggish.
+- Price overrides and name rules persist to separate files with owner-only permissions (0600); both are capped at 1000 entries and validated for invalid values, duplicates and cycles before writing.
+- Model-name resolution caches results per raw name, avoiding repeated work for every event.
+- The dashboard's all-time range reuses the 53-week heatmap aggregation instead of folding the same data twice.
+
+### 🧰 Tooling
+
+- The test suite now has 181 tests covering pricing, rules, request logs, cost buckets, the dashboard, time zones, forked sessions and speed statistics.
+- Release checks continue to scan the workspace for private files, verify third-party integrity and validate a clean install; the new settings files are also saved owner-only.
+
 ## 0.2.5 - 2026-10-24
 
 <a id="v025-zh"></a>

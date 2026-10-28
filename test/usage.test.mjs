@@ -8,6 +8,8 @@ import {
   defaultState,
   scanSessionEvents,
   foldResponse,
+  foldDashboard,
+  foldCosts,
   modelDetectionContribution,
   foldSessionRows,
   syncCorpus,
@@ -417,6 +419,55 @@ test('heatmap day-model buckets include exact token totals and call counts', () 
   assert.deepEqual(filtered.byDayModels.find((d) => d.date === day.date).models.map((m) => [m.key, m.billed, m.calls]), [
     ['test/alpha', 12355, 2],
   ])
+})
+
+test('dashboard folds legacy aggregate-only sessions into totals, series and heatmap', () => {
+  const state = defaultState()
+  state.tz = -480
+  state.sessions.live = scanSessionEvents([
+    usageEvent('2026-08-20T02:00:00Z', 'deepseek-v4-flash', 1000),
+  ], -480)
+  state.sessions.legacy = scanSessionEvents([{
+    type: 'assistant/message', time: Date.parse('2026-08-19T02:00:00Z'),
+    data: { usage: { inputTokens: 500 }, message: { source: { provider: 'old', model: 'deepseek-v4-flash' } } },
+  }], -480)
+  delete state.sessions.legacy.usageEvents
+  const now = Date.parse('2026-09-29T12:00:00Z')
+  const all = foldDashboard(state, { all: '1' }, now)
+  const costs = foldCosts(state, { from: '0000-01-01', to: '9999-12-31' }, now)
+  assert.equal(all.totals.calls, 2)
+  assert.equal(all.totals.billed, 1500)
+  assert.ok(Math.abs(all.totals.cost - costs.totalCost) < 1e-12)
+  assert.equal(all.total, 1) // the request log stays event-only
+  assert.ok(all.providers.includes('old'))
+  assert.deepEqual(all.heatmap.days.filter((day) => day.calls > 0).map((day) => [day.date, day.calls, day.billed]), [
+    ['2026-08-19', 1, 500], ['2026-08-20', 1, 1000],
+  ])
+  const legacyOnly = foldDashboard(state, { all: '1', provider: 'old' }, now)
+  assert.equal(legacyOnly.totals.calls, 1)
+  assert.equal(legacyOnly.totals.billed, 500)
+  assert.equal(legacyOnly.total, 0)
+  const hourly = foldDashboard(state, {
+    from: Date.parse('2026-08-19T00:00:00+08:00'), to: Date.parse('2026-08-19T23:59:59+08:00'),
+  }, now)
+  assert.equal(hourly.granularity, 'hour')
+  assert.equal(hourly.totals.calls, 1)
+  assert.equal(hourly.totals.billed, 500)
+  assert.equal(hourly.series.reduce((sum, point) => sum + point.calls, 0), 1)
+})
+
+test('cost range buckets merge once when rules fold several raw models into one row', () => {
+  const state = defaultState()
+  state.tz = -480
+  state.sessions.one = scanSessionEvents([
+    usageEvent('2026-08-19T02:00:00Z', 'raw-a', 100),
+    usageEvent('2026-08-20T02:00:00Z', 'raw-b', 200),
+  ], -480)
+  const rules = [{ original: 'raw-a', canonical: 'deepseek-v4-flash' }, { original: 'raw-b', canonical: 'deepseek-v4-flash' }]
+  const costs = foldCosts(state, { from: '2026-08-19', to: '2026-08-20' }, Date.parse('2026-09-29T12:00:00Z'), [], null, rules)
+  assert.equal(costs.rows.length, 1)
+  assert.equal(costs.rows[0].range.calls, 2)
+  assert.equal(costs.rows[0].range.billed, 300)
 })
 
 test('retained hourly buckets follow the requested system offset', async () => {

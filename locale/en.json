@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Usage statistics",
-    "description": "Usage statistics, provider quotas, model detection and controls for DSH Desktop >=0.2.1-rc.1 <=0.2.1-rc.3 (0.2.1-rc.1, 0.2.1-rc.2, 0.2.1-rc.3)."
+    "description": "See the tokens, cost and speed of every request, compare spending by model and provider, merge different names for the same model, check balances and compare real model performance. Supports DSH Desktop >=0.2.1-rc.1 <=0.2.1-rc.3 (0.2.1-rc.1, 0.2.1-rc.2, 0.2.1-rc.3)."
   }
 }

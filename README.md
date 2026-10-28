@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="#安装"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH 桌面端"></a>
-  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.5-64748b?style=flat-square" alt="插件版本 0.2.5"></a>
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.6-64748b?style=flat-square" alt="插件版本 0.2.6"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 许可"></a>
 </p>
 
@@ -27,43 +27,49 @@
 </p>
 
 <p align="center">
-  <a href="screenshots/usage.png"><img src="screenshots/usage.png" alt="用量面板：概览指标、今日图表与使用量热力图" width="800"></a>
+  <a href="screenshots/usage.png"><img src="screenshots/usage.png" alt="用量面板：概览指标、当日走势与使用量热力图" width="860"></a>
 </p>
 
-<p align="center"><sub>查看今日与累计 Token、小时趋势和使用量热力图。</sub></p>
+<p align="center"><sub>看清今日与累计用量、当日走势、热力图和模型输出速度。</sub></p>
 
 <table align="center">
-  <thead>
-    <tr><th align="center">配额</th><th align="center">控制</th></tr>
-  </thead>
   <tbody>
     <tr>
-      <td align="center"><a href="screenshots/quotas.png"><img src="screenshots/quotas.png" alt="供应商余额与账号积分" width="400"></a></td>
-      <td align="center"><a href="screenshots/controls.png"><img src="screenshots/controls.png" alt="模型功能、展示偏好与查询来源" width="400"></a></td>
+      <td align="center"><a href="screenshots/logs.png"><img src="screenshots/logs.png" alt="请求日志：逐次查看 Token、费用与速度" width="420"></a><br><sub>逐次核对每次请求的 Token、费用与速度。</sub></td>
+      <td align="center"><a href="screenshots/costs.png"><img src="screenshots/costs.png" alt="成本面板：区间成本与逐模型花费" width="420"></a><br><sub>按模型查看区间花费，补齐未收录模型的价格。</sub></td>
     </tr>
     <tr>
-      <td align="center">集中查看供应商余额、账号积分和周期额度。</td>
-      <td align="center">设置模型功能、展示偏好和自定义配额查询。</td>
+      <td align="center"><a href="screenshots/rules.png"><img src="screenshots/rules.png" alt="规则面板：归并模型的不同名称" width="420"></a><br><sub>把同一模型的多种名称归并成一条统计。</sub></td>
+      <td align="center"><a href="screenshots/quotas.png"><img src="screenshots/quotas.png" alt="配额面板：供应商余额、账号积分与周期额度" width="420"></a><br><sub>集中查看供应商余额、账号积分与周期额度。</sub></td>
+    </tr>
+    <tr>
+      <td align="center"><a href="screenshots/detection.png"><img src="screenshots/detection.png" alt="模型检测：候选排名、库内置信度与采样状态" width="420"></a><br><sub>确认预算后运行检测，查看候选排名与已发生用量。</sub></td>
+      <td align="center"><a href="screenshots/controls.png"><img src="screenshots/controls.png" alt="控制面板：模块开关、模型设置与自定义查询" width="420"></a><br><sub>开关各模块，调整模型选择、主题色与自动刷新。</sub></td>
     </tr>
   </tbody>
 </table>
 
 <p align="center">
-  <a href="screenshots/detection.png"><img src="screenshots/detection.png" alt="模型检测：候选排名、库内置信度与采样状态" width="800"></a>
+  <a href="screenshots/dashboard.png"><img src="screenshots/dashboard.png" alt="侧边栏用量仪表盘：区间指标、趋势与请求日志" width="860"></a>
 </p>
 
-<p align="center"><sub>查看 LM Fingerprint 候选排名、采样状态和已发生用量。</sub></p>
+<p align="center"><sub>从侧栏打开仪表盘，快速查看区间成本、趋势和最近的请求日志。</sub></p>
 
 ## 功能
 
 | 页面 | 你可以做什么 |
 | --- | --- |
 | **用量** | 查看今日与累计 Token、使用天数、小时调用次数、每日／每周热力图、趋势、模型明细与输出速度。 |
+| **日志** | 按时间查看每次请求的应用、供应商、模型、成本、Token 与速度，支持筛选和翻页。 |
+| **成本** | 按价格表折算成本，查看总成本、区间成本、区间 Tokens 与逐模型花费，可维护自定义单价。 |
+| **规则** | 将同一模型的不同原始名称归并为一个名称，让用量、日志和成本统一统计。 |
 | **配额** | 集中查看供应商余额、账号积分与周期配额，支持手动或定时刷新及自定义查询。 |
 | **检测** | 独立选择供应商和模型，确认预算后运行 LM Fingerprint 检测，查看请求进度、采样状态、候选排名与历史结果。 |
 | **控制** | 调整展示偏好、配额查询设置、高级模型选择器与逐模型推理强度。 |
 
 - **看清使用趋势**：按日／周浏览热力图，切换 7／30 天趋势，按供应商与模型查看用量。
+- **侧边栏仪表盘**：从侧栏打开「用量统计」，切换成本、请求数、真实 Tokens 与缓存命中率，按小时、天、月或 53 周热力图查看，并内置请求日志、筛选与翻页。
+- **快速上手与反馈**：右上角「快速上手」按页面介绍用法，发送图标直达 GitHub Issues；「控制」页顶部可直接前往仓库点 Star。
 - **比较输出速度**：按 TPS 排序，显示平均首 Token 耗时（TTFT）；缺少有效时间记录的样本不参与速度排名。
 - **按需刷新配额**：通过 DSH 凭据服务查询已配置供应商，账号配额需要对应的账号插件或宿主服务。自动查询默认关闭。
 - **统一数值单位**：大数值统一以 `k` / `M` / `B` 显示，中英日界面读法一致。
@@ -75,7 +81,7 @@
 
 ## 安装
 
-当前插件版本为 **0.2.5**，适配 **DSH Desktop `0.2.1-rc.3`**，兼容范围为 `>=0.2.1-rc.1 <=0.2.1-rc.3`（含 0.2.1-rc.1、0.2.1-rc.2、0.2.1-rc.3）。版本不匹配时，宿主插件管理器会拒绝安装或启用。
+当前插件版本为 **0.2.6**，适配 **DSH Desktop `0.2.1-rc.3`**，兼容范围为 `>=0.2.1-rc.1 <=0.2.1-rc.3`（含 0.2.1-rc.1、0.2.1-rc.2、0.2.1-rc.3）。版本不匹配时，宿主插件管理器会拒绝安装或启用。
 
 **推荐通过 DSH Desktop 安装 [npm 包 `@sligqoer/dsh-usage-stats`](https://www.npmjs.com/package/@sligqoer/dsh-usage-stats)。** 已包含预构建模块，无需克隆仓库或在本机构建；通过包名安装后可使用插件页的「检查更新」。
 
@@ -101,16 +107,16 @@
 安装本次版本时，在同一入口填入：
 
 ```text
-@sligqoer/dsh-usage-stats@0.2.5
+@sligqoer/dsh-usage-stats@0.2.6
 ```
 
 也可从 [GitHub 发布页](https://github.com/Jockjrop/dsh-usage-stats/releases/latest)下载 `.tgz` 安装包和 `SHA256SUMS`，校验后填入压缩包的本地绝对路径，无需解压。
 
 ```powershell
-Get-FileHash ./sligqoer-dsh-usage-stats-0.2.5.tgz -Algorithm SHA256
+Get-FileHash ./sligqoer-dsh-usage-stats-0.2.6.tgz -Algorithm SHA256
 ```
 
-发布附件包含版本安装包 `sligqoer-dsh-usage-stats-0.2.5.tgz`、通用安装包 `dsh-usage-stats.tgz` 和校验文件 `SHA256SUMS`；两个安装包内容一致。
+发布附件包含版本安装包 `sligqoer-dsh-usage-stats-0.2.6.tgz`、通用安装包 `dsh-usage-stats.tgz` 和校验文件 `SHA256SUMS`；两个安装包内容一致。
 
 </details>
 
@@ -125,10 +131,11 @@ Get-FileHash ./sligqoer-dsh-usage-stats-0.2.5.tgz -Algorithm SHA256
 
 ## 使用
 
-1. 在「用量」查看概览、趋势、热力图和输出速度；在「控制」调整模型明细与速度的显示。
-2. 在「配额」点击供应商或账号卡片的刷新按钮。自动查询默认关闭，可在「控制」确认提示后开启。
-3. 在「检测」选择供应商与模型，设置采样次数和输出上限，点击「查看检测预算」，确认后点击「开始检测（会消耗 Token）」。读取目录或历史结果不会启动检测。
-4. 在「控制」分别开启或关闭高级模型选择器、模型推理强度和模型检测，编辑自定义配额查询。
+1. 在「用量」查看概览、趋势、热力图和输出速度；侧栏「用量统计」可直接打开仪表盘。
+2. 在「日志」按供应商、模型筛选每次请求；在「成本」选择日期范围查看花费并维护价格表；在「规则」把同一模型的不同名称归并为一个名称。
+3. 在「配额」点击供应商或账号卡片的刷新按钮。自动查询默认关闭，可在「控制」确认提示后开启。
+4. 在「检测」选择供应商与模型，设置采样次数和输出上限，点击「查看检测预算」，确认后点击「开始检测（会消耗 Token）」。读取目录或历史结果不会启动检测。
+5. 在「控制」分别开启或关闭高级模型选择器、模型推理强度和模型检测，编辑自定义配额查询；右上角「快速上手」可查看各页面说明。
 
 检测页按「选择检测模型 → 确认预算 → 检测结果」提示当前步骤。更改模型或参数后，需要重新查看预算；检测中可查看请求进度、逐次采样状态并取消。历史结果保留原模型与参数，检测详情和指纹引擎信息可按需展开。
 
@@ -141,6 +148,8 @@ Get-FileHash ./sligqoer-dsh-usage-stats-0.2.5.tgz -Algorithm SHA256
 | `usage-stats-corpus.json` | 会话用量汇总。 |
 | `usage-stats-display.json` | 用量展示偏好。 |
 | `usage-stats-quota-controls.json` | 查询和模型设置、供应商配额缓存。 |
+| `usage-stats-prices.json` | 模型自定义单价（美元/百万 Tokens）。 |
+| `usage-stats-rules.json` | 模型名称归并规则。 |
 | `usage-stats-detections.json` | 检测结果与逐次样本用量。 |
 | `usage-stats-lm-fingerprint/` | 通过校验的指纹引擎与参考库更新。 |
 | `usage-stats-supplemental.json` | 按任务和样本 ID 去重的检测用量，重启后保留。 |
@@ -188,4 +197,4 @@ npm run release
 
 修改 `src/` 后运行 `npm run build` 生成 `lib/`。`src/client.js` 是渲染器模板，`client-messages.js`、`client-styles.js`、`client-format.js` 等模块由构建按标记内联，发布产物仍是单个 `lib/client.js`。`npm run lint` 校验语法、JSON 文档与三语条目；`npm run check:release` 检查版本、构建一致性、第三方完整性与工作区隐私文件；`npm run release` 构建安装包并在独立临时项目中验证安装与加载，输出位于 `release/`。
 
-GitHub 发布流程要求标签与包版本一致（本版为 `v0.2.5`），通过检查后使用同一份安装包发布 npm 与 GitHub Release。npm 可信发布对应的工作流文件为 `.github/workflows/release.yml`。第三方资源、来源版本和许可记录于 `third_party/` 与 [NOTICE](NOTICE)，本项目使用 [Apache-2.0 许可证](LICENSE)。
+GitHub 发布流程要求标签与包版本一致（本版为 `v0.2.6`），通过检查后使用同一份安装包发布 npm 与 GitHub Release。npm 可信发布对应的工作流文件为 `.github/workflows/release.yml`。第三方资源、来源版本和许可记录于 `third_party/` 与 [NOTICE](NOTICE)，本项目使用 [Apache-2.0 许可证](LICENSE)。

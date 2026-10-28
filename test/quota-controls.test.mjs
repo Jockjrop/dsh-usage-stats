@@ -161,7 +161,7 @@ test('default-off reads never query; explicit refresh caches and survives restar
   const ctx = { get: name => name === 'credentials' ? undefined : base.get(name) }
   const options = { path, sources: { providers: async () => { calls++; return { ok: true, quotas: [{ provider: 'deepseek', name: 'DeepSeek', metrics: [{ kind: 'amount', remaining: 10, currency: 'CNY' }] }] } } } }
   const controller = createQuotaControls(ctx, options)
-  assert.deepEqual((await controller.get()).settings, { autoQuota: false, intervalMinutes: 10, showModelDetection: true, advancedModelSelect: true, modelReasoning: true, customQueries: [] })
+  assert.deepEqual((await controller.get()).settings, { autoQuota: false, intervalMinutes: 10, showModelDetection: true, showLogs: true, showCosts: true, showRules: true, advancedModelSelect: true, modelSeatColor: 'blue', modelReasoning: true, customQueries: [] })
   await controller.tick()
   assert.deepEqual((await controller.read('providers')).quotas.map(row => [row.provider, row.status, row.metrics]), [['deepseek', 'unqueried', []]])
   assert.equal(calls, 0)
@@ -230,21 +230,31 @@ test('configured balances appear unqueried without a probe, including custom Ste
   assert.equal(queries, priorCalls)
 }))
 
-test('the advanced model selector switch is on by default, persists both ways and rejects non-booleans', async () => temporary(async (path) => {
+test('the advanced model selector switch and theme color persist and reject invalid values', async () => temporary(async (path) => {
   const options = { path, sources: {} }
   const controller = createQuotaControls(context(), options)
   assert.equal((await controller.get()).settings.advancedModelSelect, true)
-  // A saved document without this key inherits the enabled default.
+  assert.equal((await controller.get()).settings.modelSeatColor, 'blue')
+  // A saved document without these keys inherits the enabled/blue defaults.
   await writeFile(path, JSON.stringify({ settings: { autoQuota: false, intervalMinutes: 60, showModelDetails: true } }), 'utf8')
-  assert.equal((await createQuotaControls(context(), options).get()).settings.advancedModelSelect, true)
+  const restored = createQuotaControls(context(), options)
+  assert.equal((await restored.get()).settings.advancedModelSelect, true)
+  assert.equal((await restored.get()).settings.modelSeatColor, 'blue')
   await controller.update({ advancedModelSelect: false })
   assert.equal((await controller.get()).settings.advancedModelSelect, false)
   await assert.rejects(controller.update({ advancedModelSelect: 'true' }), /高级模型选择器开关值无效/)
   assert.equal((await controller.get()).settings.advancedModelSelect, false)
   const persisted = createQuotaControls(context(), options)
   assert.equal((await persisted.get()).settings.advancedModelSelect, false)
-  await persisted.update({ advancedModelSelect: true })
+  await persisted.update({ advancedModelSelect: true, modelSeatColor: 'purple' })
   assert.equal((await createQuotaControls(context(), options).get()).settings.advancedModelSelect, true)
+  assert.equal((await createQuotaControls(context(), options).get()).settings.modelSeatColor, 'purple')
+  await assert.rejects(persisted.update({ modelSeatColor: 'pink' }), /主题色无效/)
+  await assert.rejects(persisted.update({ modelSeatColor: 1 }), /主题色无效/)
+  assert.equal((await persisted.get()).settings.modelSeatColor, 'purple')
+  // An unknown stored palette (an old or hand-edited file) reads as blue.
+  await writeFile(path, JSON.stringify({ settings: { modelSeatColor: 'pink' } }), 'utf8')
+  assert.equal((await createQuotaControls(context(), options).get()).settings.modelSeatColor, 'blue')
 }))
 
 test('model reasoning visibility defaults on for old stores, persists, and validates writes atomically', async () => temporary(async (path) => {

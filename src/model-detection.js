@@ -183,7 +183,7 @@ export function createModelDetectionRunner(ctx, options = {}) {
           probability: analysis.probability, probabilityScope: analysis.probability_scope,
           modelInBank: !!claimed, sameCandidate: claimed ? claimed.id === analysis.prediction : null,
           merged: !!claimed && modelAliases(claimed).length > 1,
-          unusualDistribution: outputs.some(o => Math.min(...o.text.split(',').map(Number)) >= 200) })
+          unusualDistribution: analysis.decision === 'not_model' || outputs.some(o => Math.min(...o.text.split(',').map(Number)) >= 200) })
       }
     } catch { job.halt = true; job.message = '指纹检测未完成，请检查通道或引擎状态。' }
     finally {

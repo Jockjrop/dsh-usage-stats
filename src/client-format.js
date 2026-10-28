@@ -66,6 +66,13 @@ function monthShort(dateKey) {
       return new Intl.DateTimeFormat(currentLanguage() === 'en' ? 'en-US' : 'ja-JP', { month: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2000, month - 1, 1)))
     }
 
+function fmtCost(value) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
+      if (value === 0) return '$0'
+      var digits = value >= 1 ? 2 : value >= 0.01 ? 3 : value >= 0.0001 ? 4 : 6
+      return '$' + value.toFixed(digits)
+    }
+
 function readJson(response) {
       return response.json().then(function (body) {
         if (!response.ok || (body && body.ok === false)) throw new Error((body && body.error) || ('HTTP ' + response.status))
@@ -73,5 +80,5 @@ function readJson(response) {
       })
     }
 
-  return { fmt, fmtExact, fmtReset, fmtInTz, fmtFetched, formatPct, monthShort, readJson }
+  return { fmt, fmtExact, fmtReset, fmtInTz, fmtFetched, fmtCost, formatPct, monthShort, readJson }
 }

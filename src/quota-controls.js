@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { quotaTemplate, hasBuiltinQuotaQuery, officialQuotaSpec, customQuotaAuth, quotaErrorCode } from './provider-quotas.js'
 
 export const QUOTA_INTERVALS = [10, 60, 300, 1440]
+const MODEL_SEAT_COLORS = ['red', 'green', 'yellow', 'blue', 'purple']
 const MAX_BYTES = 1_048_576
 const plain = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 const clone = (value) => structuredClone(value)
@@ -20,7 +21,7 @@ export class QuotaControlError extends Error {
 const fail = (message, code, status) => { throw new QuotaControlError(message, code, status) }
 
 function defaults() {
-  return { autoQuota: false, intervalMinutes: 10, showModelDetection: true, advancedModelSelect: true, modelReasoning: true, customQueries: [] }
+  return { autoQuota: false, intervalMinutes: 10, showModelDetection: true, showLogs: true, showCosts: true, showRules: true, advancedModelSelect: true, modelSeatColor: 'blue', modelReasoning: true, customQueries: [] }
 }
 
 /**
@@ -262,7 +263,11 @@ export function createQuotaControls(ctx, { path, legacyPath, sources, request = 
       if (plain(saved)) {
         settings.autoQuota = saved.autoQuota === true
         settings.showModelDetection = saved.showModelDetection !== false
+        settings.showLogs = saved.showLogs !== false
+        settings.showCosts = saved.showCosts !== false
+        settings.showRules = saved.showRules !== false
         settings.advancedModelSelect = saved.advancedModelSelect !== false
+        if (MODEL_SEAT_COLORS.includes(saved.modelSeatColor)) settings.modelSeatColor = saved.modelSeatColor
         settings.modelReasoning = saved.modelReasoning !== false
         if (QUOTA_INTERVALS.includes(saved.intervalMinutes)) settings.intervalMinutes = saved.intervalMinutes
         if (Array.isArray(saved.customQueries)) {
@@ -446,9 +451,25 @@ export function createQuotaControls(ctx, { path, legacyPath, sources, request = 
           if (typeof patch.showModelDetection !== 'boolean') fail('模型检测开关值无效。')
           next.showModelDetection = patch.showModelDetection
         }
+        if (patch.showLogs != null) {
+          if (typeof patch.showLogs !== 'boolean') fail('日志开关值无效。')
+          next.showLogs = patch.showLogs
+        }
+        if (patch.showCosts != null) {
+          if (typeof patch.showCosts !== 'boolean') fail('成本开关值无效。')
+          next.showCosts = patch.showCosts
+        }
+        if (patch.showRules != null) {
+          if (typeof patch.showRules !== 'boolean') fail('规则开关值无效。')
+          next.showRules = patch.showRules
+        }
         if (patch.advancedModelSelect != null) {
           if (typeof patch.advancedModelSelect !== 'boolean') fail('高级模型选择器开关值无效。')
           next.advancedModelSelect = patch.advancedModelSelect
+        }
+        if (patch.modelSeatColor != null) {
+          if (!MODEL_SEAT_COLORS.includes(patch.modelSeatColor)) fail('主题色无效，请选择红、绿、黄、蓝或紫。')
+          next.modelSeatColor = patch.modelSeatColor
         }
         if (Object.prototype.hasOwnProperty.call(patch, 'modelReasoning')) {
           if (typeof patch.modelReasoning !== 'boolean') fail('模型推理强度开关值无效。')

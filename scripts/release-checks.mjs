@@ -20,7 +20,7 @@ export function assertPublicFile(filename, content = '', { packed = false } = {}
   assert.ok(!privateDirectories.test(name) && !(privateNames.test(base) && base !== '.env.example'), 'Private file: ' + name)
   assert.ok(!temporaryNames.test(base), 'Private or temporary file: ' + name)
   if (packed) {
-    assert.ok(packageFiles.has(name) || /^(?:lib\/[^/]+\.js|locale\/[^/]+\.json|third_party\/.+|screenshots\/(?:usage|quotas|detection|controls)\.png)$/.test(name), 'Unexpected package member: ' + name)
+    assert.ok(packageFiles.has(name) || /^(?:lib\/[^/]+\.js|locale\/[^/]+\.json|third_party\/.+|screenshots\/(?:usage|quotas|detection|controls|logs|costs|rules|dashboard)\.png)$/.test(name), 'Unexpected package member: ' + name)
     assert.ok(!/(?:^|\/)(?:src|test|scripts|node_modules|\.git|release)(?:\/|$)/.test(name), 'Development package member: ' + name)
   }
   const text = String(content)
@@ -82,7 +82,7 @@ export async function checkRelease(directory, options = {}) {
   for (const filename of sources) assert.deepEqual(await fs.readFile(path.join(directory, 'src', filename)), await fs.readFile(path.join(directory, 'lib', filename)), 'Stale build: lib/' + filename)
   assert.equal(await fs.readFile(path.join(directory, 'lib/client.js'), 'utf8'), renderClient(directory), 'Stale client build')
   await verifyEngine(path.join(directory, 'third_party/lm-fingerprint'))
-  for (const filename of ['LICENSE', 'NOTICE', 'README.en.md', 'cordis.patch.yml', ...['en', 'zh', 'ja'].map(locale => `locale/${locale}.json`), ...['usage', 'quotas', 'detection', 'controls'].map(tab => `screenshots/${tab}.png`)]) await fs.access(path.join(directory, filename))
+  for (const filename of ['LICENSE', 'NOTICE', 'README.en.md', 'cordis.patch.yml', ...['en', 'zh', 'ja'].map(locale => `locale/${locale}.json`), ...['usage', 'quotas', 'detection', 'controls', 'logs', 'costs', 'rules', 'dashboard'].map(tab => `screenshots/${tab}.png`)]) await fs.access(path.join(directory, filename))
   return metadata
 }
 

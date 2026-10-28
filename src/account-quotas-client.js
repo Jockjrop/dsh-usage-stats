@@ -225,7 +225,7 @@ function QuotaAccount({ account, quota, channel, loading, onRefresh, refreshButt
           t('刷新 {name} 配额', { name: account.displayName }), false) : null),
       quota?.error ? h('p', { className: 'dshus-error', role: 'status' },
         quota.stale ? t('保留上次成功数据') + ' · ' : '', quota.error.message || t('额度读取失败')) : null,
-      quota?.paused && !quota.displayOnly ? h('p', { className: 'dshus-account-quota-meta', title: quota.pauseReason || undefined }, t('已暂停调用')) : null,
+      quota?.paused && !quota.displayOnly ? h('p', { className: 'dshus-account-quota-meta', 'data-dshus-tip': quota.pauseReason || undefined }, t('已暂停调用')) : null,
       quota?.displayOnly && !quota.supportsAccountCredits && !quota.supportsFreeRoute ? h('p', { className: 'dshus-account-quota-meta' }, t('余额仅供展示')) : null,
       pools.length ? h('dl', { className: 'dshus-credit-details' }, visible.map((pool, index) => {
         const remaining = pool.remaining ?? pool.balance

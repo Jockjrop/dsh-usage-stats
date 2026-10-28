@@ -58,6 +58,132 @@ function uiError(error) {
       return http ? t('查询返回 HTTP {status}，请检查地址和供应商凭据。', { status: http[1] }) : t(error)
     }
 
+/* One modern popup replaces every native title bubble. Elements opt in with
+   data-dshus-tip; the node lives inside the open dialog (top layer) so it is
+   visible above modal chrome. */
+var hoverTipNode = null
+var hoverTipTarget = null
+var hoverTipSequence = 0
+var hoverTipPoint = null
+var hoverTipFramePending = false
+
+function hoverTipRoot() {
+      if (typeof document === 'undefined') return null
+      var dialogs = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('dialog[open]') : null
+      return dialogs && dialogs.length ? dialogs[dialogs.length - 1] : document.body || null
+    }
+
+function hideHoverTip() {
+      hoverTipTarget = null
+      hoverTipPoint = null
+      hoverTipSequence++
+      if (hoverTipNode) hoverTipNode.classList.remove('on')
+    }
+
+// Reading the tooltip box right after writing it would force a synchronous
+// layout of the whole dialog on every hover target. Position it after paint
+// instead, so moving across dense charts stays responsive.
+function placeHoverTip(target, sequence) {
+      if (sequence !== hoverTipSequence || hoverTipTarget !== target || !hoverTipNode) return
+      var x, y
+      if (hoverTipPoint) {
+        x = hoverTipPoint.x
+        y = hoverTipPoint.y
+      } else {
+        var rect = target.getBoundingClientRect()
+        x = rect.left + rect.width / 2
+        y = rect.top
+      }
+      var width = hoverTipNode.offsetWidth || 0
+      var height = hoverTipNode.offsetHeight || 0
+      var viewportWidth = window.innerWidth || 0
+      var viewportHeight = window.innerHeight || 0
+      var margin = 8
+      var left = x + 14
+      if (left + width > viewportWidth - margin) left = x - width - 14
+      left = Math.max(margin, left)
+      var top = y + 16
+      if (top + height > viewportHeight - margin) top = y - height - 12
+      top = Math.max(margin, top)
+      hoverTipNode.style.left = Math.round(left) + 'px'
+      hoverTipNode.style.top = Math.round(top) + 'px'
+      hoverTipNode.classList.add('on')
+    }
+
+function scheduleHoverTipPlacement() {
+      if (hoverTipFramePending || !hoverTipTarget) return
+      var schedule = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+        ? window.requestAnimationFrame
+        : function (callback) { return setTimeout(callback, 16) }
+      hoverTipFramePending = true
+      schedule(function () {
+        hoverTipFramePending = false
+        placeHoverTip(hoverTipTarget, hoverTipSequence)
+      })
+    }
+
+function showHoverTip(target, point) {
+      if (typeof document === 'undefined' || typeof window === 'undefined' || !target || typeof target.getBoundingClientRect !== 'function') return
+      var text = target.getAttribute('data-dshus-tip')
+      if (!text) { hideHoverTip(); return }
+      var root = hoverTipRoot()
+      if (!root) return
+      if (!hoverTipNode) {
+        hoverTipNode = document.createElement('div')
+        hoverTipNode.className = 'dshus-tip dshus-hover-tip'
+        hoverTipNode.setAttribute('role', 'tooltip')
+      }
+      if (hoverTipNode.parentNode !== root) root.appendChild(hoverTipNode)
+      hoverTipTarget = target
+      hoverTipPoint = point ? { x: point.x, y: point.y } : null
+      hoverTipNode.classList.remove('on')
+      hoverTipNode.textContent = text
+      hoverTipSequence++
+      scheduleHoverTipPlacement()
+    }
+
+function bindHoverTips() {
+      if (typeof document === 'undefined' || typeof document.addEventListener !== 'function' || !document.body) return undefined
+      var nearest = function (node) { return node && typeof node.closest === 'function' ? node.closest('[data-dshus-tip]') : null }
+      var over = function (event) {
+        var target = nearest(event.target)
+        if (target && target !== hoverTipTarget) showHoverTip(target, { x: event.clientX, y: event.clientY })
+      }
+      var move = function (event) {
+        if (!hoverTipTarget || nearest(event.target) !== hoverTipTarget) return
+        hoverTipPoint = { x: event.clientX, y: event.clientY }
+        scheduleHoverTipPlacement()
+      }
+      var out = function (event) {
+        var target = nearest(event.target)
+        if (!target || target !== hoverTipTarget) return
+        if (event.relatedTarget && target.contains && target.contains(event.relatedTarget)) return
+        hideHoverTip()
+      }
+      var focusIn = function (event) { var target = nearest(event.target); if (target) showHoverTip(target, null) }
+      var focusOut = function (event) { var target = nearest(event.target); if (target && target === hoverTipTarget) hideHoverTip() }
+      var dismiss = function () { hideHoverTip() }
+      document.addEventListener('pointerover', over, true)
+      document.addEventListener('pointermove', move, { capture: true, passive: true })
+      document.addEventListener('pointerout', out, true)
+      document.addEventListener('focusin', focusIn, true)
+      document.addEventListener('focusout', focusOut, true)
+      document.addEventListener('pointerdown', dismiss, true)
+      document.addEventListener('scroll', dismiss, true)
+      return function () {
+        document.removeEventListener('pointerover', over, true)
+        document.removeEventListener('pointermove', move, { capture: true, passive: true })
+        document.removeEventListener('pointerout', out, true)
+        document.removeEventListener('focusin', focusIn, true)
+        document.removeEventListener('focusout', focusOut, true)
+        document.removeEventListener('pointerdown', dismiss, true)
+        document.removeEventListener('scroll', dismiss, true)
+        hideHoverTip()
+        if (hoverTipNode && hoverTipNode.parentNode) hoverTipNode.parentNode.removeChild(hoverTipNode)
+        hoverTipNode = null
+      }
+    }
+
 // __DSH_USAGE_STATS_FORMAT__
 var LOCAL_TZ = (function () {
       try { return new Date().getTimezoneOffset() } catch (e) { return 0 }
@@ -68,6 +194,7 @@ var fmtExact = clientFormat.fmtExact
 var fmtReset = clientFormat.fmtReset
 var fmtInTz = clientFormat.fmtInTz
 var fmtFetched = clientFormat.fmtFetched
+var fmtCost = clientFormat.fmtCost
 var formatPct = clientFormat.formatPct
 var monthShort = clientFormat.monthShort
 var readJson = clientFormat.readJson
@@ -82,6 +209,50 @@ var UsageApi = (function () {
         if (opts.fresh) search.set('fresh', '1')
         var q = search.toString()
         return fetch('/api/dsh-usage-stats/stats' + (q ? '?' + q : ''), { headers: { accept: 'application/json' } }).then(readJson)
+      }
+      UsageApi.prototype.logs = function (opts) {
+        var search = new URLSearchParams()
+        if (opts.provider) search.set('provider', opts.provider)
+        if (opts.model) search.set('model', opts.model)
+        if (opts.page > 1) search.set('page', String(opts.page))
+        if (opts.pageSize) search.set('pageSize', String(opts.pageSize))
+        search.set('tz', String(LOCAL_TZ))
+        if (opts.fresh) search.set('fresh', '1')
+        return fetch('/api/dsh-usage-stats/logs?' + search.toString(), { headers: { accept: 'application/json' } }).then(readJson)
+      }
+      UsageApi.prototype.costs = function (opts) {
+        var search = new URLSearchParams()
+        if (opts.from) search.set('from', opts.from)
+        if (opts.to) search.set('to', opts.to)
+        if (opts.provider) search.set('provider', opts.provider)
+        search.set('tz', String(LOCAL_TZ))
+        if (opts.fresh) search.set('fresh', '1')
+        return fetch('/api/dsh-usage-stats/costs?' + search.toString(), { headers: { accept: 'application/json' } }).then(readJson)
+      }
+      UsageApi.prototype.dashboard = function (opts) {
+        var search = new URLSearchParams()
+        if (opts.all) search.set('all', '1')
+        else if (opts.from && opts.to) { search.set('from', opts.from); search.set('to', opts.to) }
+        if (opts.provider) search.set('provider', opts.provider)
+        if (opts.model) search.set('model', opts.model)
+        if (opts.page > 1) search.set('page', String(opts.page))
+        if (opts.pageSize) search.set('pageSize', String(opts.pageSize))
+        search.set('tz', String(LOCAL_TZ))
+        if (opts.fresh) search.set('fresh', '1')
+        return fetch('/api/dsh-usage-stats/dashboard?' + search.toString(), { headers: { accept: 'application/json' } }).then(readJson)
+      }
+      UsageApi.prototype.savePrice = function (body) {
+        return fetch('/api/dsh-usage-stats/prices', {
+          method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body),
+        }).then(readJson)
+      }
+      UsageApi.prototype.rules = function () {
+        return fetch('/api/dsh-usage-stats/rules', { headers: { accept: 'application/json' } }).then(readJson)
+      }
+      UsageApi.prototype.saveRules = function (body) {
+        return fetch('/api/dsh-usage-stats/rules', {
+          method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body),
+        }).then(readJson)
       }
       UsageApi.prototype.providerQuotas = function (opts) {
         var search = new URLSearchParams()
@@ -192,6 +363,7 @@ var UsageApi = (function () {
 var clientStyles = createClientStyles()
 var styles = clientStyles.styles
 var SEAT_CSS = clientStyles.seatCss
+var SEAT_COLOR_CHOICES = clientStyles.seatColors || []
 
 function injectStyles() {
       // Always refresh the stylesheet content, even when the element already
@@ -501,8 +673,8 @@ function Heatmap(props) {
         var modelRows = detail.models.map(function (m) {
           return React.createElement('div', { className: 'dshus-tip-row', key: m.key },
             React.createElement('span', { className: 'dshus-tip-swatch', style: { background: sharedModelColor(m.model) } }),
-            React.createElement('span', { title: m.model }, m.model),
-            React.createElement('strong', { title: fmtExact(m.billed) + ' tokens' }, fmt(m.billed)),
+            React.createElement('span', { 'data-dshus-tip': m.model }, m.model),
+            React.createElement('strong', { 'data-dshus-tip': fmtExact(m.billed) + ' tokens' }, fmt(m.billed)),
           )
         })
         tipEl = React.createElement('div', {
@@ -512,8 +684,8 @@ function Heatmap(props) {
           onMouseEnter: clearHideTimer,
           onMouseLeave: hideTip,
         },
-          React.createElement('div', { className: 'dshus-tip-name', title: bucket ? fmtExact(tipValue) + ' tokens' : undefined }, weekly ? weekDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, function (_match, year, month, day) { return t('{year}年{month}月{day}日起的一周', { year: year, month: month, day: day }) }) : tip.cell.date),
-          tipInWindow && React.createElement('div', { className: 'dshus-tip-val', title: bucket ? fmtExact(tipValue) + ' tokens' : undefined }, bucket ? fmt(tipValue) + ' tokens' : t('无记录')),
+          React.createElement('div', { className: 'dshus-tip-name', 'data-dshus-tip': bucket ? fmtExact(tipValue) + ' tokens' : undefined }, weekly ? weekDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, function (_match, year, month, day) { return t('{year}年{month}月{day}日起的一周', { year: year, month: month, day: day }) }) : tip.cell.date),
+          tipInWindow && React.createElement('div', { className: 'dshus-tip-val', 'data-dshus-tip': bucket ? fmtExact(tipValue) + ' tokens' : undefined }, bucket ? fmt(tipValue) + ' tokens' : t('无记录')),
           !tipInWindow && React.createElement('div', { className: 'dshus-tip-val' }, t('不在所选时间范围内')),
           tipInWindow && modelRows,
           tipInWindow && bucket && detail.models.length === 0 && !weekly && React.createElement('div', { className: 'dshus-tip-val' },
@@ -648,7 +820,7 @@ function HeatPager(props) {
         role: 'group',
         'aria-label': t('热力图翻页'),
       },
-        React.createElement('span', { className: 'dshus-heat-nav-label', title: t('当前显示的日期范围') }, range),
+        React.createElement('span', { className: 'dshus-heat-nav-label', 'data-dshus-tip': t('当前显示的日期范围') }, range),
         React.createElement('button', {
           type: 'button',
           className: 'dshus-heat-nav',
@@ -1083,7 +1255,7 @@ function Donut(props) {
           className: 'dshus-donut-row',
           key: m.key,
           type: m.key !== '__rest__' && onSelect ? 'button' : undefined,
-          title: fmtExact(m.billed) + ' tokens',
+          'data-dshus-tip': fmtExact(m.billed) + ' tokens',
           style: m.key !== '__rest__' && onSelect ? { border: 0, padding: 0, width: '100%', background: 'transparent', color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer' } : undefined,
           onMouseMove: function (e) { showTip(e, m.key) },
           onMouseLeave: hideTip,
@@ -1116,7 +1288,7 @@ function refreshIconButton(onClick, loading, label, alignEnd, disabled) {
         onClick: onClick,
         disabled: loading || !!disabled,
         'aria-busy': !!loading,
-        title: label,
+        'data-dshus-tip': label,
         'aria-label': label,
       }, loading
         ? React.createElement('span', { className: 'dshus-spin', 'aria-hidden': 'true' })
@@ -1266,7 +1438,7 @@ function ProviderQuotasPanel(props) {
               React.createElement('div', {
                 className: 'dshus-balance-value dshus-balance-status',
                 'aria-label': t('{name} 配额{status}', { name: t(quota.name), status: statusLabel }),
-                title: quota.status === 'unqueried' ? t('已在模型设置中配置，尚未查询配额。') : t('尚未获取到有效配额，可刷新重试。'),
+                'data-dshus-tip': quota.status === 'unqueried' ? t('已在模型设置中配置，尚未查询配额。') : t('尚未获取到有效配额，可刷新重试。'),
               }, statusLabel),
               fetchedLine,
             ),
@@ -1303,8 +1475,8 @@ function ProviderQuotasPanel(props) {
                 'aria-valuenow': pct,
                 'aria-valuetext': t('剩余 {value}', { value: value }) + (detail ? '，' + detail : '') + (reset ? '，' + reset : ''),
               }, React.createElement('div', { className: 'dshus-go-fill', style: { width: pct + '%', background: color } })),
-              React.createElement('span', { className: 'dshus-quota-pct', style: { color: color }, title: t('剩余 {value}', { value: formatPct(pct) }) }, value),
-              React.createElement('span', { className: 'dshus-quota-reset', title: metric.resetAt ? t('重置时间：{time}', { time: fmtFetched(metric.resetAt) }) : undefined }, reset),
+              React.createElement('span', { className: 'dshus-quota-pct', style: { color: color }, 'data-dshus-tip': t('剩余 {value}', { value: formatPct(pct) }) }, value),
+              React.createElement('span', { className: 'dshus-quota-reset', 'data-dshus-tip': metric.resetAt ? t('重置时间：{time}', { time: fmtFetched(metric.resetAt) }) : undefined }, reset),
             ))
             return
           }
@@ -1367,7 +1539,7 @@ function AccountQuotasPanel(props) {
 
 
 
-function ProviderPicker(props) {
+function SelectField(props) {
   var openState = React.useState(false)
   var open = openState[0], setOpen = openState[1]
   var activeState = React.useState(0)
@@ -1377,10 +1549,19 @@ function ProviderPicker(props) {
   var rootRef = React.useRef(null)
   var listRef = React.useRef(null)
   var searchRef = React.useRef({ text: '', at: 0 })
-  var options = props.options
-  var selected = options.find(function (item) { return item.value === props.value }) || options[0]
+  var options = props.options || []
+  var selected = options.find(function (item) { return item.value === props.value }) || options[0] || { value: '', name: '' }
   var activeIndex = Math.max(0, Math.min(active, options.length - 1))
   var listId = props.id + '-list'
+  var field = props.variant === 'field'
+  var rootClass = field
+    ? 'dshus-dropdown' + (props.block ? ' dshus-dropdown-block' : props.inline ? ' dshus-dropdown-inline' : '')
+    : 'dshus-provider-picker'
+  var triggerClass = field ? 'dshus-field dshus-dropdown-trigger' : 'dshus-field dshus-query-select'
+  var menuClass = field ? 'dshus-dropdown-menu' : 'dshus-provider-list'
+  var optionClass = field ? 'dshus-dropdown-option' : 'dshus-provider-option'
+  var nameClass = field ? 'dshus-dropdown-label' : 'dshus-provider-name'
+  var chevronClass = field ? 'dshus-dropdown-chevron' : 'dshus-provider-chevron'
 
   function show(index) {
     if (props.disabled) return
@@ -1438,7 +1619,7 @@ function ProviderPicker(props) {
       var start = search.length > 1 ? activeIndex : activeIndex + 1
       for (var offset = 0; offset < options.length; offset++) {
         var match = (start + offset) % options.length
-        if (options[match].name.toLowerCase().startsWith(search)) {
+        if (String(options[match].name).toLowerCase().startsWith(search)) {
           if (open) setActive(match)
           else { show(match); searchRef.current = { text: search, at: now } }
           break
@@ -1471,18 +1652,32 @@ function ProviderPicker(props) {
   React.useEffect(function () { if (props.disabled) setOpen(false) }, [props.disabled])
 
   function dot(source) { return source ? React.createElement('span', { className: 'dshus-provider-dot', 'aria-hidden': 'true' }) : null }
-  return React.createElement('div', { className: 'dshus-provider-picker', ref: rootRef },
-    React.createElement('button', { id: props.id, type: 'button', role: 'combobox', className: 'dshus-field dshus-query-select', disabled: props.disabled, 'aria-labelledby': props.labelId + ' ' + props.id + '-value', 'aria-haspopup': 'listbox', 'aria-expanded': open, 'aria-controls': open ? listId : undefined, 'aria-activedescendant': open ? listId + '-' + activeIndex : undefined, onClick: function () { if (open) setOpen(false); else show() }, onKeyDown: onKeyDown },
-      React.createElement('span', { id: props.id + '-value', className: 'dshus-provider-name' }, selected.name),
+  function check(item) {
+    return item.value === props.value
+      ? React.createElement('svg', { className: 'dshus-dropdown-check', viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' }, React.createElement('path', { d: 'm3.5 8.5 3 3 6-7' }))
+      : null
+  }
+  var labelProps = props.labelId
+    ? { 'aria-labelledby': props.labelId + ' ' + props.id + '-value' }
+    : { 'aria-label': props['aria-label'] }
+  return React.createElement('div', { className: rootClass, ref: rootRef },
+    React.createElement('button', { id: props.id, type: 'button', role: 'combobox', className: triggerClass, disabled: props.disabled, ...labelProps, 'aria-haspopup': 'listbox', 'aria-expanded': open, 'aria-controls': open ? listId : undefined, 'aria-activedescendant': open ? listId + '-' + activeIndex : undefined, onClick: function () { if (open) setOpen(false); else show() }, onKeyDown: onKeyDown },
+      React.createElement('span', { id: props.id + '-value', className: nameClass }, selected.name),
       dot(selected.source),
-      React.createElement('svg', { className: 'dshus-provider-chevron', viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, 'aria-hidden': 'true' }, React.createElement('path', { d: 'm4 6 4 4 4-4' }))),
-    open && React.createElement('div', { id: listId, role: 'listbox', 'aria-labelledby': props.labelId, className: 'dshus-provider-list' + (placement.above ? ' above' : ''), style: { maxHeight: placement.height }, ref: listRef },
+      React.createElement('svg', { className: chevronClass, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, 'aria-hidden': 'true' }, React.createElement('path', { d: 'm4 6 4 4 4-4' }))),
+    open && React.createElement('div', { id: listId, role: 'listbox', 'aria-labelledby': props.labelId, 'aria-label': props.labelId ? undefined : props['aria-label'], className: menuClass + (placement.above ? ' above' : ''), style: { maxHeight: placement.height }, ref: listRef },
       options.map(function (item, index) {
         // A stationary cursor must not override keyboard navigation as rows scroll past it.
-        return React.createElement('div', { key: item.value, id: listId + '-' + index, role: 'option', 'data-value': item.value, 'aria-selected': item.value === props.value, 'aria-label': item.name + (item.source ? '，' + item.source : ''), title: item.source || undefined, className: 'dshus-provider-option' + (index === activeIndex ? ' active' : ''), onMouseMove: function () { setActive(index) }, onMouseDown: function (event) { event.preventDefault() }, onClick: function () { choose(index) } },
-          React.createElement('span', { className: 'dshus-provider-name' }, item.name), dot(item.source))
+        return React.createElement('div', { key: item.value, id: listId + '-' + index, role: 'option', 'data-value': item.value, 'aria-selected': item.value === props.value, 'aria-label': item.name + (item.source ? '，' + item.source : ''), 'data-dshus-tip': item.source || undefined, className: optionClass + (index === activeIndex ? ' active' : ''), onMouseMove: function () { setActive(index) }, onMouseDown: function (event) { event.preventDefault() }, onClick: function (event) { event.stopPropagation(); choose(index) } },
+          React.createElement('span', { className: nameClass }, item.name), dot(item.source), check(item))
       })),
   )
+}
+
+function ProviderPicker(props) {
+  // Called as a function, not an element, so the picker's own hooks stay in one
+  // component while the settings tests still resolve its field markup directly.
+  return SelectField(props)
 }
 
 /**
@@ -1560,7 +1755,7 @@ function ControlDialog(props) {
       if (target && typeof target.focus === 'function') target.focus({ preventScroll: true })
     }
   }, [])
-  return React.createElement('dialog', { id: props.id, className: 'dshus-control-dialog', ref: dialogRef, 'aria-labelledby': props.id + '-title',
+  return React.createElement('dialog', { id: props.id, className: 'dshus-control-dialog' + (props.className ? ' ' + props.className : ''), ref: dialogRef, 'aria-labelledby': props.id + '-title',
     onCancel: function (event) { event.preventDefault(); props.onClose() },
     onClick: function (event) {
       if (event.target !== dialogRef.current) return
@@ -1573,6 +1768,49 @@ function ControlDialog(props) {
     React.createElement('div', { className: 'dshus-control-dialog-body' }, props.children))
 }
 
+/** Plain-language tour of every visible section, opened from the header. */
+function QuickStartDialog(props) {
+  var entries = [
+    [t('刷新数据'), t('右上角的圆形箭头按钮用来重新读取数据：停在「用量」页时它是刷新用量统计，停在「配额」页时它会变成刷新全部配额。')],
+    [t('用量'), t('顶部三个数字分别是今日 Tokens、使用天数和累计 Tokens，点旁边的小箭头可以展开缓存命中率、使用峰值、最长任务和连续使用天数等细节。今天的用量按小时画成柱状图，鼠标移到柱子上能看到该小时每个模型的用量，右侧可以在「供应商·模型」和「按模型」两种口径之间切换。')],
+    [t('热力图与趋势图'), t('热力图一天一格，颜色越深表示当天用量越大；可以切换「每日 / 每周」，并用左右箭头翻看更早的时段。趋势图展示最近 7 天或 30 天的每日总量，右侧同样可以按「供应商·模型」或「按模型」查看，用来观察用量的起伏。')],
+  ]
+  if (props.showModelDetails) entries.push([t('模型明细与分布'), t('环形图显示各模型的用量占比，下面的表格列出用量、占比和最后活跃时间。可以按模型名搜索或用供应商名筛选，点表格下方的按钮可以展开完整清单。')])
+  if (props.showTokenSpeed) entries.push([t('token输出速度'), t('按输出速度给模型排名：TPS 是每秒输出的 Token 数，TTFT 是发出请求到出现第一个 Token 的等待时间。TPS 越大、TTFT 越小，用起来越流畅。')])
+  if (props.showLogs) entries.push([t('日志'), t('按时间倒序列出每一次请求，包含时间、应用、供应商、模型、成本、输入和输出 Token、缓存命中、速度与首字耗时。顶部可以按供应商、模型筛选，并调整每页行数，适合核对某一次调用具体用了多少。')])
+  if (props.showCosts) entries.push([t('成本'), t('点日期范围按钮可以选择当天、近 7/14/30 天或本月，也可以直接在日历上选择起止日期；再选供应商，页面就会按价格表把 Tokens 折算成金额。顶部是总成本、区间成本和区间 Tokens，下方按模型列出花费与占比；如果模型显示未定价，点「价格表」补上单价即可。')])
+  if (props.showRules) entries.push([t('规则'), t('把同一个模型的不同原始名称（例如不同供应商给出的别名）归并成一个名称。新增时填一个归一名称，再把相关的原始模型都选进去；保存后用量、日志和成本都会按新名称统计。已有规则可以随时编辑或移除。')])
+  entries.push([t('配额'), t('这里显示各供应商和账号的剩余额度、已用比例与重置时间，数据直接向供应商查询。想让它在后台定时更新，可以在「控制」页打开「自动获取剩余余额」并设置间隔；也可以随时点右上角的刷新按钮。')])
+  if (props.showModelDetection) entries.push([t('检测'), t('先选供应商和模型，再决定采样次数（标准 3 次，或只做排序的 1 次低耗初筛）和 Token 预算上限，点「查看检测预算」确认大约会消耗多少 Token，再点「开始检测」。完成后会给出首选候选、候选排名和每次采样的结果；结果只是参考排名，不构成模型身份认证。')])
+  entries.push([t('控制'), t('这里是总开关：可以关掉不需要的标签页和模块，开启「高级模型选择器」并挑选主题色，设置「自动获取剩余余额」的刷新间隔，还能为供应商自定义配额查询。改动会立即保存，无需额外确认。')])
+  entries.push([t('问题反馈'), t('右上角的发送图标会打开 GitHub Issues 页面，可以提交问题、使用疑问或功能建议。附上截图和复现步骤，会更容易定位问题。')])
+  var activeState = React.useState(0)
+  var active = Math.min(activeState[0], entries.length - 1)
+  var setActive = activeState[1]
+  function onNavKeyDown(event) {
+    var delta = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
+    if (delta === 0) return
+    event.preventDefault()
+    var next = (active + delta + entries.length) % entries.length
+    setActive(next)
+    var tabs = event.currentTarget.querySelectorAll('[role="tab"]')
+    if (tabs[next] && typeof tabs[next].focus === 'function') tabs[next].focus()
+  }
+  return React.createElement(ControlDialog, { id: 'dshus-quickstart-dialog', className: 'dshus-quickstart-dialog', title: t('快速上手'), returnFocusId: 'dshus-quickstart-button', onClose: props.onClose },
+    React.createElement('div', { className: 'dshus-quickstart' },
+      React.createElement('nav', { className: 'dshus-quickstart-nav', role: 'tablist', 'aria-orientation': 'vertical', 'aria-label': t('快速上手'), onKeyDown: onNavKeyDown }, entries.map(function (entry, index) {
+        return React.createElement('button', {
+          key: entry[0], id: 'dshus-quickstart-tab-' + index, type: 'button', role: 'tab',
+          'aria-selected': index === active, 'aria-controls': 'dshus-quickstart-panel',
+          tabIndex: index === active ? 0 : -1, className: 'dshus-quickstart-tab',
+          onClick: function () { setActive(index) },
+        }, entry[0])
+      })),
+      React.createElement('div', { className: 'dshus-quickstart-panel', id: 'dshus-quickstart-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-quickstart-tab-' + active },
+        React.createElement('h4', null, entries[active][0]),
+        React.createElement('p', null, entries[active][1]))))
+}
+
 /** Settings use the host store so timers also work while this page is closed. */
 function ControlsPanel(props) {
   var control = props.control
@@ -1582,6 +1820,7 @@ function ControlsPanel(props) {
   if (!Array.isArray(settings.customQueries)) settings.customQueries = []
   // Read the host setting before enabling the selector.
   var advancedModelSelect = settings.advancedModelSelect === true
+  var seatColor = seatNormalizeColor(settings.modelSeatColor)
   var modelReasoning = settings.modelReasoning !== false
   var providersState = React.useState([])
   var providers = providersState[0], setProviders = providersState[1]
@@ -1810,15 +2049,38 @@ function ControlsPanel(props) {
           switchButton(t('模型推理强度'), modelReasoning, function () { save({ modelReasoning: !modelReasoning }) })),
         React.createElement('div', { className: 'dshus-setting-row' },
           React.createElement('span', { className: 'dshus-setting-label' }, t('高级模型选择器')),
-          switchButton(t('高级模型选择器'), advancedModelSelect, function () {
-            save({ advancedModelSelect: !advancedModelSelect }, advancedModelSelect ? '已关闭，已恢复官方模型选择器' : '已开启高级模型选择器')
-          })),
+          React.createElement('div', { className: 'dshus-setting-tail' },
+            // The palette only matters while the advanced selector is enabled,
+            // mirroring how the automatic-balance interval follows its switch.
+            advancedModelSelect && React.createElement('div', { className: 'dshus-seat-colors', role: 'group', 'aria-label': t('主题色') },
+              SEAT_COLOR_CHOICES.map(function (choice) {
+                return React.createElement('button', {
+                  key: choice.name,
+                  type: 'button',
+                  className: 'dshus-seat-color',
+                  style: { '--dshus-seat-swatch': choice.swatch },
+                  'aria-label': t(SEAT_COLOR_LABELS[choice.name]),
+                  'aria-pressed': seatColor === choice.name,
+                  'data-dshus-tip': t(SEAT_COLOR_LABELS[choice.name]),
+                  disabled: !props.ready || saving,
+                  onClick: function () { save({ modelSeatColor: choice.name }, '已更新主题色') },
+                })
+              })),
+            switchButton(t('高级模型选择器'), advancedModelSelect, function () {
+              save({ advancedModelSelect: !advancedModelSelect }, advancedModelSelect ? '已关闭，已恢复官方模型选择器' : '已开启高级模型选择器')
+            }))),
         // Show the refresh interval beside the automatic-balance switch.
         React.createElement('div', { className: 'dshus-setting-row' },
           React.createElement('span', { className: 'dshus-setting-label' }, t('自动获取剩余余额')),
           React.createElement('div', { className: 'dshus-setting-tail' },
-            settings.autoQuota && React.createElement('select', { id: 'dshus-auto-interval', className: 'dshus-field dshus-select dshus-select-inline', value: settings.intervalMinutes, disabled: saving || !props.ready, 'aria-label': t('自动获取间隔'), onChange: function (event) { save({ intervalMinutes: Number(event.target.value) }) } },
-              [[10, t('10 分钟')], [60, t('1 小时')], [300, t('5 小时')], [1440, t('每天')]].map(function (option) { return React.createElement('option', { key: option[0], value: option[0] }, option[1]) })),
+            settings.autoQuota && React.createElement(SelectField, {
+              id: 'dshus-auto-interval', variant: 'field', inline: true,
+              'aria-label': t('自动获取间隔'),
+              value: settings.intervalMinutes,
+              disabled: saving || !props.ready,
+              options: [[10, t('10 分钟')], [60, t('1 小时')], [300, t('5 小时')], [1440, t('每天')]].map(function (option) { return { value: option[0], name: option[1] } }),
+              onChange: function (value) { save({ intervalMinutes: Number(value) }) },
+            }),
             switchButton(t('自动获取剩余余额'), settings.autoQuota, function () { if (settings.autoQuota) save({ autoQuota: false }); else setConfirmAuto(true) }))),
         // The cost warning stays directly under the switch that spends money.
         confirmAuto && React.createElement('div', { className: 'dshus-confirm', role: 'alert', 'aria-label': t('自动查询费用提醒') },
@@ -1834,6 +2096,15 @@ function ControlsPanel(props) {
         React.createElement('div', { className: 'dshus-setting-row' },
           React.createElement('span', { className: 'dshus-setting-label' }, t('token输出速度')),
           switchButton(t('token输出速度'), settings.showTokenSpeed !== false, function () { save({ showTokenSpeed: settings.showTokenSpeed === false }) })),
+        React.createElement('div', { className: 'dshus-setting-row' },
+          React.createElement('span', { className: 'dshus-setting-label' }, t('日志')),
+          switchButton(t('日志'), settings.showLogs !== false, function () { save({ showLogs: settings.showLogs === false }) })),
+        React.createElement('div', { className: 'dshus-setting-row' },
+          React.createElement('span', { className: 'dshus-setting-label' }, t('成本')),
+          switchButton(t('成本'), settings.showCosts !== false, function () { save({ showCosts: settings.showCosts === false }) })),
+        React.createElement('div', { className: 'dshus-setting-row' },
+          React.createElement('span', { className: 'dshus-setting-label' }, t('规则')),
+          switchButton(t('规则'), settings.showRules !== false, function () { save({ showRules: settings.showRules === false }) })),
         React.createElement('div', { className: 'dshus-setting-row' },
           React.createElement('span', { className: 'dshus-setting-label' }, t('模型检测')),
           switchButton(t('模型检测'), settings.showModelDetection === true, function () { save({ showModelDetection: settings.showModelDetection !== true }) })),
@@ -1904,7 +2175,6 @@ function DetectionPanel(props) {
       var jobIsCurrent = job && job.sessionId === sessionId && job.selection.provider === provider && job.selection.model === model && (job.selection.reasoningEffort || '') === effort
       var savedPlan = job && job.plan || {}, savedOutputLimit = savedPlan.maxTokens || savedPlan.maxOutputTokens && savedPlan.requests && savedPlan.maxOutputTokens / savedPlan.requests
       var resultMatchesSetup = jobIsCurrent && (!savedPlan.requests || savedPlan.requests === count) && (!savedPlan.budgetTokens || savedPlan.budgetTokens === budget) && (!savedOutputLimit || savedOutputLimit === maxTokens)
-      var currentStep = running || resultMatchesSetup && !quote ? 2 : selectedReady ? 1 : 0
       React.useEffect(function () {
         if (manualSelection.current || busy || running || !suggested || !suggested.provider || !suggested.model) return
         setSelection(function (previous) { return previous.provider === suggested.provider && previous.model === suggested.model && (previous.reasoningEffort || '') === (suggested.reasoningEffort || '') ? previous : suggested })
@@ -2011,43 +2281,61 @@ function DetectionPanel(props) {
           return React.createElement('div', { key: entry[0] }, React.createElement('dt', null, t(entry[0])), React.createElement('dd', null, entry[1]))
         }))
       }
-      function selectProvider(event) {
+      function selectProvider(value) {
         manualSelection.current = true; planSequence.current++; setQuoted(null); setError('')
-        setSelection({ provider: event.target.value, model: '' })
+        setSelection({ provider: value, model: '' })
       }
-      function selectModel(event) {
+      function selectModel(value) {
         manualSelection.current = true; planSequence.current++; setQuoted(null); setError('')
-        setSelection({ provider: provider, model: event.target.value })
+        setSelection({ provider: provider, model: value })
       }
       function field(label, element) { return React.createElement('label', { className: 'dshus-detection-field' }, React.createElement('span', { className: 'dshus-setting-label' }, t(label)), element) }
       function probability(value) { return Number.isFinite(value) ? (value * 100).toFixed(1) + '%' : '—' }
-      function stepsView() {
-        var steps = [
-          { title: '选择检测模型', detail: model || t('尚未选择模型') },
-          { title: '确认预算', detail: t('{count} 次 · 单次 {tokens} Token', { count: count, tokens: fmt(maxTokens) }) },
-          { title: '检测结果', detail: t(running ? '检测进行中' : resultMatchesSetup ? job.status === 'cancelled' ? '已取消' : '检测已结束' : '等待检测结果') },
-        ]
-        return React.createElement('ol', { className: 'dshus-steps', 'aria-label': t('检测步骤') }, steps.map(function (step, index) {
-          var state = index === currentStep ? 'current' : index < currentStep ? 'done' : 'upcoming'
-          return React.createElement('li', { key: step.title, className: 'dshus-step', 'data-state': state, 'aria-current': state === 'current' ? 'step' : undefined },
-            React.createElement('span', { className: 'dshus-step-mark', 'aria-hidden': true }, index + 1),
-            React.createElement('div', { className: 'dshus-step-body' },
-              React.createElement('span', { className: 'dshus-step-title' }, t(step.title)),
-              React.createElement('span', { className: 'dshus-step-detail' }, step.detail)))
-        }))
+      function stateBadge() {
+        var state = running ? { key: 'running', label: '检测运行中' }
+          : job && resultMatchesSetup ? job.status === 'cancelled' ? { key: 'cancelled', label: '已取消' } : job.status === 'failed' ? { key: 'failed', label: '未完成' } : { key: 'complete', label: '检测已结束' }
+          : quote ? { key: 'ready', label: '待开始' }
+          : selectedReady ? { key: 'confirm', label: '确认预算' }
+          : { key: 'setup', label: '待配置' }
+        return React.createElement('span', { className: 'dshus-detection-state', 'data-state': state.key, role: 'status' }, t(state.label))
+      }
+      function engineView() {
+        var checking = updating || !!(catalog && catalog.updating)
+        return React.createElement('div', { className: 'dshus-detection-engine' },
+          React.createElement('div', { className: 'dshus-detection-engine-info' },
+            React.createElement('span', { className: 'dshus-detection-engine-label' }, t('参考库')),
+            React.createElement('span', { className: 'dshus-detection-engine-version' },
+              catalog ? 'lmfpd ' + (catalog.version || '—') + (Number.isFinite(catalog.modelCount) ? ' · ' + t('{count} 个模型', { count: catalog.modelCount }) : '') : '—')),
+          React.createElement('button', {
+            type: 'button', className: 'dshus-btn dshus-icon-btn dshus-detection-engine-update',
+            disabled: checking || running || busy, onClick: updateEngine,
+            'aria-label': t(checking ? '正在检查更新…' : '检查更新'), 'data-dshus-tip': t(checking ? '正在检查更新…' : '检查更新'),
+          }, checking ? React.createElement('span', { className: 'dshus-spin', 'aria-hidden': true })
+            : React.createElement('svg', { viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+              React.createElement('path', { d: 'M13 8a5 5 0 1 1-1.46-3.54M13 2.5V5H10.5' }))),
+          // Update failures are transient and the verified local engine remains
+          // usable, so only a fatal engine problem is surfaced in the panel.
+          catalog && catalog.warning && catalog.warningKind !== 'update' && React.createElement('p', { className: 'dshus-detection-engine-error', role: 'alert' }, uiError(catalog.warning)))
       }
       function samplesView(results, plan, validSamples) {
         var labels = { scored: '有效', incomplete: '输出截断', unparseable: '格式无效', unavailable: '请求失败', timeout: '超时', cancelled: '已取消', sampling: '采样中', pending: '未采样' }
         var total = plan.requests || 3
         return React.createElement(React.Fragment, null,
-          React.createElement('div', { className: 'dshus-detection-list-title' }, React.createElement('h4', null, t('采样状态')), React.createElement('span', null, t('有效样本 {valid} / {total}', { valid: validSamples, total: total }))),
-          React.createElement('ol', { className: 'dshus-detection-samples', 'aria-label': t('采样状态'), 'data-count': total }, Array.from({ length: total }, function (_, index) {
+          React.createElement('div', { className: 'dshus-detection-list-title' },
+            React.createElement('h4', null, t('采样状态')),
+            React.createElement('span', null, t('有效样本 {valid} / {total}', { valid: validSamples, total: total }))),
+          React.createElement('ol', { className: 'dshus-detection-samples', 'aria-label': t('有效样本 {valid} / {total}', { valid: validSamples, total: total }), 'data-count': total }, Array.from({ length: total }, function (_, index) {
             var item = results[index], outcome = item ? item.outcome : running && index === results.length && job.phase !== 'scoring' ? 'sampling' : 'pending'
             var expected = item ? item.expected : plan.numbers && plan.numbers[index]
-            return React.createElement('li', { key: index, className: 'dshus-detection-sample', 'data-outcome': outcome },
-              React.createElement('strong', null, t('采样 {number}', { number: index + 1 }), ' · ', t(labels[outcome] || '未采样')),
-              React.createElement('span', { title: t('有效数字 / 要求数量') }, item ? fmtExact(item.valid || 0) : '—', ' / ', expected ? fmtExact(expected) : '—'),
-              item && item.stop === 'max-tokens' && React.createElement('span', { className: 'dshus-detection-sample-limit' }, t('已达单次输出上限')))
+            var count = (item ? fmtExact(item.valid || 0) : '—') + ' / ' + (expected ? fmtExact(expected) : '—')
+            var label = t(labels[outcome] || '未采样')
+            return React.createElement('li', {
+              key: index, className: 'dshus-detection-sample', 'data-outcome': outcome,
+              'data-dshus-tip': t('采样 {number}', { number: index + 1 }) + ' · ' + label + ' · ' + count,
+            },
+              React.createElement('span', { className: 'dshus-detection-sample-index', 'aria-hidden': true }, index + 1),
+              React.createElement('strong', null, label),
+              React.createElement('span', { className: 'dshus-detection-sample-count' }, count))
           })))
       }
       function jobView() {
@@ -2056,23 +2344,33 @@ function DetectionPanel(props) {
         var summary = job.conclusion || { verdict: running ? 'running' : 'inconclusive', reason: job.status === 'cancelled' ? 'cancelled' : 'unfinished' }
         var titles = { running: '检测运行中', 'candidate-consistent': '首选候选与请求模型一致', 'candidate-different': '首选候选与请求模型不同', 'ranking-only': '候选排序', inconclusive: '无法判定' }
         var explanations = { 'model-not-enrolled': '请求模型不在参考库中，候选仅供比较。', 'merged-class': '参考库将这些型号合并为同一类，无法区分具体型号。', 'low-confidence': '置信度不足，候选仅供比较。', cancelled: '检测已取消，已发生的用量仍会统计。', interrupted: '宿主重启时检测尚未完成，请重新检测。', budget: '已达到 Token 预算，检测未完成。', timeout: '请求超时，检测未完成。', 'request-failed': '通道请求失败，检测未完成。', truncated: '随机数输出被截断；请提高单次输出上限，重新查看预算后检测。', format: '有效随机数不足，已停止后续请求。', distribution: '随机数分布异常，本次结果无法判定。', unfinished: '尚未取得足够指纹数据，无法判定。' }
+        // Only reasons that describe what happened to the run get a visible
+        // line. Ranking disclaimers stay in the tooltip and details disclosure.
+        var actionable = { cancelled: true, interrupted: true, budget: true, timeout: true, 'request-failed': true, truncated: true, format: true, distribution: true, unfinished: true }
         var calibrated = !!(identity && identity.usedSamples === 3 && !identity.unusualDistribution && Number.isFinite(identity.probability))
         var results = job.results || [], plan = job.plan || {}, validSamples = results.filter(function (item) { return item.outcome === 'scored' }).length
         var totalRequests = plan.requests || 3, progress = Math.max(0, Math.min(totalRequests, job.progress || 0))
         var perRequestLimit = plan.maxTokens || plan.maxOutputTokens && plan.requests && plan.maxOutputTokens / plan.requests
         var providerName = providers.find(function (item) { return item.provider === job.selection.provider })
         var usage = job.usage || {}, jobTokens = (usage.inputTokens || 0) + (usage.outputTokens || 0) + (usage.cacheReadTokens || 0) + (usage.cacheWriteTokens || 0)
-        return React.createElement('div', { className: 'dshus-module dshus-detection-summary', role: 'region', 'aria-label': t('检测结果'), ref: resultRef },
-          React.createElement('h3', { title: historical ? t('历史结果，仅对应下方列出的模型和参数。') : undefined }, t(historical ? '上次检测结果' : '检测结果')),
-          historical && React.createElement('p', { className: 'dshus-setting-help' }, t('历史结果，仅对应下方列出的模型和参数。')),
-          React.createElement('p', { className: 'dshus-detection-model' }, job.selection.model, ' · ', providerName ? providerName.name : job.selection.provider),
+        var reason = explanations[summary.reason]
+        var lowConfidence = calibrated && identity.probability < .75
+        var showReason = reason && actionable[summary.reason] && !(running && summary.reason === 'unfinished')
+        return React.createElement('section', { className: 'dshus-module dshus-detection-result', role: 'region', 'aria-label': t('检测结果'), ref: resultRef },
+          React.createElement('div', { className: 'dshus-detection-result-head' },
+            React.createElement('h3', { 'data-dshus-tip': historical ? t('历史结果，仅对应下方列出的模型和参数。') : undefined }, t(historical ? '上次检测结果' : '检测结果')),
+            React.createElement('span', { className: 'dshus-detection-verdict', 'data-verdict': summary.verdict, role: 'status', 'data-dshus-tip': reason ? t(reason) : undefined }, t(titles[summary.verdict] || '无法判定'))),
+          React.createElement('p', { className: 'dshus-detection-subject' }, job.selection.model, ' · ', providerName ? providerName.name : job.selection.provider),
+          showReason && React.createElement('p', { className: 'dshus-detection-reason', 'data-tone': summary.reason === 'cancelled' ? 'muted' : 'warn' }, t(reason)),
           candidates.length > 0 && React.createElement('div', { className: 'dshus-detection-headline' },
-            React.createElement('h4', { 'aria-label': t('首选候选') }, candidates[0].name),
-            React.createElement('div', { className: 'dshus-detection-confidence' }, React.createElement('span', null, t(calibrated ? '库内置信度' : '仅排序')), calibrated && React.createElement('strong', null, probability(identity.probability)))),
-          React.createElement('p', { className: 'dshus-detection-verdict', 'data-verdict': summary.verdict, role: 'status' }, t(titles[summary.verdict] || '无法判定')),
-          explanations[summary.reason] && !(running && summary.reason === 'unfinished') && React.createElement('p', { className: 'dshus-setting-help' }, t(explanations[summary.reason])),
-          candidates.length > 0 && identity.usedSamples < 3 && React.createElement('p', { className: 'dshus-setting-help' }, t('仅基于 {count} 个有效样本展示排名；3 个有效样本才显示库内置信度。', { count: identity.usedSamples })),
-          calibrated && identity.probability < .75 && summary.reason !== 'low-confidence' && React.createElement('p', { className: 'dshus-setting-help dshus-detection-warning' }, t('置信度不足（低于 75%）')),
+            React.createElement('div', { className: 'dshus-detection-candidate' },
+              React.createElement('span', { className: 'dshus-detection-kicker' }, t('首选候选')),
+              React.createElement('h4', { 'aria-label': t('首选候选') }, candidates[0].name),
+              candidates[0].family && React.createElement('span', { className: 'dshus-detection-family' }, candidates[0].family)),
+            calibrated && React.createElement('div', { className: 'dshus-detection-confidence', 'data-low': lowConfidence || undefined },
+              React.createElement('span', null, t('库内置信度')),
+              React.createElement('strong', null, probability(identity.probability)),
+              lowConfidence && React.createElement('span', { className: 'dshus-detection-confidence-tag' }, t('低置信度')))),
           running && React.createElement('div', { className: 'dshus-detection-progress' },
             React.createElement('div', { className: 'dshus-detection-progress-head' },
               React.createElement('p', { role: 'status' }, job.phase === 'scoring' ? t('正在分析指纹…') : t('已完成 {progress} 次请求，上限 {requests} 次', { progress: progress, requests: totalRequests })),
@@ -2088,12 +2386,12 @@ function DetectionPanel(props) {
                 React.createElement('span', { className: 'dshus-detection-rank-value', 'aria-label': t(calibrated ? '库内置信度' : '指纹得分') }, calibrated ? probability(candidate.probability) : Number(candidate.score).toFixed(3)))
             }))),
           samplesView(results, plan, validSamples),
-          job.usageReported && React.createElement('p', { className: 'dshus-detection-cost', title: fmtExact(jobTokens) }, t(job.usageSaved ? '本次消耗 {tokens} Token · 已计入统计' : '本次已上报消耗 {tokens} Token', { tokens: fmt(jobTokens) })),
-          job.usageIncomplete && React.createElement('p', { className: 'dshus-setting-help' }, t('部分检测用量尚未上报，可能已产生费用。')),
-          job.message && React.createElement('p', { className: 'dshus-setting-help' }, uiError(job.message)),
-          candidates.length > 0 && React.createElement('p', { className: 'dshus-setting-help' }, t('仅为参考库内排名，不证明模型身份，也不衡量能力降级。')),
+          job.usageReported && React.createElement('p', { className: 'dshus-detection-cost', 'data-dshus-tip': fmtExact(jobTokens) }, t(job.usageSaved ? '本次消耗 {tokens} Token · 已计入统计' : '本次已上报消耗 {tokens} Token', { tokens: fmt(jobTokens) })),
+          job.usageIncomplete && React.createElement('p', { className: 'dshus-detection-cost-alert', role: 'status' }, t('部分检测用量尚未上报，可能已产生费用。')),
+          job.message && React.createElement('p', { className: 'dshus-detection-message', role: 'alert' }, uiError(job.message)),
           React.createElement('details', { className: 'dshus-disclosure', key: job.id },
             React.createElement('summary', null, t('检测详情')),
+            reason && !running && React.createElement('p', null, t(reason)),
             fields(job.testSelection || job.selection),
             React.createElement('p', null, t('已完成 {progress} 次请求，上限 {requests} 次', { progress: job.progress, requests: job.plan.requests })),
             perRequestLimit && React.createElement('p', null, t('每次最多 {maxTokens} Token · 所有请求输出最多 {maxOutputTokens} Token', { maxTokens: fmtExact(perRequestLimit), maxOutputTokens: fmtExact(plan.maxOutputTokens) })),
@@ -2105,52 +2403,67 @@ function DetectionPanel(props) {
             job.channel && React.createElement('p', null, t('本次通道表现'), ' · TPS ', Number.isFinite(job.channel.tps) ? job.channel.tps.toFixed(1) : '—', ' tok/s · TTFT ', Number.isFinite(job.channel.ttftMs) ? (job.channel.ttftMs / 1000).toFixed(2) + ' s' : '—')))
       }
       return React.createElement('div', { className: 'dshus-detection-panel' },
-        React.createElement('div', { className: 'dshus-module' }, React.createElement('h3', null, t('模型检测')),
-          React.createElement('p', { className: 'dshus-detection-intro' }, t('检测会在参考库中排序候选模型；结果为参考排名，不证明模型身份。')),
-          stepsView(),
-          React.createElement('div', { className: 'dshus-detection-form' },
-            field('检测供应商', React.createElement('select', { id: 'dshus-detection-provider', 'aria-label': t('检测供应商'), className: 'dshus-field', value: provider, disabled: busy || running || providersLoading, onChange: selectProvider },
-              React.createElement('option', { value: '' }, t(providersLoading ? '正在加载供应商…' : providers.length ? '选择已有供应商' : '没有已配置的供应商')),
-              providers.map(function (item) { return React.createElement('option', { key: item.provider, value: item.provider }, item.name) }))),
-            field('检测模型', React.createElement('select', { id: 'dshus-detection-model', 'aria-label': t('检测模型'), className: 'dshus-field', value: model, disabled: busy || running || modelsLoading || !provider, onChange: selectModel },
-              React.createElement('option', { value: '' }, t(modelsLoading ? '正在加载模型…' : models.length ? '选择检测模型' : '没有可用模型')),
-              models.map(function (item) { return React.createElement('option', { key: item.id, value: item.id }, item.name) })))),
-          React.createElement('p', { className: 'dshus-setting-help' }, t('可选择任意已配置模型；检测选择不会更改会话模型。'))),
-        error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
-        job && jobView(),
-        React.createElement('div', { className: 'dshus-module' }, React.createElement('h3', null, t('随机数指纹检测')),
-          React.createElement('p', { className: 'dshus-detection-intro' }, t('使用 LM Fingerprint 官方随机数指纹，默认 3 次请求；不发送会话内容。')),
-          React.createElement('div', { className: 'dshus-detection-form dshus-detection-limits' },
-            field('采样次数', React.createElement('select', { id: 'dshus-detection-samples', className: 'dshus-field', value: count, disabled: busy || running, onChange: function (event) { setCount(Number(event.target.value)) } },
-              React.createElement('option', { value: 3 }, t('标准检测（3 次）')), React.createElement('option', { value: 1 }, t('低耗初筛（1 次，仅排序）')))),
-            field('单次输出上限', React.createElement('input', { id: 'dshus-detection-output-limit', type: 'number', className: 'dshus-field', min: 1024, max: 16384, step: 1, value: maxTokens, disabled: busy || running, onChange: function (event) { setMaxTokens(Number(event.target.value)) } })),
-            field('已上报 Token 预算', React.createElement('input', { id: 'dshus-detection-budget', type: 'number', className: 'dshus-field', min: 1024, max: 50000, step: 1, value: budget, disabled: busy || running, onChange: function (event) { setBudget(Number(event.target.value)) } }))),
-          React.createElement('p', { className: 'dshus-setting-help' }, t('输出上限限制每次响应；总预算在每次请求结束后检查，达到后停止后续请求。')),
-          quote && React.createElement('div', { className: 'dshus-detection-reference', role: 'status' },
-            React.createElement('p', { className: 'dshus-detection-ready' }, t('已确认预算，可开始检测。')),
-            React.createElement('p', { className: 'dshus-cost-note' }, t('请求最多 {requests} 次 · 输入约 {estimatedInputTokens} Token · 输出上限 {maxOutputTokens} Token', Object.fromEntries(Object.entries(quote.plan).map(function (entry) { return [entry[0], typeof entry[1] === 'number' ? fmtExact(entry[1]) : entry[1]] })))),
-            React.createElement('p', { className: 'dshus-setting-help' }, t('预算按已上报用量检查；推理、未上报用量及供应商重试按通道规则计费。')),
-            React.createElement('details', { className: 'dshus-detection-quote-details', key: quote.id },
-              React.createElement('summary', null, t('本次检测参数')),
-              fields(quote.testSelection),
-              React.createElement('p', { className: 'dshus-setting-help' }, t('每次最多 {maxTokens} Token · 所有请求输出最多 {maxOutputTokens} Token', { maxTokens: fmtExact(quote.plan.maxTokens), maxOutputTokens: fmtExact(quote.plan.maxOutputTokens) })))),
-          React.createElement('div', { className: 'dshus-detection-actions' },
-            React.createElement('button', { type: 'button', className: 'dshus-btn' + (!quote ? ' dshus-btn-primary' : ''), onClick: preview, disabled: busy || running || !selectedReady || !catalog }, t(busy ? '正在处理…' : '查看检测预算')),
-            React.createElement('button', { type: 'button', className: 'dshus-btn' + (quote ? ' dshus-btn-primary' : ''), onClick: start, disabled: busy || running || !quote }, t('开始检测（会消耗 Token）'))),
-          !running && React.createElement('p', { className: 'dshus-setting-help' }, t(quote ? '更改模型或参数后，需要重新查看检测预算。' : '先查看检测预算，确认后再开始。'))),
-        !job && React.createElement('div', { className: 'dshus-module dshus-detection-empty', role: 'region', 'aria-label': t('检测结果') },
-          React.createElement('h3', null, t('检测结果')),
-          React.createElement('p', { className: 'dshus-detection-empty-title' }, t('尚未检测本模型')),
-          React.createElement('p', { className: 'dshus-setting-help' }, t('确认预算并开始后，这里会显示采样进度与候选排名。'))),
-        React.createElement('details', { className: 'dshus-module dshus-detection-engine' },
-          React.createElement('summary', null, t('指纹引擎与参考库'),
-            catalog && React.createElement('span', { className: 'dshus-detection-engine-meta' }, 'lmfpd ', catalog.version || '—', catalog.builtAt && ' · ' + String(catalog.builtAt).slice(0, 10), Number.isFinite(catalog.modelCount) && ' · ' + t('{count} 个参考模型', { count: catalog.modelCount })),
-            catalog && catalog.warning && React.createElement('span', { className: 'dshus-detection-engine-notice', role: 'status' }, uiError(catalog.warning)),
-            (updating || catalog && catalog.updating) && React.createElement('span', { className: 'dshus-detection-engine-notice', role: 'status' }, t('正在检查更新…'))),
-          React.createElement('p', { className: 'dshus-setting-help' }, t('每日检查上游更新，校验成功后启用；更新失败继续使用本地版本。')),
-          React.createElement('div', { className: 'dshus-control-actions' },
-            React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: updating || running || busy || !!(catalog && catalog.updating), onClick: updateEngine }, t(updating || catalog && catalog.updating ? '正在检查更新…' : '检查上游更新')),
-            React.createElement('a', { className: 'dshus-btn', href: 'https://lm.ikale.io/docs/', target: '_blank', rel: 'noreferrer' }, t('官方文档')))))
+        React.createElement('div', { className: 'dshus-detection-layout' },
+          React.createElement('section', { className: 'dshus-module dshus-detection-setup', 'aria-labelledby': 'dshus-detection-setup-heading' },
+            React.createElement('div', { className: 'dshus-detection-card-head' },
+              React.createElement('h3', { id: 'dshus-detection-setup-heading' }, t('模型检测')),
+              stateBadge()),
+            React.createElement('div', { className: 'dshus-detection-form' },
+              field('检测供应商', React.createElement(SelectField, {
+                id: 'dshus-detection-provider', variant: 'field', block: true,
+                'aria-label': t('检测供应商'),
+                value: provider,
+                disabled: busy || running || providersLoading,
+                options: [{ value: '', name: t(providersLoading ? '正在加载供应商…' : providers.length ? '选择已有供应商' : '没有已配置的供应商') }]
+                  .concat(providers.map(function (item) { return { value: item.provider, name: item.name } })),
+                onChange: selectProvider,
+              })),
+              field('检测模型', React.createElement(SelectField, {
+                id: 'dshus-detection-model', variant: 'field', block: true,
+                'aria-label': t('检测模型'),
+                value: model,
+                disabled: busy || running || modelsLoading || !provider,
+                options: [{ value: '', name: t(modelsLoading ? '正在加载模型…' : models.length ? '选择检测模型' : '没有可用模型') }]
+                  .concat(models.map(function (item) { return { value: item.id, name: item.name } })),
+                onChange: selectModel,
+              }))),
+            React.createElement('div', { className: 'dshus-detection-form dshus-detection-limits' },
+              field('采样次数', React.createElement(SelectField, {
+                id: 'dshus-detection-samples', variant: 'field', block: true,
+                'aria-label': t('采样次数'),
+                value: count,
+                disabled: busy || running,
+                options: [{ value: 3, name: t('标准检测（3 次）') }, { value: 1, name: t('低耗初筛（1 次，仅排序）') }],
+                onChange: function (value) { setCount(Number(value)) },
+              })),
+              field('单次输出上限', React.createElement('input', { id: 'dshus-detection-output-limit', type: 'number', className: 'dshus-field', min: 1024, max: 16384, step: 1, value: maxTokens, disabled: busy || running, onChange: function (event) { setMaxTokens(Number(event.target.value)) } })),
+              field('Token 预算', React.createElement('input', { id: 'dshus-detection-budget', type: 'number', className: 'dshus-field', min: 1024, max: 50000, step: 1, value: budget, disabled: busy || running, onChange: function (event) { setBudget(Number(event.target.value)) } }))),
+            error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
+            !quote && !running && React.createElement('div', { className: 'dshus-detection-actions' },
+              React.createElement('button', { type: 'button', className: 'dshus-btn dshus-btn-primary dshus-detection-primary', onClick: preview, disabled: busy || running || !selectedReady || !catalog }, t(busy ? '正在处理…' : '查看检测预算'))),
+            quote && !running && React.createElement('div', { className: 'dshus-detection-quote', role: 'status' },
+              React.createElement('span', { className: 'dshus-detection-quote-title' }, t('检测预算')),
+              React.createElement('dl', { className: 'dshus-detection-quote-metrics' },
+                [['请求次数', quote.plan.requests], ['Token 预算', quote.plan.budgetTokens], ['输入预估', quote.plan.estimatedInputTokens], ['输出上限', quote.plan.maxOutputTokens]].map(function (entry) {
+                  return React.createElement('div', { key: entry[0] },
+                    React.createElement('dt', null, t(entry[0])),
+                    React.createElement('dd', null, Number.isFinite(Number(entry[1])) ? fmtExact(Number(entry[1])) : '—'))
+                })),
+              React.createElement('button', { type: 'button', className: 'dshus-btn dshus-btn-primary dshus-detection-primary', onClick: start, disabled: busy || !quote }, t('开始检测（会消耗 Token）')),
+              React.createElement('details', { className: 'dshus-detection-quote-details', key: quote.id },
+                React.createElement('summary', null, t('本次检测参数')),
+                fields(quote.testSelection),
+                React.createElement('p', null, t('每次最多 {maxTokens} Token · 所有请求输出最多 {maxOutputTokens} Token', { maxTokens: fmtExact(quote.plan.maxTokens), maxOutputTokens: fmtExact(quote.plan.maxOutputTokens) })))),
+            engineView()),
+          job ? jobView() : React.createElement('section', { className: 'dshus-module dshus-detection-result dshus-detection-empty', role: 'region', 'aria-label': t('检测结果') },
+            React.createElement('div', { className: 'dshus-detection-result-head' }, React.createElement('h3', null, t('检测结果'))),
+            React.createElement('div', { className: 'dshus-detection-empty-body' },
+              React.createElement('div', { className: 'dshus-detection-empty-mark', 'aria-hidden': true },
+                React.createElement('svg', { viewBox: '0 0 48 48', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' },
+                  React.createElement('path', { d: 'M8 24h6M34 24h6M24 8v6M24 34v6' }),
+                  React.createElement('circle', { cx: 24, cy: 24, r: 10 }),
+                  React.createElement('circle', { cx: 24, cy: 24, r: 2, fill: 'currentColor', stroke: 'none' }))),
+              React.createElement('p', { className: 'dshus-detection-empty-title' }, t('尚未检测本模型'))))))
     }
 
 function TokenSpeedRanking(props) {
@@ -2164,7 +2477,7 @@ function TokenSpeedRanking(props) {
         speeds.length > 0 && React.createElement('div', { className: 'dshus-speed-head' },
           React.createElement('span', { style: { gridColumn: 'span 2' }, 'aria-hidden': true }),
           React.createElement('span', null, 'TPS (tok/s)'),
-          React.createElement('span', { title: t('平均首 Token 耗时') }, 'TTFT (s)')),
+          React.createElement('span', { 'data-dshus-tip': t('平均首 Token 耗时') }, 'TTFT (s)')),
         speeds.length ? React.createElement('ol', { className: 'dshus-speed-list' }, visible.map(function (item, index) {
           var tps = item.tokensPerSecond >= 10 ? String(Math.round(item.tokensPerSecond)) : String(Math.round(item.tokensPerSecond * 10) / 10)
           var ttft = Number.isFinite(item.averageTtftMs) && item.averageTtftMs >= 0 ? (item.averageTtftMs / 1000).toFixed(1) : '—'
@@ -2172,8 +2485,8 @@ function TokenSpeedRanking(props) {
             React.createElement('span', { className: 'dshus-speed-rank', 'aria-hidden': true }, index + 1),
             React.createElement('div', { className: 'dshus-speed-model' }, item.model,
               React.createElement('div', { className: 'dshus-speed-meta' }, item.provider)),
-            React.createElement('div', { className: 'dshus-speed-value', 'aria-label': 'TPS: ' + tps + ' tok/s', title: t('{tokens} 个输出 Token · {seconds} 秒', { tokens: fmtExact(item.outputTokens), seconds: (item.outputMs / 1000).toFixed(3) }) }, tps),
-            React.createElement('div', { className: 'dshus-speed-value', 'aria-label': 'TTFT: ' + ttft + (ttft === '—' ? '' : ' s'), title: t(ttft === '—' ? '暂无 TTFT 数据' : '平均首 Token 耗时') }, ttft))
+            React.createElement('div', { className: 'dshus-speed-value', 'aria-label': 'TPS: ' + tps + ' tok/s', 'data-dshus-tip': t('{tokens} 个输出 Token · {seconds} 秒', { tokens: fmtExact(item.outputTokens), seconds: (item.outputMs / 1000).toFixed(3) }) }, tps),
+            React.createElement('div', { className: 'dshus-speed-value', 'aria-label': 'TTFT: ' + ttft + (ttft === '—' ? '' : ' s'), 'data-dshus-tip': t(ttft === '—' ? '暂无 TTFT 数据' : '平均首 Token 耗时') }, ttft))
         })) : React.createElement('p', { className: 'dshus-muted', role: 'status' }, t(props.loading ? '加载中…' : '暂无速度数据')),
         speeds.length > 8 && React.createElement('button', { type: 'button', className: 'dshus-btn', 'aria-expanded': expanded, onClick: function () { setExpanded(!expanded) } }, t(expanded ? '收起速度排名' : '展开全部速度排名（{count}）', { count: speeds.length })))
     }
@@ -2201,8 +2514,1568 @@ function OverviewDetails(props) {
       ]
       return React.createElement('dl', { className: 'dshus-overview-grid' }, entries.map(function (entry, index) {
         return React.createElement('div', { key: entry[0] }, React.createElement('dt', null, t(entry[0])),
-          React.createElement('dd', { title: entry[2], className: index === 5 ? 'dshus-favorite-model' : undefined }, entry[1]))
+          React.createElement('dd', { 'data-dshus-tip': entry[2], className: index === 5 ? 'dshus-favorite-model' : undefined }, entry[1]))
       }))
+    }
+
+function logTableHead() {
+      return React.createElement('thead', null,
+        React.createElement('tr', null,
+          ['时间', '应用', '供应商', '模型', '成本', '新增输入', '输出', '缓存命中', '速度', '首字'].map(function (label) {
+            return React.createElement('th', { key: label }, t(label))
+          }),
+        ),
+      )
+    }
+
+function logRowElement(row, index) {
+      var title = row.detection ? t('模型检测') : (row.title || '—')
+      var speed = typeof row.tokensPerSecond === 'number' && row.tokensPerSecond > 0 ? '≈' + row.tokensPerSecond.toFixed(1) + ' tok/s' : '—'
+      var ttft = typeof row.ttftMs === 'number' ? '≈' + (row.ttftMs / 1000).toFixed(1) + 's' : '—'
+      var numCell = function (value, key) {
+        return React.createElement('td', { key: key, className: 'dshus-log-num', 'data-dshus-tip': fmtExact(value) }, fmt(value))
+      }
+      return React.createElement('tr', { key: String(row.time) + '-' + index },
+        React.createElement('td', { className: 'dshus-log-time' }, fmtInTz(row.time, LOCAL_TZ)),
+        React.createElement('td', { className: 'dshus-log-app', 'data-dshus-tip': title }, title),
+        React.createElement('td', null, row.provider),
+        React.createElement('td', { className: 'dshus-log-model', 'data-dshus-tip': row.rawModel || row.model }, row.model),
+        React.createElement('td', { className: 'dshus-log-num dshus-log-cost' }, fmtCost(row.cost)),
+        numCell(row.inputTokens, 'in'),
+        numCell(row.outputTokens, 'out'),
+        numCell(row.cacheReadTokens, 'cache'),
+        React.createElement('td', { className: 'dshus-log-num' }, speed),
+        React.createElement('td', { className: 'dshus-log-num' }, ttft),
+      )
+    }
+
+function LogsPanel(props) {
+      useLocaleRevision()
+      var api = props.api
+      var active = props.active === true
+      var providerState = React.useState('')
+      var provider = providerState[0], setProvider = providerState[1]
+      var modelState = React.useState('')
+      var model = modelState[0], setModel = modelState[1]
+      var pageState = React.useState(1)
+      var page = pageState[0], setPage = pageState[1]
+      var pageSizeState = React.useState(10)
+      var pageSize = pageSizeState[0], setPageSize = pageSizeState[1]
+      var dataState = React.useState(null)
+      var data = dataState[0], setData = dataState[1]
+      var loadingState = React.useState(false)
+      var loading = loadingState[0], setLoading = loadingState[1]
+      var errorState = React.useState('')
+      var error = errorState[0], setError = errorState[1]
+      var requestRef = React.useRef(0)
+
+      function load(fresh, nextPage, nextProvider, nextModel, nextPageSize) {
+        var request = ++requestRef.current
+        setLoading(true)
+        setError('')
+        api.logs({ provider: nextProvider, model: nextModel, page: nextPage, pageSize: nextPageSize, fresh: fresh })
+          .then(function (body) {
+            if (request !== requestRef.current) return
+            setData(body)
+            setLoading(false)
+          })
+          .catch(function (err) {
+            if (request !== requestRef.current) return
+            setError(String(err && err.message || err))
+            setLoading(false)
+          })
+      }
+      React.useEffect(function () {
+        if (!active) return
+        load(false, page, provider, model, pageSize)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [active, page, provider, model, pageSize])
+
+      var providers = (data && data.providers) || []
+      var models = (data && data.models) || []
+      var rows = (data && data.rows) || []
+      var pages = (data && data.pages) || 1
+      var currentPage = (data && data.page) || page
+      var rowEls = rows.map(logRowElement)
+
+      return React.createElement('div', { className: 'dshus-module dshus-logs-module' },
+        React.createElement('div', { className: 'dshus-logs-toolbar' },
+          React.createElement(SelectField, {
+            id: 'dshus-logs-provider', variant: 'field',
+            'aria-label': t('供应商'),
+            value: provider,
+            options: [{ value: '', name: t('全部供应商') }].concat(providers.map(function (name) { return { value: name, name: name } })),
+            onChange: function (value) { setPage(1); setProvider(value) },
+          }),
+          React.createElement(SelectField, {
+            id: 'dshus-logs-model', variant: 'field',
+            'aria-label': t('模型'),
+            value: model,
+            options: [{ value: '', name: t('全部模型') }].concat(models.map(function (name) { return { value: name, name: name } })),
+            onChange: function (value) { setPage(1); setModel(value) },
+          }),
+          React.createElement(SelectField, {
+            id: 'dshus-logs-page-size', variant: 'field',
+            'aria-label': t('每页行数'),
+            value: pageSize,
+            options: [10, 20, 50, 100].map(function (size) { return { value: size, name: t('{count} 条/页', { count: size }) } }),
+            onChange: function (value) { setPage(1); setPageSize(Number(value)) },
+          }),
+          React.createElement('span', { className: 'dshus-muted' }, t('共 {count} 条', { count: data ? data.total : 0 })),
+          refreshIconButton(function () { load(true, page, provider, model, pageSize) }, loading, t('刷新请求日志'), true),
+        ),
+        error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
+        React.createElement('div', { className: 'dshus-table-wrap' },
+          React.createElement('table', { className: 'dshus-table dshus-logs-table' },
+            logTableHead(),
+            React.createElement('tbody', null,
+              rowEls.length > 0 ? rowEls : data && React.createElement('tr', null,
+                React.createElement('td', { colSpan: 10, style: { textAlign: 'center', color: 'var(--dsw-alias-label-tertiary, #6b7280)', padding: '16px 0' } }, t('暂无请求记录')),
+              ),
+            ),
+          ),
+        ),
+        pages > 1 && React.createElement('div', { className: 'dshus-pager' },
+          React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: currentPage <= 1 || loading, onClick: function () { setPage(currentPage - 1) } }, t('上一页')),
+          React.createElement('span', { className: 'dshus-muted' }, t('第 {page} / {pages} 页', { page: currentPage, pages: pages })),
+          React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: currentPage >= pages || loading, onClick: function () { setPage(currentPage + 1) } }, t('下一页')),
+        ),
+      )
+    }
+
+/* ------------------------------------------------------------------ */
+/* Sidebar dashboard                                                   */
+/* ------------------------------------------------------------------ */
+
+var dashboardOpen = false
+var dashboardListeners = new Set()
+
+function setDashboardOpen(open) {
+      if (dashboardOpen === open) return
+      dashboardOpen = open
+      dashboardListeners.forEach(function (listener) { listener(open) })
+    }
+
+function useDashboardOpen() {
+      var state = React.useState(dashboardOpen)
+      React.useEffect(function () {
+        var listener = function (value) { state[1](value) }
+        dashboardListeners.add(listener)
+        return function () { dashboardListeners.delete(listener) }
+      }, [])
+      return state[0]
+    }
+
+function usageChartIcon(size) {
+      return React.createElement('svg', { viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
+        React.createElement('path', { d: 'M4 20h16M7 20v-8M12 20V5M17 20v-5' }))
+    }
+
+function UsageDashboardTrigger(props) {
+      useLocaleRevision()
+      var open = useDashboardOpen()
+      var wide = props.wide !== false
+      return React.createElement('button', {
+        type: 'button',
+        className: 'dshus-footer-action' + (wide ? '' : ' dshus-footer-action-rail'),
+        onClick: function () { setDashboardOpen(true) },
+        'data-dshus-tip': t('用量统计'),
+        'aria-label': t('用量统计'),
+        'aria-haspopup': 'dialog',
+        'aria-expanded': open ? 'true' : undefined,
+      },
+        usageChartIcon(wide ? 16 : 18),
+        wide && React.createElement('span', { className: 'dshus-footer-action-label' }, t('用量统计')),
+      )
+    }
+
+function dashboardSyncLabel(syncedAt) {
+      if (!syncedAt) return ''
+      var age = Date.now() - Number(syncedAt)
+      return age >= 0 && age < 60000 ? t('刚刚同步') : t('同步于 {time}', { time: fmtFetched(syncedAt) })
+    }
+
+var DASHBOARD_RANGES = [
+      ['today', '当天'],
+      ['24h', '近 24 小时'],
+      ['7d', '近 7 天'],
+      ['14d', '近 14 天'],
+      ['30d', '近 30 天'],
+      ['all', '全部'],
+    ]
+
+var DASHBOARD_WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+
+function dashboardPad(value) {
+      return String(value).padStart(2, '0')
+    }
+
+function dashboardStartOfDay(time) {
+      var date = new Date(time)
+      date.setHours(0, 0, 0, 0)
+      return date.getTime()
+    }
+
+function dashboardRange(preset, now) {
+      var end = typeof now === 'number' ? now : Date.now()
+      if (preset === 'all') return { preset: 'all', from: 0, to: 0 }
+      if (preset === '24h') return { preset: preset, from: end - 86400000, to: end }
+      var days = preset === '7d' ? 7 : preset === '14d' ? 14 : preset === '30d' ? 30 : 1
+      var start = new Date(dashboardStartOfDay(end))
+      start.setDate(start.getDate() - (days - 1))
+      return { preset: preset, from: start.getTime(), to: end }
+    }
+
+function dashboardDateValue(ms) {
+      var date = new Date(ms)
+      return date.getFullYear() + '-' + dashboardPad(date.getMonth() + 1) + '-' + dashboardPad(date.getDate())
+    }
+
+function dashboardTimeValue(ms) {
+      var date = new Date(ms)
+      return dashboardPad(date.getHours()) + ':' + dashboardPad(date.getMinutes())
+    }
+
+function dashboardRangeShort(ms) {
+      var date = new Date(ms)
+      return dashboardPad(date.getMonth() + 1) + '/' + dashboardPad(date.getDate()) + ' ' + dashboardTimeValue(ms)
+    }
+
+function dashboardRangeLabel(range) {
+      if (range.preset !== 'custom') {
+        for (var i = 0; i < DASHBOARD_RANGES.length; i++) {
+          if (DASHBOARD_RANGES[i][0] === range.preset) return t(DASHBOARD_RANGES[i][1])
+        }
+      }
+      return dashboardRangeShort(range.from) + ' — ' + dashboardRangeShort(range.to)
+    }
+
+function dashboardCombine(dateValue, timeValue) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ''))) return NaN
+      var date = String(dateValue).split('-'), time = String(timeValue || '00:00').split(':')
+      var combined = new Date(Number(date[0]), Number(date[1]) - 1, Number(date[2]), Number(time[0]) || 0, Number(time[1]) || 0, 0, 0)
+      return combined.getTime()
+    }
+
+function dashboardDaySpan(from, to) {
+      return Math.max(1, Math.round((dashboardStartOfDay(to) - dashboardStartOfDay(from)) / 86400000) + 1)
+    }
+
+function dashboardCalendarCells(year, month) {
+      var first = new Date(year, month, 1)
+      var start = new Date(year, month, 1 - first.getDay())
+      var cells = []
+      for (var index = 0; index < 42; index++) {
+        var date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)
+        cells.push({ key: dashboardDateValue(date.getTime()), date: dashboardDateValue(date.getTime()), day: date.getDate(), current: date.getMonth() === month })
+      }
+      return cells
+    }
+
+function calendarIcon(size) {
+      return React.createElement('svg', { viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
+        React.createElement('rect', { x: 3, y: 5, width: 18, height: 16, rx: 3 }),
+        React.createElement('path', { d: 'M8 3v4M16 3v4M3 10h18' }))
+    }
+
+function chevronDownIcon(size) {
+      return React.createElement('svg', { viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
+        React.createElement('path', { d: 'M6 9l6 6 6-6' }))
+    }
+
+var COST_RANGES = [
+      ['today', '当天'],
+      ['7d', '近 7 天'],
+      ['14d', '近 14 天'],
+      ['30d', '近 30 天'],
+      ['month', '本月'],
+    ]
+
+function costPresetRange(preset) {
+      var now = new Date()
+      var to = dashboardDateValue(now.getTime())
+      if (preset === 'month') {
+        return { preset: 'month', from: dashboardDateValue(new Date(now.getFullYear(), now.getMonth(), 1).getTime()), to: to }
+      }
+      var days = preset === '7d' ? 7 : preset === '14d' ? 14 : preset === '30d' ? 30 : 1
+      var start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1))
+      return { preset: preset, from: dashboardDateValue(start.getTime()), to: to }
+    }
+
+function dayRangeShort(day) {
+      return String(day).slice(5, 7) + '/' + String(day).slice(8, 10)
+    }
+
+function costRangeLabel(range) {
+      for (var i = 0; i < COST_RANGES.length; i++) {
+        if (COST_RANGES[i][0] === range.preset) return t(COST_RANGES[i][1])
+      }
+      return dayRangeShort(range.from) + ' — ' + dayRangeShort(range.to)
+    }
+
+function dayRangeSummary(from, to) {
+      var span = dashboardDaySpan(dashboardCombine(from, '00:00'), dashboardCombine(to, '00:00'))
+      return dayRangeShort(from) + ' — ' + dayRangeShort(to) + ' · ' + t('{days} 天', { days: span })
+    }
+
+/** Day-granularity range picker, matching the sidebar dashboard's picker. */
+function DayRangePicker(props) {
+      var value = props.value
+      var idPrefix = props.idPrefix || 'dshus-day-range'
+      var openState = React.useState(false)
+      var open = openState[0], setOpen = openState[1]
+      var draftState = React.useState(null)
+      var draft = draftState[0], setDraft = draftState[1]
+      var rootRef = React.useRef(null)
+
+      function startDraft(preset, from, to) {
+        var startDate = new Date(dashboardCombine(from, '00:00'))
+        return { preset: preset, dateFrom: from, dateTo: to, active: 'from', year: startDate.getFullYear(), month: startDate.getMonth() }
+      }
+      function openPicker() {
+        setDraft(startDraft(value.preset, value.from, value.to))
+        setOpen(true)
+      }
+      function choosePreset(preset) {
+        var next = costPresetRange(preset)
+        setDraft(startDraft(preset, next.from, next.to))
+      }
+      function editDate(field, next) {
+        setDraft(function (previous) {
+          if (!previous) return previous
+          var updated = Object.assign({}, previous, { preset: 'custom', active: field })
+          if (field === 'from') updated.dateFrom = next
+          else updated.dateTo = next
+          var parts = String(next).split('-')
+          if (parts.length === 3) { updated.year = Number(parts[0]); updated.month = Number(parts[1]) - 1 }
+          return updated
+        })
+      }
+      function pickDay(day) {
+        setDraft(function (previous) {
+          if (!previous) return previous
+          var updated = Object.assign({}, previous, { preset: 'custom' })
+          if (previous.active === 'to') updated.dateTo = day
+          else updated.dateFrom = day
+          var parts = day.split('-')
+          updated.year = Number(parts[0]); updated.month = Number(parts[1]) - 1
+          return updated
+        })
+      }
+      function activateField(field) {
+        setDraft(function (previous) {
+          if (!previous) return previous
+          return Object.assign({}, previous, { active: field })
+        })
+      }
+      function shiftMonth(delta) {
+        setDraft(function (previous) {
+          if (!previous) return previous
+          var next = new Date(previous.year, previous.month + delta, 1)
+          return Object.assign({}, previous, { year: next.getFullYear(), month: next.getMonth() })
+        })
+      }
+      function confirm() {
+        if (!draft) return
+        var from = String(draft.dateFrom || ''), to = String(draft.dateTo || '')
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return
+        if (from > to) { var swap = from; from = to; to = swap }
+        setOpen(false)
+        props.onChange({ preset: draft.preset === 'custom' ? 'custom' : draft.preset, from: from, to: to })
+      }
+      React.useEffect(function () {
+        if (!open) return
+        function onPointerDown(event) {
+          if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false)
+        }
+        function onKeyDown(event) {
+          if (event.key !== 'Escape') return
+          event.stopPropagation()
+          setOpen(false)
+        }
+        document.addEventListener('pointerdown', onPointerDown)
+        document.addEventListener('keydown', onKeyDown)
+        return function () {
+          document.removeEventListener('pointerdown', onPointerDown)
+          document.removeEventListener('keydown', onKeyDown)
+        }
+      }, [open])
+
+      var cells = draft ? dashboardCalendarCells(draft.year, draft.month) : []
+      var selectedDay = draft ? (draft.active === 'to' ? draft.dateTo : draft.dateFrom) : ''
+      var validDraft = draft && /^\d{4}-\d{2}-\d{2}$/.test(String(draft.dateFrom)) && /^\d{4}-\d{2}-\d{2}$/.test(String(draft.dateTo))
+      var summary = validDraft ? dayRangeSummary(draft.dateFrom, draft.dateTo) : ''
+
+      return React.createElement('div', { className: 'dshus-range-wrap', ref: rootRef },
+        React.createElement('button', {
+          type: 'button', className: 'dshus-range-trigger', id: props.id,
+          onClick: function () { if (open) setOpen(false); else openPicker() },
+          'aria-haspopup': 'dialog', 'aria-expanded': open ? 'true' : undefined,
+        }, calendarIcon(15), React.createElement('span', null, costRangeLabel(value)), chevronDownIcon(14)),
+        open && draft && React.createElement('div', { className: 'dshus-range-popover', role: 'dialog', 'aria-label': t('时间范围') },
+          React.createElement('div', { className: 'dshus-range-presets' }, COST_RANGES.map(function (option) {
+            return React.createElement('button', {
+              type: 'button', key: option[0], className: 'dshus-range-preset',
+              'data-active': draft.preset === option[0] ? '' : undefined,
+              onClick: function () { choosePreset(option[0]) },
+            }, t(option[1]))
+          })),
+          React.createElement('div', { className: 'dshus-range-body' },
+            React.createElement('div', { className: 'dshus-range-fields' },
+              React.createElement('p', { className: 'dshus-range-hint' }, t('选择起止日期，包含当天')),
+              React.createElement('div', {
+                className: 'dshus-range-field', 'data-active': draft.active === 'from' ? '' : undefined,
+                onClick: function () { activateField('from') },
+              },
+                React.createElement('span', { className: 'dshus-range-label' }, t('开始日期')),
+                React.createElement('div', { className: 'dshus-range-inputs' },
+                  React.createElement('input', {
+                    id: idPrefix + '-from', type: 'date', className: 'dshus-field dshus-range-date', value: draft.dateFrom, 'aria-label': t('开始日期'),
+                    onChange: function (event) { editDate('from', event.target.value) },
+                  }))),
+              React.createElement('div', {
+                className: 'dshus-range-field', 'data-active': draft.active === 'to' ? '' : undefined,
+                onClick: function () { activateField('to') },
+              },
+                React.createElement('span', { className: 'dshus-range-label' }, t('结束日期')),
+                React.createElement('div', { className: 'dshus-range-inputs' },
+                  React.createElement('input', {
+                    id: idPrefix + '-to', type: 'date', className: 'dshus-field dshus-range-date', value: draft.dateTo, 'aria-label': t('结束日期'),
+                    onChange: function (event) { editDate('to', event.target.value) },
+                  })))),
+            React.createElement('div', { className: 'dshus-range-calendar' },
+              React.createElement('div', { className: 'dshus-range-cal-head' },
+                React.createElement('button', { type: 'button', className: 'dshus-range-cal-nav', onClick: function () { shiftMonth(-1) }, 'aria-label': t('上一页') }, '‹'),
+                React.createElement('span', { className: 'dshus-range-cal-title' }, t('{year}年{month}月', { year: draft.year, month: draft.month + 1 })),
+                React.createElement('button', { type: 'button', className: 'dshus-range-cal-nav', onClick: function () { shiftMonth(1) }, 'aria-label': t('下一页') }, '›')),
+              React.createElement('div', { className: 'dshus-range-cal-week' }, ['日', '一', '二', '三', '四', '五', '六'].map(function (label) {
+                return React.createElement('span', { key: label }, t(label))
+              })),
+              React.createElement('div', { className: 'dshus-range-cal-grid' }, cells.map(function (cell) {
+                return React.createElement('button', {
+                  type: 'button', key: cell.key, className: 'dshus-range-cal-day',
+                  'data-muted': cell.current ? undefined : '', 'data-selected': selectedDay === cell.date ? '' : undefined,
+                  onClick: function () { pickDay(cell.date) },
+                }, cell.day)
+              })))),
+          React.createElement('div', { className: 'dshus-range-foot' },
+            React.createElement('span', { className: 'dshus-range-summary' }, summary),
+            React.createElement('div', { className: 'dshus-range-actions' },
+              React.createElement('button', { type: 'button', className: 'dshus-btn', onClick: function () { setOpen(false) } }, t('取消')),
+              React.createElement('button', { type: 'button', className: 'dshus-btn dshus-btn-primary', onClick: confirm }, t('确定'))))))
+    }
+
+function dashboardMetricValue(point, metric) {
+      if (metric === 'calls') return Number(point.calls) || 0
+      if (metric === 'billed') return Number(point.billed) || 0
+      if (metric === 'cache') return typeof point.cacheHitRate === 'number' ? point.cacheHitRate * 100 : null
+      return Number(point.cost) || 0
+    }
+
+function dashboardMetricText(point, metric) {
+      var value = dashboardMetricValue(point, metric)
+      if (value === null) return '—'
+      if (metric === 'calls') return fmtExact(value)
+      if (metric === 'billed') return fmt(value) + ' Token'
+      if (metric === 'cache') return value.toFixed(1) + '%'
+      return fmtCost(value)
+    }
+
+function dashboardNiceMax(value) {
+      if (!(value > 0)) return 0
+      var base = Math.pow(10, Math.floor(Math.log10(value))), fraction = value / base
+      var steps = [1, 2, 2.5, 3, 4, 5, 6, 8, 10]
+      for (var index = 0; index < steps.length; index++) if (fraction <= steps[index]) return steps[index] * base
+      return 10 * base
+    }
+
+function dashboardSeriesLabel(point, granularity) {
+      if (granularity === 'hour') return dashboardPad(new Date(Number(point.key)).getHours()) + ':00'
+      if (granularity === 'month') return point.key
+      return point.key.slice(5)
+    }
+
+function dashboardCacheFloor(series) {
+      var min = null
+      for (var index = 0; index < series.length; index++) {
+        var rate = series[index].cacheHitRate
+        if (typeof rate !== 'number') continue
+        if (min === null || rate < min) min = rate
+      }
+      if (min === null) return 0
+      var pct = min * 100
+      if (pct >= 90) return 90
+      if (pct >= 75) return 75
+      if (pct >= 50) return 50
+      return 0
+    }
+
+function UsageDashboard(props) {
+      useLocaleRevision()
+      var api = props.api
+      var open = useDashboardOpen()
+      var dialogRef = React.useRef(null)
+      var rangeAnchorRef = React.useRef(null)
+      var rangeState = React.useState(function () { return dashboardRange('today') })
+      var range = rangeState[0], setRange = rangeState[1]
+      var rangeOpenState = React.useState(false)
+      var rangeOpen = rangeOpenState[0], setRangeOpen = rangeOpenState[1]
+      var draftState = React.useState(null)
+      var draft = draftState[0], setDraft = draftState[1]
+      var metricState = React.useState('cost')
+      var metric = metricState[0], setMetric = metricState[1]
+      var providerState = React.useState('')
+      var provider = providerState[0], setProvider = providerState[1]
+      var modelState = React.useState('')
+      var model = modelState[0], setModel = modelState[1]
+      var pageState = React.useState(1)
+      var page = pageState[0], setPage = pageState[1]
+      var pageSizeState = React.useState(10)
+      var pageSize = pageSizeState[0], setPageSize = pageSizeState[1]
+      var dataState = React.useState(null)
+      var data = dataState[0], setData = dataState[1]
+      var loadingState = React.useState(false)
+      var loading = loadingState[0], setLoading = loadingState[1]
+      var errorState = React.useState('')
+      var error = errorState[0], setError = errorState[1]
+      var requestRef = React.useRef(0)
+
+      function load(fresh) {
+        var request = ++requestRef.current
+        setLoading(true)
+        setError('')
+        api.dashboard({
+          all: range.preset === 'all',
+          from: range.preset === 'all' ? 0 : range.from,
+          to: range.preset === 'all' ? 0 : range.to,
+          provider: provider, model: model, page: page, pageSize: pageSize, fresh: fresh,
+        })
+          .then(function (body) {
+            if (request !== requestRef.current) return
+            setData(body)
+            setLoading(false)
+          })
+          .catch(function (err) {
+            if (request !== requestRef.current) return
+            setError(String(err && err.message || err))
+            setLoading(false)
+          })
+      }
+
+      React.useEffect(function () {
+        if (!open) return
+        load(false)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [open, range.preset, range.from, range.to, provider, model, page, pageSize])
+
+      React.useEffect(function () {
+        var dialog = dialogRef.current
+        if (!dialog) return
+        if (open && !dialog.open) {
+          if (typeof dialog.showModal === 'function') dialog.showModal()
+          else dialog.setAttribute('open', '')
+        } else if (!open && dialog.open) dialog.close()
+      }, [open])
+
+      if (!open) return null
+
+      function openPicker() {
+        var now = Date.now()
+        var base = range.preset === 'all'
+          ? { preset: 'all', from: (data && data.earliest) || dashboardStartOfDay(now), to: now }
+          : range.preset === 'custom' ? range : dashboardRange(range.preset, now)
+        var start = base.from || dashboardStartOfDay(now), end = base.to || now
+        var startDate = new Date(start)
+        setDraft({
+          preset: base.preset,
+          dateFrom: dashboardDateValue(start), timeFrom: dashboardTimeValue(start),
+          dateTo: dashboardDateValue(end), timeTo: dashboardTimeValue(end),
+          follow: false, active: 'from', year: startDate.getFullYear(), month: startDate.getMonth(),
+        })
+        setRangeOpen(true)
+      }
+
+      function choosePreset(preset) {
+        var now = Date.now()
+        var next = preset === 'all'
+          ? { from: (data && data.earliest) || dashboardStartOfDay(now), to: now }
+          : dashboardRange(preset, now)
+        var startDate = new Date(next.from)
+        setDraft({
+          preset: preset,
+          dateFrom: dashboardDateValue(next.from), timeFrom: dashboardTimeValue(next.from),
+          dateTo: dashboardDateValue(next.to), timeTo: dashboardTimeValue(next.to),
+          follow: false, active: 'from', year: startDate.getFullYear(), month: startDate.getMonth(),
+        })
+      }
+
+      function activateField(field) {
+        setDraft(function (previous) {
+          if (!previous) return previous
+          var parts = String(field === 'from' ? previous.dateFrom : previous.dateTo).split('-')
+          return Object.assign({}, previous, {
+            active: field,
+            year: parts.length === 3 ? Number(parts[0]) : previous.year,
+            month: parts.length === 3 ? Number(parts[1]) - 1 : previous.month,
+          })
+        })
+      }
+
+      function editDate(field, value) {
+        setDraft(function (previous) {
+          if (!previous) return previous
+          var next = Object.assign({}, previous, { preset: 'custom', active: field })
+          if (field === 'from') next.dateFrom = value
+          else next.dateTo = value
+          var parts = value.split('-')
+          if (parts.length === 3) { next.year = Number(parts[0]); next.month = Number(parts[1]) - 1 }
+          return next
+        })
+      }
+
+      function editTime(field, value) {
+        setDraft(function (previous) {
+          if (!previous) return previous
+          var next = Object.assign({}, previous, { preset: 'custom', active: field })
+          if (field === 'from') next.timeFrom = value
+          else next.timeTo = value
+          return next
+        })
+      }
+
+      function toggleFollow(checked) {
+        setDraft(function (previous) {
+          if (!previous) return previous
+          var next = Object.assign({}, previous, { follow: checked })
+          if (checked) {
+            var now = Date.now()
+            next.dateTo = dashboardDateValue(now)
+            next.timeTo = dashboardTimeValue(now)
+            next.active = 'from'
+          }
+          return next
+        })
+      }
+
+      function pickDay(value) {
+        setDraft(function (previous) {
+          if (!previous) return previous
+          var next = Object.assign({}, previous, { preset: 'custom' })
+          if (previous.active === 'to') next.dateTo = value
+          else next.dateFrom = value
+          var parts = value.split('-')
+          next.year = Number(parts[0]); next.month = Number(parts[1]) - 1
+          return next
+        })
+      }
+
+      function shiftMonth(delta) {
+        setDraft(function (previous) {
+          if (!previous) return previous
+          var next = new Date(previous.year, previous.month + delta, 1)
+          return Object.assign({}, previous, { year: next.getFullYear(), month: next.getMonth() })
+        })
+      }
+
+      function confirmRange() {
+        if (!draft) return
+        if (draft.preset === 'all') {
+          setRange({ preset: 'all', from: 0, to: 0 })
+          setRangeOpen(false)
+          setPage(1)
+          return
+        }
+        var from = dashboardCombine(draft.dateFrom, draft.timeFrom)
+        var to = draft.follow ? Date.now() : dashboardCombine(draft.dateTo, draft.timeTo)
+        if (!Number.isFinite(from) || !Number.isFinite(to)) { setError(t('时间范围无效。')); return }
+        if (from > to) { var swap = from; from = to; to = swap }
+        setRange({ preset: draft.preset === 'custom' ? 'custom' : draft.preset, from: from, to: to })
+        setRangeOpen(false)
+        setPage(1)
+      }
+
+      var totals = (data && data.totals) || null
+      var series = (data && data.series) || []
+      var heatmap = (data && data.heatmap) || null
+      var granularity = data ? data.granularity : 'day'
+      var rows = (data && data.rows) || []
+      var providers = (data && data.providers) || []
+      var models = (data && data.models) || []
+      var currentPage = (data && data.page) || page
+      var pages = (data && data.pages) || 1
+      var total = data ? data.total : 0
+      var cacheText = totals && typeof totals.cacheHitRate === 'number' ? (totals.cacheHitRate * 100).toFixed(1) + '%' : '—'
+      var stats = [
+        { key: 'cost', label: t('总成本'), value: totals ? fmtCost(totals.cost) : '—', exact: totals ? '$' + Number(totals.cost).toFixed(6) : '' },
+        { key: 'calls', label: t('总请求数'), value: totals ? fmtExact(totals.calls) : '—', exact: totals ? fmtExact(totals.calls) : '' },
+        { key: 'billed', label: t('真实消耗 Tokens'), value: totals ? fmt(totals.billed) : '—', exact: totals ? fmtExact(totals.billed) + ' Token' : '' },
+        { key: 'cache', label: t('缓存命中率'), value: cacheText, exact: totals && typeof totals.cacheHitRate === 'number' ? (totals.cacheHitRate * 100).toFixed(2) + '%' : t('缓存读取占全部输入的比例') },
+      ]
+
+      var metricValues = []
+      var metricMax = 0
+      for (var valueIndex = 0; valueIndex < series.length; valueIndex++) {
+        var metricValue = dashboardMetricValue(series[valueIndex], metric)
+        metricValues.push(metricValue)
+        if (metricValue !== null && metricValue > metricMax) metricMax = metricValue
+      }
+      var cacheFloor = metric === 'cache' ? dashboardCacheFloor(series) : 0
+      var axisMax = metric === 'cache' ? 100 : dashboardNiceMax(metricMax)
+      var axisTicks = metric === 'cache'
+        ? [100, Math.round((cacheFloor + 100) / 2), cacheFloor]
+        : [axisMax, axisMax / 2, 0]
+      var axisText = function (tick) {
+        if (metric === 'cache') return Math.round(tick) + '%'
+        if (metric === 'calls') return fmtExact(tick)
+        if (metric === 'billed') return fmt(tick)
+        return fmtCost(tick)
+      }
+      var labelStep = Math.max(1, Math.ceil(series.length / 31))
+      var metricLabel = metric === 'calls' ? t('请求数') : metric === 'billed' ? t('Tokens') : metric === 'cache' ? t('缓存命中率') : t('成本')
+      var granularityLabel = granularity === 'hour' ? t('按小时') : granularity === 'month' ? t('按月') : t('按天')
+
+      var draftSummary = ''
+      if (draft) {
+        if (draft.preset === 'all') draftSummary = t('全部')
+        else {
+          var draftFrom = dashboardCombine(draft.dateFrom, draft.timeFrom)
+          var draftTo = draft.follow ? Date.now() : dashboardCombine(draft.dateTo, draft.timeTo)
+          if (Number.isFinite(draftFrom) && Number.isFinite(draftTo)) {
+            var draftMin = Math.min(draftFrom, draftTo), draftMax = Math.max(draftFrom, draftTo)
+            draftSummary = dashboardRangeShort(draftMin) + ' — ' + dashboardRangeShort(draftMax) + ' · ' + t('{days} 天', { days: dashboardDaySpan(draftMin, draftMax) })
+          }
+        }
+      }
+      var calendarCells = draft ? dashboardCalendarCells(draft.year, draft.month) : []
+
+      var rangePopover = rangeOpen && draft && React.createElement('div', { className: 'dshus-range-popover', role: 'dialog', 'aria-label': t('时间范围') },
+        React.createElement('div', { className: 'dshus-range-presets' }, DASHBOARD_RANGES.map(function (option) {
+          return React.createElement('button', {
+            type: 'button', key: option[0], className: 'dshus-range-preset',
+            'data-active': draft.preset === option[0] ? '' : undefined,
+            onClick: function () { choosePreset(option[0]) },
+          }, t(option[1]))
+        })),
+        React.createElement('div', { className: 'dshus-range-body' },
+          React.createElement('div', { className: 'dshus-range-fields' },
+            React.createElement('p', { className: 'dshus-range-hint' }, t('支持日期与时间')),
+            React.createElement('div', {
+              className: 'dshus-range-field', 'data-active': draft.active === 'from' ? '' : undefined,
+              onClick: function () { activateField('from') },
+            },
+              React.createElement('span', { className: 'dshus-range-label' }, t('开始时间')),
+              React.createElement('div', { className: 'dshus-range-inputs' },
+                React.createElement('input', {
+                  type: 'date', className: 'dshus-field dshus-range-date', value: draft.dateFrom, 'aria-label': t('开始时间'),
+                  onChange: function (event) { editDate('from', event.target.value) },
+                }),
+                React.createElement('input', {
+                  type: 'time', className: 'dshus-field dshus-range-time', value: draft.timeFrom, 'aria-label': t('开始时间'),
+                  onChange: function (event) { editTime('from', event.target.value) },
+                }),
+              ),
+            ),
+            React.createElement('div', {
+              className: 'dshus-range-field', 'data-active': draft.active === 'to' ? '' : undefined,
+              'data-disabled': draft.follow ? '' : undefined,
+              onClick: function () { if (!draft.follow) activateField('to') },
+            },
+              React.createElement('span', { className: 'dshus-range-label' }, t('结束时间')),
+              React.createElement('div', { className: 'dshus-range-inputs' },
+                React.createElement('input', {
+                  type: 'date', className: 'dshus-field dshus-range-date', value: draft.dateTo, disabled: draft.follow, 'aria-label': t('结束时间'),
+                  onChange: function (event) { editDate('to', event.target.value) },
+                }),
+                React.createElement('input', {
+                  type: 'time', className: 'dshus-field dshus-range-time', value: draft.timeTo, disabled: draft.follow, 'aria-label': t('结束时间'),
+                  onChange: function (event) { editTime('to', event.target.value) },
+                }),
+              ),
+            ),
+            React.createElement('label', { className: 'dshus-range-follow' },
+              React.createElement('input', { type: 'checkbox', checked: draft.follow, onChange: function (event) { toggleFollow(event.target.checked) } }),
+              React.createElement('span', null, t('结束时间跟随当前时刻')),
+            ),
+          ),
+          React.createElement('div', { className: 'dshus-range-calendar' },
+            React.createElement('div', { className: 'dshus-range-cal-head' },
+              React.createElement('button', { type: 'button', className: 'dshus-range-cal-nav', onClick: function () { shiftMonth(-1) }, 'aria-label': t('上一页') }, '‹'),
+              React.createElement('span', { className: 'dshus-range-cal-title' }, t('{year}年{month}月', { year: draft.year, month: draft.month + 1 })),
+              React.createElement('button', { type: 'button', className: 'dshus-range-cal-nav', onClick: function () { shiftMonth(1) }, 'aria-label': t('下一页') }, '›'),
+            ),
+            React.createElement('div', { className: 'dshus-range-cal-week' }, ['日', '一', '二', '三', '四', '五', '六'].map(function (label) {
+              return React.createElement('span', { key: label }, t(label))
+            })),
+            React.createElement('div', { className: 'dshus-range-cal-grid' }, calendarCells.map(function (cell) {
+              var selected = (draft.active === 'to' ? draft.dateTo : draft.dateFrom) === cell.date
+              return React.createElement('button', {
+                type: 'button', key: cell.key, className: 'dshus-range-cal-day',
+                'data-muted': cell.current ? undefined : '', 'data-selected': selected ? '' : undefined,
+                onClick: function () { pickDay(cell.date) },
+              }, cell.day)
+            })),
+          ),
+        ),
+        React.createElement('div', { className: 'dshus-range-foot' },
+          React.createElement('span', { className: 'dshus-range-summary' }, draftSummary),
+          React.createElement('div', { className: 'dshus-range-actions' },
+            React.createElement('button', { type: 'button', className: 'dshus-btn', onClick: function () { setRangeOpen(false) } }, t('取消')),
+            React.createElement('button', { type: 'button', className: 'dshus-btn dshus-btn-primary', onClick: confirmRange }, t('确定')),
+          ),
+        ),
+      )
+
+      return React.createElement('dialog', {
+        className: 'dshus-dash-dialog',
+        ref: dialogRef,
+        'aria-label': t('用量统计'),
+        onCancel: function (event) {
+          event.preventDefault()
+          if (rangeOpen) setRangeOpen(false)
+          else setDashboardOpen(false)
+        },
+        onClose: function () { setDashboardOpen(false) },
+        onClick: function (event) {
+          if (rangeOpen && rangeAnchorRef.current && !rangeAnchorRef.current.contains(event.target)) setRangeOpen(false)
+          if (event.target !== dialogRef.current) return
+          var rect = dialogRef.current.getBoundingClientRect()
+          if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) setDashboardOpen(false)
+        },
+      },
+        React.createElement('header', { className: 'dshus-dash-head' },
+          React.createElement('div', { className: 'dshus-dash-title' }, usageChartIcon(18), React.createElement('h2', null, t('用量统计'))),
+          React.createElement('div', { className: 'dshus-dash-head-actions' },
+            data && React.createElement('span', { className: 'dshus-dash-sync' }, dashboardSyncLabel(data.syncedAt)),
+            refreshIconButton(function () { load(true) }, loading, t('刷新用量统计')),
+            React.createElement('button', {
+              type: 'button', className: 'dshus-dash-close', onClick: function () { setDashboardOpen(false) },
+              'data-dshus-tip': t('关闭用量统计'), 'aria-label': t('关闭用量统计'),
+            }, React.createElement('svg', { viewBox: '0 0 24 24', width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', 'aria-hidden': 'true' },
+              React.createElement('path', { d: 'M6 6l12 12M18 6L6 18' }))),
+          ),
+        ),
+        React.createElement('div', { className: 'dshus-dash-body' },
+          React.createElement('div', { className: 'dshus-dash-toolbar' },
+            React.createElement('div', { className: 'dshus-range-wrap', ref: rangeAnchorRef },
+              React.createElement('button', {
+                type: 'button', className: 'dshus-range-trigger',
+                onClick: function () { if (rangeOpen) setRangeOpen(false); else openPicker() },
+                'aria-haspopup': 'dialog', 'aria-expanded': rangeOpen ? 'true' : undefined,
+              }, calendarIcon(15), React.createElement('span', null, dashboardRangeLabel(range)), chevronDownIcon(14)),
+              rangePopover,
+            ),
+            React.createElement(SelectField, {
+              id: 'dshus-dash-provider', variant: 'field',
+              'aria-label': t('供应商'),
+              value: provider,
+              options: [{ value: '', name: t('全部供应商') }].concat(providers.map(function (name) { return { value: name, name: name } })),
+              onChange: function (value) { setPage(1); setModel(''); setProvider(value) },
+            }),
+            React.createElement(SelectField, {
+              id: 'dshus-dash-model', variant: 'field',
+              'aria-label': t('模型'),
+              value: model,
+              options: [{ value: '', name: t('全部模型') }].concat(models.map(function (name) { return { value: name, name: name } })),
+              onChange: function (value) { setPage(1); setModel(value) },
+            }),
+          ),
+          error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
+          React.createElement('div', { className: 'dshus-dash-stats' }, stats.map(function (entry) {
+            return React.createElement('button', {
+              type: 'button', key: entry.key, className: 'dshus-dash-stat',
+              'data-active': metric === entry.key ? '' : undefined, 'aria-pressed': metric === entry.key,
+              'data-dshus-tip': entry.exact || undefined, onClick: function () { setMetric(entry.key) },
+            },
+              React.createElement('span', { className: 'dshus-dash-stat-label' }, entry.label),
+              React.createElement('span', { className: 'dshus-dash-stat-value' }, entry.value),
+            )
+          })),
+          granularity === 'heatmap' && heatmap
+            ? dashboardHeatmapElement(heatmap, metric)
+            : React.createElement('section', { className: 'dshus-dash-chart' },
+              React.createElement('div', { className: 'dshus-dash-chart-head' },
+                React.createElement('h3', null, metricLabel + ' · ' + granularityLabel),
+              ),
+              React.createElement('div', { className: 'dshus-dash-plot' },
+                (metric === 'cache' || axisMax > 0) && React.createElement('div', { className: 'dshus-dash-yaxis' }, axisTicks.map(function (tick, tickIndex) {
+                  return React.createElement('span', { key: tickIndex }, axisText(tick))
+                })),
+                React.createElement('div', { className: 'dshus-dash-plot-main' },
+                  React.createElement('div', { className: 'dshus-dash-chart-bars' }, series.map(function (point, pointIndex) {
+                    var pointValue = metricValues[pointIndex]
+                    var label = dashboardSeriesLabel(point, granularity)
+                    var height = '2px'
+                    if (metric === 'cache') {
+                      if (pointValue !== null) height = Math.max(3, (pointValue - cacheFloor) / Math.max(1, 100 - cacheFloor) * 100) + '%'
+                    } else if (pointValue > 0 && axisMax > 0) height = Math.max(3, pointValue / axisMax * 100) + '%'
+                    return React.createElement('div', {
+                      key: point.key, className: 'dshus-dash-bar', 'data-empty': pointValue === null || pointValue <= 0 ? '' : undefined,
+                      'data-dshus-tip': t('{time} · {value}', { time: label, value: dashboardMetricText(point, metric) }),
+                    }, React.createElement('div', { className: 'dshus-dash-bar-fill', style: { height: height } }))
+                  })),
+                  React.createElement('div', { className: 'dshus-dash-axis' }, series.map(function (point, pointIndex) {
+                    return React.createElement('span', { key: point.key }, pointIndex % labelStep === 0 ? dashboardSeriesLabel(point, granularity) : '')
+                  })),
+                ),
+              ),
+            ),
+          React.createElement('section', { className: 'dshus-dash-logs' },
+            React.createElement('div', { className: 'dshus-dash-logs-head' },
+              React.createElement('h3', null, t('请求日志')),
+              React.createElement('span', { className: 'dshus-muted' }, t('共 {count} 条', { count: total })),
+              React.createElement('label', { className: 'dshus-dash-page-size' },
+                React.createElement('span', { className: 'dshus-muted' }, t('每页行数')),
+                React.createElement(SelectField, {
+                  id: 'dshus-dash-page-size', variant: 'field', inline: true,
+                  'aria-label': t('每页行数'),
+                  value: pageSize,
+                  options: [10, 20, 50, 100].map(function (size) { return { value: size, name: t('{count} 条/页', { count: size }) } }),
+                  onChange: function (value) { setPage(1); setPageSize(Number(value)) },
+                }),
+              ),
+            ),
+            React.createElement('div', { className: 'dshus-dash-logs-body' },
+              React.createElement('div', { className: 'dshus-table-wrap' },
+                React.createElement('table', { className: 'dshus-table dshus-logs-table' },
+                  logTableHead(),
+                  React.createElement('tbody', null,
+                    rows.length > 0 ? rows.map(logRowElement) : data && React.createElement('tr', null,
+                      React.createElement('td', { colSpan: 10, style: { textAlign: 'center', color: 'var(--dsw-alias-label-tertiary, #6b7280)', padding: '16px 0' } }, t('暂无请求记录')),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            pages > 1 && React.createElement('div', { className: 'dshus-dash-pager' },
+              React.createElement('span', { className: 'dshus-muted' }, t('第 {page} / {pages} 页', { page: currentPage, pages: pages })),
+              React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: currentPage <= 1 || loading, onClick: function () { setPage(currentPage - 1) } }, t('上一页')),
+              React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: currentPage >= pages || loading, onClick: function () { setPage(currentPage + 1) } }, t('下一页')),
+            ),
+          ),
+        ),
+      )
+    }
+
+function dashboardHeatmapElement(heatmap, metric) {
+      var dayMap = {}
+      var days = heatmap.days || []
+      for (var index = 0; index < days.length; index++) dayMap[days[index].date] = days[index]
+      var startMs = Date.parse(heatmap.start + 'T00:00:00Z')
+      var endMs = Date.parse(heatmap.end + 'T00:00:00Z')
+      var max = 0
+      for (index = 0; index < days.length; index++) {
+        var metricValue = dashboardMetricValue(days[index], metric)
+        if (metricValue !== null && metricValue > max) max = metricValue
+      }
+      var weeks = []
+      var labels = []
+      var previousMonth = ''
+      for (var week = 0; week < 53; week++) {
+        var cells = []
+        for (var day = 0; day < 7; day++) {
+          var ms = startMs + (week * 7 + day) * 86400000
+          var key = new Date(ms).toISOString().slice(0, 10)
+          var entry = dayMap[key] || null
+          var future = ms > endMs
+          var value = entry ? dashboardMetricValue(entry, metric) : null
+          var level = 0
+          if (!future && value !== null && value > 0 && max > 0) level = Math.min(4, Math.max(1, Math.ceil(value / max * 4)))
+          cells.push({ key: key, entry: entry, future: future, level: level, weekday: DASHBOARD_WEEKDAYS[(new Date(ms).getUTCDay() + 6) % 7] })
+        }
+        weeks.push(cells)
+        var monthKey = cells[0].key.slice(0, 7)
+        labels.push(week === 0 || monthKey !== previousMonth ? monthKey : '')
+        previousMonth = monthKey
+      }
+      return React.createElement('section', { className: 'dshus-dash-chart dshus-dash-heatmap' },
+        React.createElement('div', { className: 'dshus-dash-chart-head' },
+          React.createElement('h3', null, t('用量热力图')),
+        ),
+        React.createElement('p', { className: 'dshus-dash-heatmap-summary' },
+          React.createElement('span', { className: 'dshus-dash-heatmap-range' }, heatmap.start + ' — ' + heatmap.end),
+          React.createElement('span', { className: 'dshus-muted' }, t('{tokens} Token · {calls} 次请求 · {cost}', {
+            tokens: fmt(heatmap.totals.billed), calls: fmtExact(heatmap.totals.calls), cost: fmtCost(heatmap.totals.cost),
+          })),
+        ),
+        React.createElement('div', { className: 'dshus-heatmap-wrap' },
+          React.createElement('div', { className: 'dshus-heatmap-months' }, labels.map(function (label, labelIndex) {
+            return React.createElement('span', { key: labelIndex }, label ? t('{month}月', { month: Number(label.slice(5)) }) : '')
+          })),
+          React.createElement('div', { className: 'dshus-heatmap-body' },
+            React.createElement('div', { className: 'dshus-heatmap-weekdays' }, DASHBOARD_WEEKDAYS.map(function (label, weekdayIndex) {
+              return React.createElement('span', { key: label }, weekdayIndex % 2 === 0 ? t(label) : '')
+            })),
+            React.createElement('div', { className: 'dshus-heatmap-weeks' }, weeks.map(function (cells, weekIndex) {
+              return React.createElement('div', { key: weekIndex, className: 'dshus-heatmap-week' }, cells.map(function (cell) {
+                var title = ''
+                if (!cell.future && cell.entry) {
+                  title = cell.key + ' ' + t(cell.weekday) + '\n' + t('Tokens') + ' ' + fmtExact(cell.entry.billed)
+                    + '\n' + t('请求数') + ' ' + fmtExact(cell.entry.calls)
+                    + '\n' + t('成本') + ' ' + fmtCost(cell.entry.cost)
+                }
+                return React.createElement('span', {
+                  key: cell.key, className: 'dshus-heatmap-cell', 'data-level': cell.level,
+                  'data-future': cell.future ? '' : undefined, 'data-dshus-tip': title || undefined,
+                })
+              }))
+            })),
+          ),
+        ),
+      )
+    }
+
+function localDayString(date) {
+      var d = date instanceof Date ? date : new Date(date)
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+    }
+
+function PriceTableDialog(props) {
+      useLocaleRevision()
+      var api = props.api
+      var models = props.models || []
+      var fields = [['input', t('输入')], ['output', t('输出')], ['cacheRead', t('缓存读取')], ['cacheWrite', t('缓存写入')]]
+      var draftState = React.useState(function () {
+        var drafts = {}
+        for (var i = 0; i < models.length; i++) {
+          var row = models[i]
+          drafts[row.model] = row.price
+            ? { input: String(row.price.input), output: String(row.price.output), cacheRead: String(row.price.cacheRead), cacheWrite: String(row.price.cacheWrite) }
+            : { input: '', output: '', cacheRead: '', cacheWrite: '' }
+        }
+        return drafts
+      })
+      var drafts = draftState[0], setDrafts = draftState[1]
+      var savingState = React.useState('')
+      var saving = savingState[0], setSaving = savingState[1]
+      var errorState = React.useState('')
+      var error = errorState[0], setError = errorState[1]
+
+      function edit(model, field, value) {
+        setDrafts(function (previous) {
+          var next = Object.assign({}, previous)
+          next[model] = Object.assign({}, previous[model])
+          next[model][field] = value
+          return next
+        })
+      }
+      function save(row) {
+        var draft = drafts[row.model] || {}, values = {}
+        for (var i = 0; i < fields.length; i++) {
+          var field = fields[i][0], raw = String(draft[field] == null ? '' : draft[field]).trim(), value = Number(raw)
+          if (raw === '' || !Number.isFinite(value) || value < 0) { setError(t('请输入有效价格。')); return }
+          values[field] = value
+        }
+        setSaving(row.model)
+        setError('')
+        api.savePrice(Object.assign({ model: row.model }, values)).then(function () {
+          setSaving('')
+          props.onSaved()
+        }).catch(function (err) {
+          setSaving('')
+          setError(String(err && err.message || err))
+        })
+      }
+
+      return React.createElement(ControlDialog, { id: 'dshus-price-dialog', title: t('价格表'), onClose: props.onClose, returnFocusId: 'dshus-price-button' },
+        React.createElement('p', { className: 'dshus-setting-help' }, t('美元 / 百万 Tokens')),
+        error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
+        models.length === 0
+          ? React.createElement('p', { className: 'dshus-setting-help' }, t('暂无数据'))
+          : React.createElement('div', { className: 'dshus-table-wrap dshus-price-table-wrap' },
+            React.createElement('table', { className: 'dshus-table dshus-price-table' },
+              React.createElement('thead', null,
+                React.createElement('tr', null,
+                  React.createElement('th', null, t('模型')),
+                  fields.map(function (field) { return React.createElement('th', { key: field[0] }, field[1]) }),
+                  React.createElement('th', { 'aria-label': t('保存') }),
+                ),
+              ),
+              React.createElement('tbody', null,
+                models.map(function (row) {
+                  var draft = drafts[row.model] || {}
+                  return React.createElement('tr', { key: row.model },
+                    React.createElement('td', { 'data-dshus-tip': (row.providers || []).join(' · ') },
+                      React.createElement('div', { className: 'dshus-table-model-cell' }, React.createElement('span', null, row.model)),
+                    ),
+                    fields.map(function (field) {
+                      return React.createElement('td', { key: field[0], style: { textAlign: 'right' } },
+                        React.createElement('input', {
+                          type: 'number', min: 0, step: 'any', className: 'dshus-field dshus-price-input',
+                          'aria-label': row.model + ' ' + field[1],
+                          value: draft[field[0]] == null ? '' : draft[field[0]],
+                          onChange: function (event) { edit(row.model, field[0], event.target.value) },
+                        }))
+                    }),
+                    React.createElement('td', { style: { textAlign: 'right' } },
+                      React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: saving !== '', onClick: function () { save(row) } },
+                        saving === row.model ? t('保存中…') : t('保存'))),
+                  )
+                }),
+              ),
+            ),
+          ),
+      )
+    }
+
+/* ------------------------------------------------------------------ */
+/* Model name rules                                                    */
+/* ------------------------------------------------------------------ */
+
+var RULE_SPLIT = /[,，、;；\n\r]+/
+
+function splitRuleNames(text) {
+      var parts = String(text || '').split(RULE_SPLIT), out = [], seen = {}
+      for (var i = 0; i < parts.length; i++) {
+        var name = parts[i].trim()
+        if (!name) continue
+        var key = name.toLowerCase()
+        if (seen[key]) continue
+        seen[key] = true
+        out.push(name)
+      }
+      return out
+    }
+
+/** Shared add/edit form: one canonical name and the raw models folded into it. */
+function RuleEditor(props) {
+      useLocaleRevision()
+      var models = props.models || []
+      var blocked = props.blocked || {}
+      var initial = props.initial || { canonical: '', originals: [] }
+      var canonicalState = React.useState(initial.canonical || '')
+      var canonical = canonicalState[0], setCanonical = canonicalState[1]
+      var suggestState = React.useState(false)
+      var suggestOpen = suggestState[0], setSuggestOpen = suggestState[1]
+      var suggestRootRef = React.useRef(null)
+      var originalState = React.useState(initial.originals || [])
+      var originals = originalState[0], setOriginals = originalState[1]
+      var draftState = React.useState('')
+      var draft = draftState[0], setDraft = draftState[1]
+      var pickerState = React.useState(false)
+      var pickerOpen = pickerState[0], setPickerOpen = pickerState[1]
+      var searchState = React.useState('')
+      var search = searchState[0], setSearch = searchState[1]
+      var searchRef = React.useRef(null)
+      var busyState = React.useState(false)
+      var busy = busyState[0], setBusy = busyState[1]
+      var errorState = React.useState('')
+      var error = errorState[0], setError = errorState[1]
+
+      React.useEffect(function () {
+        if (!suggestOpen) return
+        function outside(event) { if (suggestRootRef.current && !suggestRootRef.current.contains(event.target)) setSuggestOpen(false) }
+        document.addEventListener('pointerdown', outside)
+        return function () { document.removeEventListener('pointerdown', outside) }
+      }, [suggestOpen])
+
+      function addNames(names) {
+        setOriginals(function (previous) {
+          var next = previous.slice()
+          for (var i = 0; i < names.length; i++) {
+            var name = String(names[i] || '').trim()
+            if (!name) continue
+            var key = name.toLowerCase(), exists = false
+            for (var j = 0; j < next.length; j++) if (next[j].toLowerCase() === key) { exists = true; break }
+            if (!exists) next.push(name)
+          }
+          return next
+        })
+      }
+      function removeName(name) {
+        setOriginals(function (previous) {
+          return previous.filter(function (item) { return item.toLowerCase() !== name.toLowerCase() })
+        })
+      }
+      function commitDraft() {
+        if (!draft.trim()) return
+        addNames(splitRuleNames(draft))
+        setDraft('')
+      }
+      function submit() {
+        var name = canonical.trim()
+        if (!name || originals.length === 0) { setError('请填写归一名称和至少一个原始模型。'); return }
+        setBusy(true)
+        setError('')
+        var result
+        try { result = props.onSubmit(name, originals.slice()) } catch (err) { result = Promise.reject(err) }
+        Promise.resolve(result).then(function () {
+          setBusy(false)
+          props.onDone()
+        }).catch(function (err) {
+          setBusy(false)
+          setError(String(err && err.message || err))
+        })
+      }
+
+      var suggestions = [], seenNames = {}
+      ;(props.suggestions || []).concat(models).forEach(function (name) {
+        var key = String(name || '').toLowerCase()
+        if (!key || seenNames[key]) return
+        seenNames[key] = true
+        suggestions.push(name)
+      })
+      var suggestNeedle = canonical.trim().toLowerCase()
+      var suggestMatches = suggestions.filter(function (name) {
+        return !suggestNeedle || name.toLowerCase().indexOf(suggestNeedle) !== -1
+      })
+      var needle = search.trim().toLowerCase()
+      var available = []
+      for (var mi = 0; mi < models.length; mi++) {
+        var modelName = models[mi], modelKey = modelName.toLowerCase()
+        if (blocked[modelKey]) continue
+        if (originals.some(function (item) { return item.toLowerCase() === modelKey })) continue
+        if (needle && modelKey.indexOf(needle) === -1) continue
+        available.push(modelName)
+      }
+
+      return React.createElement('div', { className: 'dshus-rule-editor' },
+        React.createElement('div', { className: 'dshus-rule-field', ref: suggestRootRef },
+          React.createElement('span', { className: 'dshus-setting-label' }, t('归一名称')),
+          React.createElement('input', {
+            type: 'text', className: 'dshus-field', value: canonical,
+            placeholder: t('例如 Claude Sonnet 4.5'), autoComplete: 'off', 'aria-label': t('归一名称'),
+            onChange: function (event) { setCanonical(event.target.value); setSuggestOpen(true) },
+            onFocus: function () { setSuggestOpen(true) },
+            onClick: function () { setSuggestOpen(true) },
+            onKeyDown: function (event) {
+              if (event.key === 'Escape' && suggestOpen) { event.preventDefault(); event.stopPropagation(); setSuggestOpen(false) }
+            },
+          }),
+          suggestOpen && suggestMatches.length > 0 && React.createElement('div', { className: 'dshus-rule-suggest' },
+            React.createElement('ul', { className: 'dshus-rule-options' }, suggestMatches.slice(0, 100).map(function (name) {
+              return React.createElement('li', { key: name },
+                React.createElement('button', {
+                  type: 'button', className: 'dshus-rule-option',
+                  onMouseDown: function (event) { event.preventDefault() },
+                  onClick: function () { setCanonical(name); setSuggestOpen(false) },
+                }, name))
+            })))),
+        React.createElement('div', { className: 'dshus-rule-field' },
+          React.createElement('span', { className: 'dshus-setting-label' }, t('原始模型')),
+          originals.length > 0 && React.createElement('div', { className: 'dshus-rule-chips' },
+            originals.map(function (name) {
+              return React.createElement('span', { key: name, className: 'dshus-rule-chip' },
+                React.createElement('span', null, name),
+                React.createElement('button', {
+                  type: 'button', className: 'dshus-rule-chip-remove', 'aria-label': t('移除 {name}', { name: name }),
+                  onClick: function () { removeName(name) },
+                }, '×'))
+            })),
+          React.createElement('div', { className: 'dshus-rule-add' },
+            React.createElement('input', {
+              type: 'text', className: 'dshus-field', value: draft,
+              placeholder: t('输入模型名称，回车添加'),
+              onChange: function (event) { setDraft(event.target.value) },
+              onKeyDown: function (event) {
+                if (event.key === 'Enter' || event.key === ',' || event.key === '，') { event.preventDefault(); commitDraft() }
+                else if (event.key === 'Backspace' && draft === '' && originals.length > 0) removeName(originals[originals.length - 1])
+              },
+            }),
+            React.createElement('button', {
+              type: 'button', className: 'dshus-btn',
+              'aria-expanded': pickerOpen, 'aria-controls': pickerOpen ? props.idPrefix + '-picker' : undefined,
+              onClick: function () { setPickerOpen(!pickerOpen) },
+            }, t('选择模型'))),
+          pickerOpen && React.createElement('div', { id: props.idPrefix + '-picker', className: 'dshus-rule-picker' },
+            React.createElement('input', {
+              type: 'search', className: 'dshus-field', value: search, ref: searchRef,
+              placeholder: t('搜索模型名称'), 'aria-label': t('搜索模型名称'),
+              onChange: function (event) { setSearch(event.target.value) },
+            }),
+            available.length > 0
+              ? React.createElement('ul', { className: 'dshus-rule-options' }, available.slice(0, 100).map(function (name) {
+                return React.createElement('li', { key: name },
+                  React.createElement('button', {
+                    type: 'button', className: 'dshus-rule-option',
+                    onClick: function () {
+                      addNames([name])
+                      // The search text stays so several matches can be picked
+                      // in a row; only the user clears it.
+                      if (searchRef.current) searchRef.current.focus()
+                    },
+                  }, name))
+              }))
+              : React.createElement('p', { className: 'dshus-setting-help' }, models.length === 0 ? t('还没有模型使用记录') : needle ? t('没有匹配的模型') : t('没有可添加的模型'))),
+        ),
+        error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
+        React.createElement('div', { className: 'dshus-rule-editor-actions' },
+          React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: busy, onClick: submit }, busy ? t('保存中…') : props.submitLabel),
+          props.onCancel && React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: busy, onClick: props.onCancel }, t('取消'))),
+      )
+    }
+
+function RuleRemoveDialog(props) {
+      useLocaleRevision()
+      var busyState = React.useState(false)
+      var busy = busyState[0], setBusy = busyState[1]
+      var errorState = React.useState('')
+      var error = errorState[0], setError = errorState[1]
+      function confirm() {
+        setBusy(true)
+        setError('')
+        Promise.resolve(props.onConfirm()).then(function () {
+          setBusy(false)
+          props.onClose()
+        }).catch(function (err) {
+          setBusy(false)
+          setError(String(err && err.message || err))
+        })
+      }
+      return React.createElement(ControlDialog, { id: 'dshus-rule-remove-dialog', title: t('移除规则'), onClose: props.onClose, returnFocusId: props.returnFocusId },
+        React.createElement('p', null, t('移除“{name}”规则？这些原始模型会恢复各自独立的名称。', { name: props.canonical })),
+        error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
+        React.createElement('div', { className: 'dshus-control-actions' },
+          React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: busy, onClick: confirm }, busy ? t('移除中…') : t('移除')),
+          React.createElement('button', { type: 'button', className: 'dshus-btn', disabled: busy, onClick: props.onClose }, t('取消'))),
+      )
+    }
+
+function RulesPanel(props) {
+      useLocaleRevision()
+      var api = props.api
+      var active = props.active === true
+      var dataState = React.useState(null)
+      var data = dataState[0], setData = dataState[1]
+      var loadingState = React.useState(false)
+      var loading = loadingState[0], setLoading = loadingState[1]
+      var errorState = React.useState('')
+      var error = errorState[0], setError = errorState[1]
+      var editingState = React.useState('')
+      var editing = editingState[0], setEditing = editingState[1]
+      var removingState = React.useState(null)
+      var removing = removingState[0], setRemoving = removingState[1]
+      var addRevisionState = React.useState(0)
+      var addRevision = addRevisionState[0], setAddRevision = addRevisionState[1]
+      var requestRef = React.useRef(0)
+
+      function load() {
+        var request = ++requestRef.current
+        setLoading(true)
+        setError('')
+        api.rules().then(function (body) {
+          if (request !== requestRef.current) return
+          setData(body)
+          setLoading(false)
+        }).catch(function (err) {
+          if (request !== requestRef.current) return
+          setError(String(err && err.message || err))
+          setLoading(false)
+        })
+      }
+      React.useEffect(function () {
+        if (active) load()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [active])
+
+      function submit(body) {
+        var request = ++requestRef.current
+        return api.saveRules(body).then(function (result) {
+          if (request === requestRef.current) {
+            setData(function (previous) {
+              return { rules: result.rules || [], models: result.models || (previous && previous.models) || [] }
+            })
+          }
+          return result
+        })
+      }
+
+      var groups = (data && data.rules) || []
+      var models = (data && data.models) || []
+      var canonicalNames = groups.map(function (group) { return group.canonical })
+      var blockedFor = function (group) {
+        var blocked = {}
+        groups.forEach(function (item) {
+          if (group && item.canonical.toLowerCase() === group.canonical.toLowerCase()) return
+          item.originals.forEach(function (name) { blocked[name.toLowerCase()] = true })
+        })
+        return blocked
+      }
+      var allBlocked = blockedFor(null)
+
+      var rows = groups.map(function (group) {
+        var key = group.canonical.toLowerCase()
+        if (editing === key) {
+          return React.createElement('div', { key: key, className: 'dshus-rule-card dshus-rule-card-editing' },
+            React.createElement(RuleEditor, {
+              idPrefix: 'dshus-rule-edit-' + key, initial: group, models: models, suggestions: canonicalNames, blocked: blockedFor(group),
+              submitLabel: t('保存'),
+              onSubmit: function (canonical, originals) { return submit({ action: 'update', removed: group.originals, canonical: canonical, originals: originals }) },
+              onDone: function () { setEditing('') },
+              onCancel: function () { setEditing('') },
+            }))
+        }
+        return React.createElement('div', { key: key, className: 'dshus-rule-card' },
+          React.createElement('div', { className: 'dshus-rule-main' },
+            React.createElement('strong', { className: 'dshus-rule-name' }, group.canonical),
+            React.createElement('div', { className: 'dshus-rule-originals', 'data-dshus-tip': group.originals.join(' · ') }, group.originals.join(' · '))),
+          React.createElement('span', { className: 'dshus-rule-count' }, t('{count} 个原始模型', { count: group.originals.length })),
+          React.createElement('div', { className: 'dshus-rule-actions' },
+            React.createElement('button', { type: 'button', className: 'dshus-btn', onClick: function () { setEditing(key) } }, t('编辑')),
+            React.createElement('button', { type: 'button', className: 'dshus-btn', onClick: function () { setRemoving(group) } }, t('移除'))))
+      })
+
+      return React.createElement('div', { className: 'dshus-rules' },
+        React.createElement('div', { className: 'dshus-module' },
+          React.createElement('h3', null, t('新增规则')),
+          React.createElement(RuleEditor, {
+            key: 'dshus-rule-add-' + addRevision,
+            idPrefix: 'dshus-rule-add', models: models, suggestions: canonicalNames, blocked: allBlocked,
+            submitLabel: t('添加'),
+            onSubmit: function (canonical, originals) { return submit({ action: 'add', canonical: canonical, originals: originals }) },
+            onDone: function () { setError(''); setAddRevision(function (value) { return value + 1 }) },
+            onCancel: function () { setAddRevision(function (value) { return value + 1 }) },
+          }),
+        ),
+        React.createElement('div', { className: 'dshus-module' },
+          React.createElement('h3', null,
+            t('已有规则'),
+            React.createElement('span', { className: 'dshus-muted' }, String(groups.length)),
+            refreshIconButton(load, loading, t('刷新规则'), true)),
+          error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
+          rows.length > 0 ? React.createElement('div', { className: 'dshus-rule-list' }, rows) : React.createElement('p', { className: 'dshus-setting-help' }, t('还没有模型规则。')),
+        ),
+        removing && React.createElement(RuleRemoveDialog, {
+          canonical: removing.canonical, returnFocusId: 'dshus-tab-rules',
+          onConfirm: function () { return submit({ action: 'remove', canonical: removing.canonical }) },
+          onClose: function () { setRemoving(null) },
+        }),
+      )
+    }
+
+function CostsPanel(props) {
+      useLocaleRevision()
+      var api = props.api
+      var active = props.active === true
+      var rangeState = React.useState(function () { return costPresetRange('month') })
+      var range = rangeState[0], setRange = rangeState[1]
+      var providerState = React.useState('')
+      var provider = providerState[0], setProvider = providerState[1]
+      var priceOpenState = React.useState(false)
+      var priceOpen = priceOpenState[0], setPriceOpen = priceOpenState[1]
+      var dataState = React.useState(null)
+      var data = dataState[0], setData = dataState[1]
+      var loadingState = React.useState(false)
+      var loading = loadingState[0], setLoading = loadingState[1]
+      var errorState = React.useState('')
+      var error = errorState[0], setError = errorState[1]
+      var requestRef = React.useRef(0)
+
+      function load(fresh, nextRange, nextProvider) {
+        var request = ++requestRef.current
+        setLoading(true)
+        setError('')
+        api.costs({ from: nextRange.from, to: nextRange.to, provider: nextProvider, fresh: fresh })
+          .then(function (body) {
+            if (request !== requestRef.current) return
+            setData(body)
+            setLoading(false)
+          })
+          .catch(function (err) {
+            if (request !== requestRef.current) return
+            setError(String(err && err.message || err))
+            setLoading(false)
+          })
+      }
+      React.useEffect(function () {
+        if (!active) return
+        load(false, range, provider)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [active, range, provider])
+
+      var merged = [], index = Object.create(null)
+      var sourceRows = (data && data.rows) || []
+      for (var i = 0; i < sourceRows.length; i++) {
+        var row = sourceRows[i]
+        var modelId = sharedNormModelKey(row.model)
+        var group = index[modelId]
+        if (group === undefined) {
+          group = {
+            key: modelId, model: modelId === 'glm-5.3-flash' ? 'glm-5.3-flash' : sharedModelDisplayName(row.model),
+            providers: [], rangeCost: null, totalCost: null, rangeTokens: 0, calls: 0,
+          }
+          index[modelId] = group
+          merged.push(group)
+        }
+        if (row.provider && group.providers.indexOf(row.provider) === -1) group.providers.push(row.provider)
+        if (row.rangeCost !== null) group.rangeCost = (group.rangeCost === null ? 0 : group.rangeCost) + row.rangeCost
+        if (row.totalCost !== null) group.totalCost = (group.totalCost === null ? 0 : group.totalCost) + row.totalCost
+        group.rangeTokens += (row.range && row.range.billed) || 0
+        group.calls += (row.total && row.total.calls) || 0
+      }
+      merged.sort(function (a, b) {
+        var av = a.rangeCost === null ? -1 : a.rangeCost
+        var bv = b.rangeCost === null ? -1 : b.rangeCost
+        return bv - av || b.rangeTokens - a.rangeTokens
+      })
+
+      var stat = function (value, label) {
+        return React.createElement('div', { className: 'dshus-stat' },
+          React.createElement('div', { className: 'v' }, fmtCost(value)),
+          React.createElement('div', { className: 'k' }, label),
+        )
+      }
+      var providers = (data && data.providers) || []
+      var coverage = data ? (data.pricedModels || 0) + '/' + (data.totalModels || 0) : '—'
+      var coverageLabel = data ? t('已收录 {priced} / 共 {total} 个模型', { priced: data.pricedModels || 0, total: data.totalModels || 0 }) : ''
+
+      return React.createElement('div', { className: 'dshus-module' },
+        React.createElement('h3', null,
+          React.createElement('span', { className: 'dshus-muted', 'data-dshus-tip': coverageLabel || undefined, 'aria-label': coverageLabel || undefined }, coverage),
+          React.createElement('div', { className: 'dshus-head-tools' },
+            React.createElement(DayRangePicker, {
+              id: 'dshus-cost-range', idPrefix: 'dshus-cost-range',
+              value: range, onChange: function (next) { setRange(next) },
+            }),
+            React.createElement(SelectField, {
+              id: 'dshus-cost-provider', variant: 'field',
+              'aria-label': t('供应商'),
+              value: provider,
+              options: [{ value: '', name: t('全部供应商') }].concat(providers.map(function (name) { return { value: name, name: name } })),
+              onChange: function (value) { setProvider(value) },
+            }),
+            React.createElement('button', { id: 'dshus-price-button', type: 'button', className: 'dshus-btn', disabled: !data, onClick: function () { setPriceOpen(true) } }, t('价格表')),
+            refreshIconButton(function () { load(true, range, provider) }, loading, t('刷新成本统计'), true),
+          ),
+        ),
+        React.createElement('div', { className: 'dshus-statbar', role: 'group', 'aria-label': t('成本') },
+          stat(data ? data.totalCost : null, t('总成本')),
+          stat(data ? data.rangeCost : null, t('区间成本')),
+        ),
+        error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
+        React.createElement('div', { className: 'dshus-table-wrap' },
+          React.createElement('table', { className: 'dshus-table' },
+            React.createElement('thead', null,
+              React.createElement('tr', null,
+                React.createElement('th', null, t('模型')),
+                React.createElement('th', null, t('区间成本')),
+                React.createElement('th', null, t('总成本')),
+                React.createElement('th', null, t('区间 Tokens')),
+                React.createElement('th', null, t('调用次数')),
+              ),
+            ),
+            React.createElement('tbody', null,
+              merged.length > 0 ? merged.map(function (group) {
+                return React.createElement('tr', { key: group.key },
+                  React.createElement('td', { 'data-dshus-tip': group.providers.join(' · ') },
+                    React.createElement('div', { className: 'dshus-table-model-cell' }, React.createElement('span', null, group.model)),
+                  ),
+                  React.createElement('td', { style: { textAlign: 'right', fontWeight: 600 } }, fmtCost(group.rangeCost)),
+                  React.createElement('td', { style: { textAlign: 'right' } }, fmtCost(group.totalCost)),
+                  React.createElement('td', { style: { textAlign: 'right' }, 'data-dshus-tip': fmtExact(group.rangeTokens) }, fmt(group.rangeTokens)),
+                  React.createElement('td', { style: { textAlign: 'right' } }, fmtExact(group.calls)),
+                )
+              }) : data && React.createElement('tr', null,
+                React.createElement('td', { colSpan: 5, style: { textAlign: 'center', color: 'var(--dsw-alias-label-tertiary, #6b7280)', padding: '16px 0' } }, t('暂无成本数据')),
+              ),
+            ),
+          ),
+        ),
+        priceOpen && React.createElement(PriceTableDialog, {
+          api: api, models: (data && data.priceModels) || [],
+          onClose: function () { setPriceOpen(false) },
+          onSaved: function () { load(false, range, provider) },
+        }),
+      )
     }
 
 function UsageStatsSection(props) {
@@ -2296,14 +4169,20 @@ function UsageStatsSection(props) {
       var tab = tabState[0]
       var setTab = tabState[1]
 
-      var controlState = React.useState({ settings: { autoQuota: false, intervalMinutes: 10, showModelDetails: false, showTokenSpeed: true, showModelDetection: true, advancedModelSelect: true, modelReasoning: true, customQueries: [] } })
+      var controlState = React.useState({ settings: { autoQuota: false, intervalMinutes: 10, showModelDetails: false, showTokenSpeed: true, showModelDetection: true, showLogs: true, showCosts: true, showRules: true, advancedModelSelect: true, modelSeatColor: 'blue', modelReasoning: true, customQueries: [] } })
       var control = controlState[0], setControl = controlState[1]
       // The controls body comes from the host and may lack its settings block:
       // a degraded endpoint or a proxy error page must degrade the page's
       // switches, not crash the whole settings section during render.
       var controlSettings = (control && control.settings) || {}
       var showModelDetection = controlSettings.showModelDetection === true
+      var showLogs = controlSettings.showLogs !== false
+      var showCosts = controlSettings.showCosts !== false
+      var showRules = controlSettings.showRules !== false
       if (tab === 'detection' && !showModelDetection) tab = 'usage'
+      if (tab === 'logs' && !showLogs) tab = 'usage'
+      if (tab === 'costs' && !showCosts) tab = 'usage'
+      if (tab === 'rules' && !showRules) tab = 'usage'
       var configActive = !props.cardViews || Object.keys(props.cardViews).some(function (view) { return props.cardViews[view] })
       var controlReadyState = React.useState(false)
       var controlReady = controlReadyState[0], setControlReady = controlReadyState[1]
@@ -2315,6 +4194,14 @@ function UsageStatsSection(props) {
       var detectionVisited = detectionVisitedState[0], setDetectionVisited = detectionVisitedState[1]
       var quotaVisitedState = React.useState(props.initialTab === 'quota')
       var quotaVisited = quotaVisitedState[0], setQuotaVisited = quotaVisitedState[1]
+      var logsVisitedState = React.useState(props.initialTab === 'logs')
+      var logsVisited = logsVisitedState[0], setLogsVisited = logsVisitedState[1]
+      var costsVisitedState = React.useState(props.initialTab === 'costs')
+      var costsVisited = costsVisitedState[0], setCostsVisited = costsVisitedState[1]
+      var rulesVisitedState = React.useState(props.initialTab === 'rules')
+      var rulesVisited = rulesVisitedState[0], setRulesVisited = rulesVisitedState[1]
+      var quickStartState = React.useState(false)
+      var quickStartOpen = quickStartState[0], setQuickStartOpen = quickStartState[1]
       var quotaSnapshotsState = React.useState({})
       var quotaSnapshots = quotaSnapshotsState[0], setQuotaSnapshots = quotaSnapshotsState[1]
       var quotaLoadingState = React.useState(false)
@@ -2324,16 +4211,28 @@ function UsageStatsSection(props) {
 
       function changeTab(next) {
         if (next === 'detection' && !showModelDetection) return
+        if (next === 'logs' && !showLogs) return
+        if (next === 'costs' && !showCosts) return
+        if (next === 'rules' && !showRules) return
         if (next === tab) return
         // A short tab must not inherit the long usage page's scroll position.
         if (scrollPortRef.current) scrollPortRef.current.scrollTop = 0
         if (next === 'quota') setQuotaVisited(true)
         if (next === 'detection') setDetectionVisited(true)
+        if (next === 'logs') setLogsVisited(true)
+        if (next === 'costs') setCostsVisited(true)
+        if (next === 'rules') setRulesVisited(true)
         if (next === 'usage') load()
         setTab(next)
       }
       function onTabKeyDown(event) {
-        var names = showModelDetection ? ['usage', 'quota', 'detection', 'control'] : ['usage', 'quota', 'control']
+        var names = ['usage']
+        if (showLogs) names.push('logs')
+        if (showCosts) names.push('costs')
+        if (showRules) names.push('rules')
+        names.push('quota')
+        if (showModelDetection) names.push('detection')
+        names.push('control')
         var index = names.indexOf(tab)
         var next = event.key === 'ArrowRight' ? names[(index + 1) % names.length] : event.key === 'ArrowLeft' ? names[(index + names.length - 1) % names.length] : event.key === 'Home' ? 'usage' : event.key === 'End' ? names[names.length - 1] : null
         if (next === null) return
@@ -2430,6 +4329,9 @@ function UsageStatsSection(props) {
       function acceptControls(body) {
         setControl(body); syncModelFeaturesFromControls(body); setControlReady(true)
         if (body.settings?.showModelDetection !== true) { setTab(function (previous) { return previous === 'detection' ? 'usage' : previous }); setDetectionVisited(false) }
+        if (body.settings?.showLogs === false) { setTab(function (previous) { return previous === 'logs' ? 'usage' : previous }); setLogsVisited(false) }
+        if (body.settings?.showCosts === false) { setTab(function (previous) { return previous === 'costs' ? 'usage' : previous }); setCostsVisited(false) }
+        if (body.settings?.showRules === false) { setTab(function (previous) { return previous === 'rules' ? 'usage' : previous }); setRulesVisited(false) }
       }
       function saveControls(patch) {
         var request = ++controlRequestRef.current
@@ -2645,6 +4547,10 @@ function UsageStatsSection(props) {
       var tools = React.createElement('div', { className: 'dshus-tools' },
         tab === 'usage' && refreshIconButton(refresh, loading, t('刷新用量统计'), false),
         tab === 'quota' && refreshIconButton(refreshQuotas, quotaLoading, t('刷新全部配额'), false),
+        React.createElement('button', { id: 'dshus-quickstart-button', type: 'button', className: 'dshus-btn', onClick: function () { setQuickStartOpen(true) } }, t('快速上手')),
+        React.createElement('a', { className: 'dshus-btn dshus-icon-btn', href: 'https://github.com/Jockjrop/dsh-usage-stats/issues', target: '_blank', rel: 'noopener noreferrer', 'data-dshus-tip': t('问题反馈'), 'aria-label': t('问题反馈') },
+          React.createElement('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
+            React.createElement('path', { d: 'M21 3 10.5 13.5M21 3l-6.5 18-4-7.5L3 9.5z' }))),
       )
 
       var cards
@@ -2659,7 +4565,7 @@ function UsageStatsSection(props) {
           opts = opts || {}
           var display = typeof v === 'number' ? (opts.exact ? fmtExact(v) : fmt(v)) : v
           return React.createElement('div', { className: 'dshus-stat' + (opts.cls ? ' ' + opts.cls : '') },
-            React.createElement('div', { className: 'v', title: typeof v === 'number' ? fmtExact(v) : undefined }, display),
+            React.createElement('div', { className: 'v', 'data-dshus-tip': typeof v === 'number' ? fmtExact(v) : undefined }, display),
             React.createElement('div', { className: 'k' }, k),
           )
         }
@@ -2700,7 +4606,7 @@ function UsageStatsSection(props) {
               React.createElement('span', null, label),
             ),
           ),
-          React.createElement('td', { title: fmtExact(m.billed || 0), style: { textAlign: 'right', fontWeight: 600 } }, fmt(m.billed || 0)),
+          React.createElement('td', { 'data-dshus-tip': fmtExact(m.billed || 0), style: { textAlign: 'right', fontWeight: 600 } }, fmt(m.billed || 0)),
           React.createElement('td', { style: { textAlign: 'right' } }, formatPct(pct)),
           React.createElement('td', { className: 'dshus-table-bar-cell' },
             React.createElement('div', { className: 'dshus-table-bar-bg' },
@@ -2719,13 +4625,16 @@ function UsageStatsSection(props) {
           React.createElement('div', { className: 'dshus-brand' },
             React.createElement('span', { className: 'dshus-brand-icon', 'aria-hidden': 'true' }),
             React.createElement('h2', { className: 'dshus-title' }, t('用量统计')),
-            React.createElement('a', { className: 'dshus-brand-meta dshus-brand-link', href: 'https://github.com/Jockjrop/dsh-usage-stats', target: '_blank', rel: 'noopener noreferrer', title: t('在 GitHub 查看 dsh-usage-stats') }, 'dsh-usage-stats'),
+            React.createElement('a', { className: 'dshus-brand-meta dshus-brand-link', href: 'https://github.com/Jockjrop/dsh-usage-stats', target: '_blank', rel: 'noopener noreferrer', 'data-dshus-tip': t('在 GitHub 查看 dsh-usage-stats') }, 'dsh-usage-stats'),
             PLUGIN_VERSION !== '__DSH_USAGE_STATS_VERSION__' && React.createElement('span', { className: 'dshus-brand-meta' }, 'v' + PLUGIN_VERSION),
           ),
           tools,
         ),
         React.createElement('div', { className: 'dshus-tabs', role: 'tablist', 'aria-label': t('用量统计页面') },
           React.createElement('button', { id: 'dshus-tab-usage', type: 'button', role: 'tab', 'aria-selected': tab === 'usage', 'aria-controls': 'dshus-usage-panel', tabIndex: tab === 'usage' ? 0 : -1, className: 'dshus-tab' + (tab === 'usage' ? ' on' : ''), onClick: function () { changeTab('usage') }, onKeyDown: onTabKeyDown }, t('用量')),
+          showLogs && React.createElement('button', { id: 'dshus-tab-logs', type: 'button', role: 'tab', 'aria-selected': tab === 'logs', 'aria-controls': 'dshus-logs-panel', tabIndex: tab === 'logs' ? 0 : -1, className: 'dshus-tab' + (tab === 'logs' ? ' on' : ''), onClick: function () { changeTab('logs') }, onKeyDown: onTabKeyDown }, t('日志')),
+          showCosts && React.createElement('button', { id: 'dshus-tab-costs', type: 'button', role: 'tab', 'aria-selected': tab === 'costs', 'aria-controls': 'dshus-costs-panel', tabIndex: tab === 'costs' ? 0 : -1, className: 'dshus-tab' + (tab === 'costs' ? ' on' : ''), onClick: function () { changeTab('costs') }, onKeyDown: onTabKeyDown }, t('成本')),
+          showRules && React.createElement('button', { id: 'dshus-tab-rules', type: 'button', role: 'tab', 'aria-selected': tab === 'rules', 'aria-controls': 'dshus-rules-panel', tabIndex: tab === 'rules' ? 0 : -1, className: 'dshus-tab' + (tab === 'rules' ? ' on' : ''), onClick: function () { changeTab('rules') }, onKeyDown: onTabKeyDown }, t('规则')),
           React.createElement('button', { id: 'dshus-tab-quota', type: 'button', role: 'tab', 'aria-selected': tab === 'quota', 'aria-controls': 'dshus-quota-panel', tabIndex: tab === 'quota' ? 0 : -1, className: 'dshus-tab' + (tab === 'quota' ? ' on' : ''), onClick: function () { changeTab('quota') }, onKeyDown: onTabKeyDown }, t('配额')),
           showModelDetection && React.createElement('button', { id: 'dshus-tab-detection', type: 'button', role: 'tab', 'aria-selected': tab === 'detection', 'aria-controls': 'dshus-detection-panel', tabIndex: tab === 'detection' ? 0 : -1, className: 'dshus-tab' + (tab === 'detection' ? ' on' : ''), onClick: function () { changeTab('detection') }, onKeyDown: onTabKeyDown }, t('检测')),
           React.createElement('button', { id: 'dshus-tab-control', type: 'button', role: 'tab', 'aria-selected': tab === 'control', 'aria-controls': 'dshus-control-panel', tabIndex: tab === 'control' ? 0 : -1, className: 'dshus-tab' + (tab === 'control' ? ' on' : ''), onClick: function () { changeTab('control') }, onKeyDown: onTabKeyDown }, t('控制')),
@@ -2810,13 +4719,13 @@ function UsageStatsSection(props) {
                 type: 'button',
                 className: 'dshus-range-btn' + (!groupByModel ? ' on' : ''),
                 onClick: function () { setGroupByModel(false); setTableExpanded(false) },
-                title: t('每个供应商 · 模型组合单独统计'),
+                'data-dshus-tip': t('每个供应商 · 模型组合单独统计'),
               }, t('供应商·模型')),
               React.createElement('button', {
                 type: 'button',
                 className: 'dshus-range-btn' + (groupByModel ? ' on' : ''),
                 onClick: function () { setGroupByModel(true); setTableExpanded(false) },
-                title: t('合并同名模型，不区分供应商'),
+                'data-dshus-tip': t('合并同名模型，不区分供应商'),
               }, t('按模型')),
             ),
           ),
@@ -2842,10 +4751,10 @@ function UsageStatsSection(props) {
               React.createElement('thead', null,
                 React.createElement('tr', null,
                   React.createElement('th', null, t('模型名称')),
-                  React.createElement('th', { style: { textAlign: 'right' } }, t('用量 Tokens')),
-                  React.createElement('th', { style: { textAlign: 'right' } }, t('占比')),
+                  React.createElement('th', null, t('用量 Tokens')),
+                  React.createElement('th', null, t('占比')),
                   React.createElement('th', { className: 'dshus-table-bar-cell' }, t('分布条')),
-                  React.createElement('th', { style: { textAlign: 'right' } }, t('最后活跃时间')),
+                  React.createElement('th', null, t('最后活跃时间')),
                 ),
               ),
               React.createElement('tbody', null,
@@ -2866,14 +4775,36 @@ function UsageStatsSection(props) {
         ),
 
         ),
+        showLogs && logsVisited && React.createElement('div', { id: 'dshus-logs-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-logs', tabIndex: 0, hidden: tab !== 'logs' },
+          React.createElement(LogsPanel, { api: api, active: tab === 'logs' }),
+        ),
+        showCosts && costsVisited && React.createElement('div', { id: 'dshus-costs-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-costs', tabIndex: 0, hidden: tab !== 'costs' },
+          React.createElement(CostsPanel, { api: api, active: tab === 'costs' }),
+        ),
+        showRules && rulesVisited && React.createElement('div', { id: 'dshus-rules-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-rules', tabIndex: 0, hidden: tab !== 'rules' },
+          React.createElement(RulesPanel, { api: api, active: tab === 'rules' }),
+        ),
         quotaVisited && React.createElement('div', { id: 'dshus-quota-panel', className: 'dshus-quota-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-quota', tabIndex: 0, hidden: tab !== 'quota', 'data-empty-label': t('连接模型服务后，可读取的配额会显示在这里') },
           quotaError && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(quotaError)),
           React.createElement(ProviderQuotasPanel, { api: api, key: 'providers', active: tab === 'quota', revision: quotaRevision, refreshing: quotaLoading, snapshot: quotaSnapshots.providers },
             React.createElement(AccountQuotasPanel, { api: api, key: 'accounts', active: tab === 'quota', revision: quotaRevision, refreshing: quotaLoading, snapshot: quotaSnapshots.accounts })),
         ),
         showModelDetection && detectionVisited && React.createElement('div', { id: 'dshus-detection-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-detection', hidden: tab !== 'detection' }, React.createElement(DetectionPanel, { api: api, active: tab === 'detection', onUsageUpdated: load, uiSession: props.uiSession, uiWorkspace: props.uiWorkspace, modelDirectories: props.modelDirectories })),
-        tab === 'control' && React.createElement('div', { id: 'dshus-control-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-control' }, controlsBody),
+        tab === 'control' && React.createElement('div', { id: 'dshus-control-panel', role: 'tabpanel', 'aria-labelledby': 'dshus-tab-control' },
+          React.createElement('section', { className: 'dshus-star-banner', role: 'note', 'aria-label': t('支持这个插件') },
+            React.createElement('span', { className: 'dshus-star-banner-icon', 'aria-hidden': 'true' },
+              React.createElement('svg', { viewBox: '0 0 24 24', fill: 'currentColor' },
+                React.createElement('path', { d: 'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z' }))),
+            React.createElement('p', { className: 'dshus-star-banner-text' }, t('如果 dsh-usage-stats 帮到了你，请在 GitHub 点个 Star')),
+            React.createElement('a', { className: 'dshus-btn dshus-star-banner-action', href: 'https://github.com/Jockjrop/dsh-usage-stats', target: '_blank', rel: 'noopener noreferrer' }, t('去点 Star'))),
+          controlsBody),
         ),
+        quickStartOpen && React.createElement(QuickStartDialog, {
+          showModelDetails: controlSettings.showModelDetails === true,
+          showTokenSpeed: controlSettings.showTokenSpeed !== false,
+          showLogs: showLogs, showCosts: showCosts, showRules: showRules, showModelDetection: showModelDetection,
+          onClose: function () { setQuickStartOpen(false) },
+        }),
       )
     }
 
@@ -2913,6 +4844,38 @@ var SEAT_STYLE_ID = 'dsh-usage-stats-seat-styles'
 
 var SEAT_ENABLED_KEY = 'dsh-usage-stats-advanced-model-select'
 
+var SEAT_COLOR_DEFAULT = 'blue'
+
+var SEAT_COLOR_LABELS = { red: '红色', green: '绿色', yellow: '黄色', blue: '蓝色', purple: '紫色' }
+
+// A missing or unknown value (an older store, a hand-edited file) falls back
+// to the blue palette instead of leaving the selector unthemed.
+function seatNormalizeColor(color) {
+      for (var i = 0; i < SEAT_COLOR_CHOICES.length; i++) {
+        if (SEAT_COLOR_CHOICES[i].name === color) return color
+      }
+      return SEAT_COLOR_DEFAULT
+    }
+
+// The seat is painted in the page, so one attribute on <html> retints every
+// mounted selector — including ones the host has cached for other sessions.
+function seatApplyColor(color) {
+      var next = seatNormalizeColor(color)
+      try {
+        if (typeof document !== 'undefined' && document.documentElement && document.documentElement.dataset) {
+          document.documentElement.dataset.dshusSeatColor = next
+        }
+      } catch (error) { /* best-effort theming */ }
+      return next
+    }
+
+function seatClearColor() {
+      try {
+        if (typeof document !== 'undefined' && document.documentElement && document.documentElement.dataset) {
+          delete document.documentElement.dataset.dshusSeatColor
+        }
+      } catch (error) { /* best-effort theming */ }
+    }
 
 function seatFindEntry(groups, provider, model) {
       if (!groups) return undefined
@@ -3003,6 +4966,43 @@ function seatEffortStops(reasoning) {
         stops.push({ id: reasoning.efforts[i].id, label: seatEffortZh(reasoning.efforts[i].id, reasoning.efforts[i].name) })
       }
       return stops
+    }
+
+/**
+ * Render whatever the host reported for a rejected model switch.
+ *
+ * `ModelDirectory.select()` resolves with the Remote failure result
+ * (`{ ok: false, error: { code, message } }`) instead of throwing, and an
+ * adapter may also reject outright, so normalize both shapes into one line.
+ */
+function seatFailureText(result) {
+      if (result && typeof result === 'object' && result.error && typeof result.error === 'object') {
+        var code = result.error.code ? String(result.error.code) : ''
+        var message = result.error.message ? String(result.error.message) : ''
+        if (code && message) return code + ': ' + message
+        return message || code || t('切换模型失败')
+      }
+      var direct = result && typeof result === 'object' && typeof result.message === 'string' ? result.message : ''
+      if (direct) return direct
+      if (typeof result === 'string' && result) return result
+      return t('切换模型失败')
+    }
+
+/**
+ * Read the deployment default model — the selection a session that does not
+ * exist yet will start with.
+ *
+ * A composer that paints before its session is created has no model directory
+ * (the host resolves one per retained session scope), so a per-session switch is
+ * impossible there. The host owns the default (`agentDefaultModel`) and writes
+ * it after every session-level switch, so the seat drives that instead.
+ */
+function seatSaveDefaultModel(selection) {
+      var body = { provider: selection.provider, model: selection.model }
+      if (selection.reasoningEffort !== undefined) body.reasoningEffort = selection.reasoningEffort
+      return Promise.resolve(fetch('/api/dsh-usage-stats/default-model', {
+        method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body),
+      }).then(readJson))
     }
 
 function seatPrand(i, salt) {
@@ -3096,13 +5096,42 @@ function SeatSlider(props) {
       }, kids)
     }
 
+/**
+ * Last-resort guard: a composer seat that throws would be dropped from its slot
+ * cell for the rest of the page life, and the cell would then render nothing at
+ * all. Reporting the failure and painting a disabled trigger keeps the composer
+ * honest instead of blank.
+ */
 function ModelSeat(props) {
+  try {
+    return ModelSeatBody(props)
+  } catch (error) {
+    seatDiag('seat/render-threw', { message: (error && error.message) || String(error) })
+    console.warn('[dsh-usage-stats] 高级模型选择器: render failed', error)
+    return React.createElement('button', { type: 'button', className: 'rs2-root rs2-trigger', disabled: true }, t('选择模型'))
+  }
+}
+
+function ModelSeatBody(props) {
       useLocaleRevision()
       var store = props.store
       var state = React.useSyncExternalStore(
         function (onChange) { return store ? store.subscribe(onChange) : function () {} },
         function () { return store ? store.getSnapshot() : null },
       )
+      // Render evidence: without it a seat that mounts and injects but paints
+      // nothing is indistinguishable from one that never reached the composer.
+      if (seatDiagSent < 30) {
+        seatDiag('seat/render', {
+          available: props.available !== false,
+          store: !!store,
+          state: !!state,
+          status: state ? state.status : undefined,
+          current: state && state.current ? state.current.model : null,
+          groups: state && state.groups ? state.groups.length : undefined,
+          locked: props.locked === true,
+        })
+      }
       React.useEffect(function () {
         if (props.available && store) props.load()
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3116,6 +5145,9 @@ function ModelSeat(props) {
       var optState = React.useState(null)
       var opt = optState[0]
       var setOpt = optState[1]
+      var failureState = React.useState(null)
+      var failure = failureState[0]
+      var setFailure = failureState[1]
       var rootRef = React.useRef(null)
       var selectingRef = React.useRef(false)
       var listRef = React.useRef(null)
@@ -3195,7 +5227,21 @@ function ModelSeat(props) {
       }
       function commitSelection(selection) {
         selectingRef.current = true
-        return Promise.resolve(props.select(selection)).finally(function () {
+        setFailure(null)
+        // The host reports a failed switch as a result, not as a throw — and a
+        // switch that silently does nothing is indistinguishable from a broken
+        // selector, so keep the menu open and show what the host said.
+        return Promise.resolve(props.select(selection)).then(function (result) {
+          if (result !== false && !(result && result.ok === false)) {
+            setOpt(null)
+            return
+          }
+          setFailure({ text: seatFailureText(result), selection: selection })
+          setOpen(true)
+        }, function (error) {
+          setFailure({ text: seatFailureText(error), selection: selection })
+          setOpen(true)
+        }).finally(function () {
           selectingRef.current = false
           setOpt(null)
         })
@@ -3203,7 +5249,7 @@ function ModelSeat(props) {
       var stops = []
       var value = 0
       var committedIdx = 0
-      if (mode === 'advanced' && current && reasoning && reasoning.efforts.length > 0) {
+      if (current && reasoning && reasoning.efforts.length > 0) {
         stops = seatEffortStops(reasoning)
         var idx = -1
         for (var si = 0; si < stops.length; si++) { if (stops[si].id === current.reasoningEffort) { idx = si; break } }
@@ -3212,6 +5258,13 @@ function ModelSeat(props) {
         committedIdx = idx
         value = opt && opt.provider === current.provider && opt.model === current.model && opt.value !== idx ? opt.value : idx
       }
+      // A brand-new session has no projected model yet, so there is no effort
+      // ladder to drag. Keeping the menu on "advanced" then shows an empty rail
+      // and hides the model list — the selector looks broken exactly while the
+      // user picks the session's first model. Mirror the official seat: with no
+      // current model (or no effort levels) the menu opens on the model list.
+      var effortPane = stops.length > 0
+      var pane = mode === 'models' || !effortPane ? 'models' : 'advanced'
       function commitStop(i) {
         if (!current || selectingRef.current) { setOpt(null); return }
         var stop = stops[i]
@@ -3237,9 +5290,9 @@ function ModelSeat(props) {
         setMode('advanced')
       }
       var body
-      if (mode === 'models') {
+      if (pane === 'models') {
         body = React.createElement(React.Fragment, null,
-          React.createElement('button', { type: 'button', className: 'rs2-back', onClick: function () { setMode('advanced') } }, t('‹ 模型')),
+          effortPane ? React.createElement('button', { type: 'button', className: 'rs2-back', onClick: function () { setMode('advanced') } }, t('‹ 模型')) : null,
           React.createElement('div', { className: 'rs2-list', ref: listRef },
             groups.length === 0 ? React.createElement('div', { className: 'rs2-grouptitle' }, state.status === 'error' ? t('模型目录加载失败') : t('加载中…')) : null,
             groups.map(function (group) {
@@ -3285,10 +5338,11 @@ function ModelSeat(props) {
           disabled: props.locked === true,
           onClick: function () {
             setOpt(null)
+            setFailure(null)
             if (props.available) props.load()
             setOpen(function (v) {
               var next = !v
-              if (next) setMode('advanced')
+              if (next) setMode(effortPane ? 'advanced' : 'models')
               return next
             })
           },
@@ -3300,16 +5354,50 @@ function ModelSeat(props) {
           React.createElement('span', { className: 'rs2-trigger-name' }, current ? displayName : t('选择模型')),
           reasoning ? React.createElement('span', { className: 'rs2-trigger-effort' }, effLabel) : null,
           React.createElement(SeatChevron, { open: open })),
-        open && React.createElement('div', { className: 'rs2-menu' }, body))
+        open && React.createElement('div', { className: 'rs2-menu' },
+          failure ? React.createElement('div', { className: 'rs2-error', role: 'alert' },
+            React.createElement('span', { className: 'rs2-error-text' }, failure.text),
+            React.createElement('button', {
+              type: 'button',
+              className: 'rs2-retry',
+              onClick: function () {
+                // Retry the rejected switch itself; only fall back to reloading
+                // the catalog when the failure carried no selection.
+                var rejected = failure
+                setFailure(null)
+                if (rejected.selection) commitSelection(rejected.selection)
+                else if (props.available) props.load()
+              },
+            }, t('重试'))) : null,
+          state.defaultModel === true ? React.createElement('div', { className: 'rs2-hint' }, t('新会话默认模型，创建后生效')) : null,
+          body))
     }
 
 function seatDisposer() {
-      var state = { disposed: false, disposer: undefined, scope: undefined }
+      // `stores` holds every per-session seat store the seat minted, so unmounting
+      // the selector also stops their pending resolve timers and mirroring.
+      var state = { disposed: false, disposer: undefined, fiber: undefined, stores: [], timers: [] }
       function dispose() {
         if (state.disposed) return
         state.disposed = true
         if (typeof state.disposer === 'function') state.disposer()
-        if (state.scope && typeof state.scope.dispose === 'function') state.scope.dispose()
+        // The registration is owned by the seat's child fiber, so disposing it
+        // also releases the slot controller — including when the fiber was
+        // still waiting for its services.
+        if (state.fiber && typeof state.fiber.dispose === 'function') {
+          try {
+            var pending = state.fiber.dispose()
+            if (pending && typeof pending.catch === 'function') pending.catch(function () {})
+          } catch (error) { /* fiber already disposed */ }
+        }
+        state.timers.slice().forEach(function (stop) {
+          try { if (typeof stop === 'function') stop() } catch (error) { /* timer already fired */ }
+        })
+        state.timers.length = 0
+        state.stores.slice().forEach(function (store) {
+          try { store.dispose() } catch (error) { /* store already disposed */ }
+        })
+        state.stores.length = 0
       }
       return {
         state: state,
@@ -3317,19 +5405,422 @@ function seatDisposer() {
       }
     }
 
+// A brand-new session paints the composer seat before its session scope is
+// retained, and `modelDirectories.directoryFor(sessionId)` fails loud on
+// unknown sessions ("resolved no scope" / "resolved no binding"). The host
+// caches every inject result per session binding and permanently abdicates any
+// entry that throws while rendering, so neither throwing nor answering
+// "unavailable" from `inject` is survivable: both leave the composer model area
+// empty for the rest of that session. The seat therefore hands the component a
+// live store that starts pending, resolves once the session's scope exists, and
+// notifies on every transition — the trigger paints immediately and fills in
+// the real model as soon as the directory can be resolved.
+var SEAT_RESOLVE_ATTEMPTS = 48
+var SEAT_RESOLVE_DELAY = 90
+
+var SEAT_PENDING_SNAPSHOT = {
+  current: null,
+  routable: null,
+  groups: [],
+  failures: [],
+  status: 'loading',
+  pending: null,
+  error: null,
+}
+
+var SEAT_UNRESOLVED_SNAPSHOT = {
+  current: null,
+  routable: null,
+  groups: [],
+  failures: [],
+  status: 'error',
+  pending: null,
+  error: 'model directory unresolved',
+}
+
+// One catalog per host generation, mirroring the official `ModelCatalogDirectory`.
+// The catalog is the only model source that needs no session scope, so it is what
+// a brand-new session can render at all; sharing it also keeps every seat from
+// repeating the same remote call.
+var SEAT_CATALOG_TTL = 15000
+
+var seatCatalog = { owner: null, value: null, status: 'idle', error: null, at: 0 }
+var seatCatalogWatchers = []
+
+// Deployment default written by a seat, keyed by session: rebuilding the seat for
+// the same session must show the pick instead of snapping back to the config value.
+var seatDefaultChoices = {}
+
+var seatCatalogLogged = ''
+
+function seatCatalogNotify() {
+  var stamp = seatCatalog.status + '|' + (seatCatalog.error || '')
+  if (stamp !== seatCatalogLogged) {
+    seatCatalogLogged = stamp
+    seatDiag('seat/catalog', { status: seatCatalog.status, error: seatCatalog.error || null })
+  }
+  seatCatalogWatchers.slice().forEach(function (fn) {
+    try { fn() } catch (error) { console.warn('[dsh-usage-stats] 高级模型选择器: catalog watcher failed', error) }
+  })
+}
+
+/**
+ * Pull the host-generation model catalog through the shared remote namespace.
+ *
+ * @param remote - the `remote` client namespace (`ctx.get('remote')`).
+ * @param force - reload even when a ready catalog is already cached.
+ */
+function seatCatalogLoad(remote, force) {
+  if (remote === null || remote === undefined) {
+    seatCatalog.status = 'error'
+    seatCatalog.error = 'remote namespace unavailable'
+    seatCatalogNotify()
+    return
+  }
+  var session = remote.session
+  if (!session || typeof session.modelCatalog !== 'function') {
+    // Not transient: without the namespace there is nothing to retry, so say so
+    // instead of leaving a brand-new session on "loading" forever.
+    seatCatalog.status = 'error'
+    seatCatalog.error = 'model catalog unavailable in this host'
+    seatCatalogNotify()
+    return
+  }
+  // The catalog belongs to a host generation: a different remote namespace means
+  // a different host, so the cached view must not bleed across.
+  if (seatCatalog.owner !== remote) {
+    seatCatalog.owner = remote
+    seatCatalog.value = null
+    seatCatalog.status = 'idle'
+    seatCatalog.error = null
+    seatCatalog.at = 0
+  }
+  if (seatCatalog.status === 'loading') return
+  if (force !== true && seatCatalog.status === 'ready' && seatCatalog.value !== null) return
+  seatCatalog.status = 'loading'
+  seatCatalog.error = null
+  seatCatalogNotify()
+  var pending
+  try {
+    pending = session.modelCatalog()
+  } catch (error) {
+    seatCatalog.status = 'error'
+    seatCatalog.error = (error && error.message) || String(error)
+    seatCatalogNotify()
+    return
+  }
+  Promise.resolve(pending).then(function (response) {
+    if (!response || !response.ok) {
+      var failure = response && response.error
+      seatCatalog.status = 'error'
+      seatCatalog.error = failure && failure.code ? failure.code + ': ' + failure.message : 'model catalog unavailable'
+      seatCatalogNotify()
+      return
+    }
+    seatCatalog.value = response.value || null
+    seatCatalog.status = seatCatalog.value === null ? 'error' : 'ready'
+    seatCatalog.error = seatCatalog.value === null ? 'empty model catalog' : null
+    seatCatalog.at = Date.now()
+    seatCatalogNotify()
+  }, function (error) {
+    seatCatalog.status = 'error'
+    seatCatalog.error = (error && error.message) || String(error)
+    seatCatalogNotify()
+  })
+}
+
+/** True when the cached catalog is old enough to justify a refresh. */
+function seatCatalogStale() {
+  if (seatCatalog.status !== 'ready' || seatCatalog.value === null) return true
+  return (Date.now() - seatCatalog.at) > SEAT_CATALOG_TTL
+}
+
+// The desktop renderer console is not reachable from the host, so every seat
+// decision that used to fail silently is reported to the control route and
+// appended to ~/.dsh/usage-stats-seat-diag.log.
+var seatDiagSent = 0
+
+function seatDiag(event, data) {
+  if (seatDiagSent >= 120) return
+  seatDiagSent++
+  try {
+    var body = { event: event }
+    if (data) Object.keys(data).forEach(function (key) { if (data[key] !== undefined) body[key] = data[key] })
+    var request = fetch('/api/dsh-usage-stats/seat-diag', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })
+    if (request && typeof request.catch === 'function') request.catch(function () {})
+  } catch (error) {
+    /* diagnostics must never break the seat */
+  }
+}
+
+/**
+ * Per-session seat store that survives a late-arriving model directory.
+ *
+ * `modelDirectories.directoryFor` fails while a session's scope/binding is
+ * still being materialized, which is exactly what a brand-new session looks
+ * like on its first frames. Failures are retried on a fibre-owned timer rather
+ * than reported as an unavailable seat; once the directory exists the store
+ * mirrors its snapshots, so the component keeps the official
+ * `{ current, groups, status, error }` view.
+ *
+ * @param models - the `modelDirectories` client service.
+ * @param sessionId - session whose directory this seat renders.
+ * @param retry - schedules `fn` after `delay` ms, owned by the plugin fibre.
+ */
+function createSeatStore(models, sessionId, retry, hooks) {
+      hooks = hooks || {}
+      var directory = null
+      var listeners = []
+      var stopMirror = null
+      var attempts = 0
+      var disposed = false
+      var unresolved = false
+      var cache = null
+      // Fallback view for a composer whose session does not exist yet. Such a
+      // session owns no model directory, so the seat shows the shared catalog and
+      // the deployment default the new session will start with, and writes that
+      // default when the user picks something.
+      seatCatalogWatchers.push(watchCatalog)
+      function emit() {
+        cache = null
+        listeners.slice().forEach(function (fn) {
+          try { fn() } catch (error) { console.warn('[dsh-usage-stats] 高级模型选择器: store listener failed', error) }
+        })
+      }
+      function watchCatalog() {
+        emit()
+      }
+      function loadCatalog(force) {
+        if (disposed) return
+        seatCatalogLoad(hooks.remote, force === true)
+      }
+      /**
+       * Snapshot of the fallback view, rebuilt only when something changed so
+       * `useSyncExternalStore` sees a stable reference between renders.
+       */
+      function fallbackSnapshot() {
+        if (cache !== null) return cache
+        var value = seatCatalog.value
+        var groups = (value && value.groups) || []
+        var failures = (value && value.failures) || []
+        cache = {
+          current: seatDefaultChoices[sessionId] || (value && value.default) || null,
+          routable: null,
+          groups: groups,
+          failures: failures,
+          status: seatCatalog.status === 'error' ? 'error' : 'ready',
+          pending: null,
+          error: seatCatalog.status === 'error' ? seatCatalog.error : null,
+          // Tells the component this seat drives the deployment default rather
+          // than the current session's model.
+          defaultModel: true,
+        }
+        return cache
+      }
+      function selectDefault(selection) {
+        return seatSaveDefaultModel(selection).then(function (response) {
+          if (response && response.ok === false) {
+            return { ok: false, error: { code: 'model/default-model', message: response.error || '' } }
+          }
+          // `saveSelection()` returns quietly when the deployment has no config
+          // editor, so an "ok" answer alone does not prove the pick survives the
+          // next session; say so instead of showing a switch that did nothing.
+          if (response && response.persisted === false) {
+            return { ok: false, error: { code: 'model/not-persisted', message: t('默认模型未能写入配置') } }
+          }
+          seatDefaultChoices[sessionId] = (response && response.selection) || selection
+          emit()
+          return { ok: true }
+        }, function (error) {
+          return { ok: false, error: { code: 'model/default-model', message: (error && error.message) || String(error) } }
+        })
+      }
+      function adopt(found) {
+        directory = found
+        unresolved = false
+        attempts = 0
+        var source = found && found.store
+        if (source && typeof source.subscribe === 'function') {
+          var stop = source.subscribe(emit)
+          if (typeof stop === 'function') stopMirror = stop
+        }
+        // Adopting is this seat's mount: the component already ran its own load
+        // effect against the pending store, so the catalog has to be pulled here.
+        try {
+          var pending = found && found.load()
+          if (pending && typeof pending.catch === 'function') pending.catch(function () {})
+        } catch (error) {
+          console.warn('[dsh-usage-stats] 高级模型选择器: load failed', error)
+        }
+      }
+      function schedule() {
+        if (disposed || directory !== null) return
+        if (attempts >= SEAT_RESOLVE_ATTEMPTS) {
+          if (unresolved) return
+          unresolved = true
+          console.warn('[dsh-usage-stats] 高级模型选择器: directoryFor never resolved for session', sessionId)
+          emit()
+          return
+        }
+        var delay = Math.min(SEAT_RESOLVE_DELAY + attempts * 30, 1200)
+        attempts++
+        retry(resolve, delay)
+      }
+      function resolve() {
+        if (disposed || directory !== null) return directory
+        var found
+        try {
+          found = models.directoryFor(sessionId)
+        } catch (error) {
+          // Unknown-session timing, not a broken seat: wait for the scope. The
+          // shared catalog needs no session scope, so pull it in the meantime —
+          // that is what lets a not-yet-created session list models at all.
+          if (attempts < 3) seatDiag('seat/directory-error', { session: String(sessionId), message: (error && error.message) || String(error) })
+          loadCatalog()
+          schedule()
+          return null
+        }
+        if (!found) {
+          schedule()
+          return null
+        }
+        adopt(found)
+        emit()
+        return found
+      }
+      var store = {
+        getSnapshot: function () {
+          var source = directory && directory.store
+          if (source && typeof source.getSnapshot === 'function') return source.getSnapshot()
+          if (seatCatalog.value !== null) return fallbackSnapshot()
+          return unresolved ? SEAT_UNRESOLVED_SNAPSHOT : SEAT_PENDING_SNAPSHOT
+        },
+        subscribe: function (fn) {
+          if (typeof fn !== 'function') return function () {}
+          listeners.push(fn)
+          return function () {
+            var index = listeners.indexOf(fn)
+            if (index >= 0) listeners.splice(index, 1)
+          }
+        },
+      }
+      return {
+        store: store,
+        resolve: resolve,
+        resolved: function () { return directory !== null },
+        load: function () {
+          // An explicit load (mount, or a click on the trigger) is a fresh
+          // chance: reset the budget so a directory that appeared later is
+          // still picked up after the automatic retries gave up.
+          if (directory === null && unresolved) {
+            unresolved = false
+            attempts = 0
+          }
+          var had = directory !== null
+          var found = resolve()
+          if (!found) {
+            // A session that has no directory yet still opens a usable menu: the
+            // shared catalog needs no scope, so refresh it when it went stale.
+            loadCatalog(seatCatalogStale())
+            return
+          }
+          // A directory adopted by this very call already pulled the catalog.
+          if (!had) return
+          try {
+            var pending = found.load()
+            if (pending && typeof pending.catch === 'function') pending.catch(function () {})
+          } catch (error) {
+            console.warn('[dsh-usage-stats] 高级模型选择器: load failed', error)
+          }
+        },
+        // Keep the official `{ ok, error }` outcome: swallowing a failure into a
+        // boolean left the menu open with no explanation, which reads as a dead
+        // selector.
+        select: function (selection) {
+          var found = resolve()
+          if (!found) return selectDefault(selection)
+          return Promise.resolve(found.select(selection)).then(function (result) {
+            return result === undefined ? { ok: true } : result
+          }, function (error) {
+            return { ok: false, error: { code: 'select/failed', message: (error && error.message) || String(error) } }
+          })
+        },
+        dispose: function () {
+          disposed = true
+          var index = seatCatalogWatchers.indexOf(watchCatalog)
+          if (index >= 0) seatCatalogWatchers.splice(index, 1)
+          if (typeof stopMirror === 'function') {
+            try { stopMirror() } catch (error) { /* directory already gone */ }
+          }
+          stopMirror = null
+          listeners.length = 0
+        },
+      }
+    }
+
+/**
+ * Priorities currently registered in the composer's model cell. It answers the
+ * one question the seat cannot answer from inside: is this registration really
+ * the winning entry of the cell, or is something else shadowing it?
+ */
+function seatEntryPriorities(slots) {
+  if (typeof slots.entries !== 'function') return null
+  try {
+    var entries = slots.entries('conversation.input.model') || []
+    return entries.map(function (entry) {
+      return entry && entry.priority !== undefined ? entry.priority : null
+    })
+  } catch (error) {
+    return null
+  }
+}
+
 function registerModelSeat(ctx) {
       var slots = ctx.get('slots')
       if (slots === undefined) {
+        seatDiag('seat/no-slots')
         console.warn('[dsh-usage-stats] 高级模型选择器: slots service unavailable')
         return null
       }
       var models = ctx.get('modelDirectories')
       var sessions = ctx.get('sessions')
+      // The shared catalog lives on the remote namespace; it is the only model
+      // source available before a session's scope exists, so the seat keeps it
+      // optional and degrades to the pending view without it. Client plugins
+      // reach it as `ctx.remote` (the declared `remote` service); `ctx.get` is
+      // kept as a fallback for hosts that expose it as a plain service instead.
+      var remote = ctx.remote !== undefined ? ctx.remote : ctx.get('remote')
       if (models === undefined || typeof models.directoryFor !== 'function' || sessions === undefined || typeof sessions.subagentAddress !== 'function') {
+        seatDiag('seat/no-services', { models: models !== undefined, sessions: sessions !== undefined, remote: remote !== undefined })
         console.warn('[dsh-usage-stats] 高级模型选择器: modelDirectories/sessions service unavailable')
         return null
       }
       var handle = seatDisposer()
+      // `ModelDirectoryResolver.directoryFor` runs on its caller's context and
+      // reads `ctx.sessions` / `ctx.remote.session` there. Declaring those at
+      // the top level would make the whole settings section wait for
+      // `modelDirectories`, which hosts without the official selector do not
+      // have; a child fiber scoped to the seat's services satisfies the guard
+      // without turning them into plugin-wide dependencies.
+      try {
+        handle.state.fiber = ctx.inject(['slots', 'modelDirectories', 'sessions', 'remote', 'remote.session'], function (seatCtx) {
+          mountModelSeat(seatCtx, handle)
+        })
+      } catch (error) {
+        seatDiag('seat/inject-threw', { message: (error && error.message) || String(error) })
+        console.warn('[dsh-usage-stats] 高级模型选择器: scoped inject failed', error)
+        return null
+      }
+      return handle
+    }
+
+function mountModelSeat(ctx, handle) {
+      var slots = ctx.get('slots')
+      var models = ctx.get('modelDirectories')
+      var sessions = ctx.get('sessions')
+      var remote = ctx.remote !== undefined ? ctx.remote : ctx.get('remote')
       // The effort-preview clear cancels its 2s timer when the component
       // unmounts, so every timer created inside the seat is owned by it.
       var timers = new Set()
@@ -3346,37 +5837,91 @@ function registerModelSeat(ctx) {
           if (typeof stop === 'function') stop()
         }
       }
-      handle.state.scope = slots.inject('conversation.input.model', function () {
+      // Retry timers for seat stores still waiting on a session scope. They are
+      // owned by the plugin fibre (ctx.timeout) and cancelled when the seat
+      // unmounts, so a disabled selector leaves nothing running.
+      function later(fn, delay) {
+        if (handle.state.disposed || typeof ctx.timeout !== 'function') return
+        var stop
+        var fire = function () {
+          var index = handle.state.timers.indexOf(stop)
+          if (index >= 0) handle.state.timers.splice(index, 1)
+          fn()
+        }
+        try {
+          stop = ctx.timeout(fire, delay)
+        } catch (error) {
+          console.warn('[dsh-usage-stats] 高级模型选择器: retry timer failed', error)
+          return
+        }
+        if (typeof stop === 'function') handle.state.timers.push(stop)
+      }
+      slots.inject('conversation.input.model', function () {
         if (handle.state.disposed) return undefined
-        var disposer = slots.register({
-          name: 'conversation.input.model',
-          // A negative priority places this enabled seat ahead of the official selector.
-          priority: -1,
-          locale: 'model',
-          inject: function (sessionId) {
-            // The official modelDirectories service reaches into other
-            // services here, on THIS plugin's fiber — see the inject list.
-            var directory = models.directoryFor(sessionId)
-            var available = sessions.subagentAddress(sessionId) === undefined
-            if (!available) return { available: false }
-            return {
-              available: true,
-              store: directory.store,
-              load: function () { directory.load().catch(function () {}) },
-              select: function (selection) { return directory.select(selection).then(function () { return true }, function () { return false }) },
-            }
-          },
-        }, function (slotProps) {
-          return React.createElement(ModelSeat, Object.assign({}, slotProps, { scheduleClear: scheduleClear }))
-        })
+        var disposer
+        try {
+          disposer = slots.register({
+            name: 'conversation.input.model',
+            // A negative priority places this enabled seat ahead of the official selector.
+            priority: -1,
+            locale: 'model',
+            inject: function (sessionId) {
+              var addressed = true
+              try {
+                addressed = sessions.subagentAddress(sessionId) === undefined
+              } catch (error) {
+                addressed = true
+              }
+              // Agent-addressed subagent sessions cannot switch models; the
+              // official seat renders nothing for them either (`if (!available)
+              // return null`), so mirroring that keeps the composer identical.
+              if (!addressed) {
+                seatDiag('seat/inject-addressed', { session: String(sessionId) })
+                return { available: false }
+              }
+              var seat = createSeatStore(models, sessionId, later, { remote: remote })
+              handle.state.stores.push(seat)
+              // The host caches one inject result per session, so this list grows
+              // with the sessions the composer was ever painted for; keep it bounded
+              // by retiring the oldest store (a session that is painted again mints
+              // a fresh one through the same path).
+              while (handle.state.stores.length > 64) {
+                var oldest = handle.state.stores.shift()
+                try { oldest.dispose() } catch (error) { /* store already disposed */ }
+              }
+              // Resolve eagerly: a retained session (every session whose composer
+              // already paints) skips the pending state entirely, so the trigger
+              // still shows the real model on its first frame.
+              seat.resolve()
+              seatDiag('seat/inject', {
+                session: String(sessionId),
+                resolved: seat.resolved(),
+                catalog: seatCatalog.status,
+                remote: remote !== undefined,
+              })
+              return {
+                available: true,
+                store: seat.store,
+                load: seat.load,
+                select: seat.select,
+              }
+            },
+          }, function (slotProps) {
+            return React.createElement(ModelSeat, Object.assign({}, slotProps, { scheduleClear: scheduleClear }))
+          })
+        } catch (error) {
+          seatDiag('seat/register-threw', { message: (error && error.message) || String(error) })
+          console.warn('[dsh-usage-stats] 高级模型选择器: register failed', error)
+          return undefined
+        }
         if (handle.state.disposed) {
           if (typeof disposer === 'function') disposer()
           return undefined
         }
+        seatDiag('seat/registered', { priority: -1, entries: seatEntryPriorities(slots) })
         handle.state.disposer = disposer
         return disposer
       })
-      return handle
     }
 
 var seatRegistration = null
@@ -3396,6 +5941,7 @@ function syncModelSeatFromControls(control) {
       try {
         // Wait for an explicit host value before mounting the selector.
         var enabled = !!(control && control.settings && control.settings.advancedModelSelect)
+        seatApplyColor(control && control.settings && control.settings.modelSeatColor)
         modelSeatSyncRevision++
         seatWriteEnabledPref(enabled)
         return modelSeatSync(enabled)
@@ -3450,6 +5996,7 @@ function syncModelSeat(ctx, enabled) {
           }
           var seatStyle = document.getElementById(SEAT_STYLE_ID)
           if (seatStyle && typeof seatStyle.remove === 'function') seatStyle.remove()
+          seatClearColor()
         }
         return false
       }
@@ -3510,10 +6057,98 @@ function apply(ctx) {
   var hasDeviceInfo = typeof window.dshDesktop.deviceInfo === 'function'
   var hasProtocolVersion = typeof window.dshDesktop.protocolVersion === 'number'
   if (!hasDeviceInfo && !hasProtocolVersion) return
-  var slots = ctx.get('slots'); if (!slots) return
+  if (applyStarted) return
+  applyStarted = true
+  mountClient(ctx, 0)
+}
+
+// The client half must never lose the race against the services it renders
+// into. `dsh.client.inject` in package.json is what normally makes the host wait
+// for them, but a host that activates this plugin without that gate (or a slot
+// service that appears a frame later) would otherwise leave the caller with no
+// seat and no settings section at all, silently and permanently.
+var applyStarted = false
+var APPLY_RETRY_LIMIT = 40
+
+function mountClient(ctx, attempt) {
+  var slots = ctx.get('slots')
+  if (slots) {
+    if (attempt > 0) seatDiag('apply/delayed', { attempts: attempt })
+    mountClientOnce(ctx, slots)
+    return
+  }
+  if (attempt >= APPLY_RETRY_LIMIT) {
+    seatDiag('apply/no-slots', { attempts: attempt })
+    console.warn('[dsh-usage-stats] 用量统计: slots service never appeared; client UI not mounted')
+    return
+  }
+  var delay = Math.min(50 + attempt * 50, 1000)
+  var again = function () { mountClient(ctx, attempt + 1) }
+  if (typeof ctx.timeout === 'function') {
+    try { ctx.timeout(again, delay); return } catch (error) { /* fall through to window timer */ }
+  }
+  if (typeof window.setTimeout === 'function') window.setTimeout(again, delay)
+}
+
+function mountClientOnce(ctx, slots) {
+  seatDiag('apply/mounted', {
+    slots: slots !== undefined,
+    locale: ctx.get('locale') !== undefined,
+    timer: typeof ctx.timeout === 'function',
+    remote: ctx.remote !== undefined || ctx.get('remote') !== undefined,
+    modelDirectories: ctx.get('modelDirectories') !== undefined,
+    sessions: ctx.get('sessions') !== undefined,
+    seatPref: seatReadEnabledPref(),
+  })
   registerLocale(ctx)
+  // An abdicated entry is silently dropped from its cell for the rest of the
+  // page life, and that is the difference between "our seat is hidden" and "the
+  // seat never registered" — so record every abdication the host reports.
+  if (typeof slots.onEntryError === 'function') {
+    try {
+      ctx.effect(function () {
+        return slots.onEntryError(function (slotKey, entry, error) {
+          seatDiag('slot/entry-error', {
+            slot: slotKey === undefined ? null : String(slotKey),
+            message: (error && error.message) || String(error),
+          })
+        })
+      }, 'dsh-usage-stats: slot diagnostics')
+    } catch (error) {
+      /* diagnostics only */
+    }
+  }
   var api = new UsageApi()
+  // Final evidence for the composer seat: does our trigger actually exist in the
+  // DOM, does it have a box, and is the host showing a dead cell instead?
+  ctx.effect(function () {
+    if (typeof ctx.timeout !== 'function') return undefined
+    if (typeof document === 'undefined' || typeof document.querySelector !== 'function') return undefined
+    var schedule = ctx.timeout
+    var stops = []
+    function probe(delay, label) {
+      stops.push(schedule(function () {
+        var trigger = null
+        try { trigger = typeof document.querySelector === 'function' ? document.querySelector('.rs2-trigger') : null } catch (error) { trigger = null }
+        var rect = null
+        try { rect = trigger && typeof trigger.getBoundingClientRect === 'function' ? trigger.getBoundingClientRect() : null } catch (error) { rect = null }
+        var dead = 0
+        try { dead = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('[data-slot-error]').length : 0 } catch (error) { dead = 0 }
+        seatDiag('seat/dom', {
+          at: label,
+          trigger: trigger !== null,
+          width: rect ? Math.round(rect.width) : null,
+          height: rect ? Math.round(rect.height) : null,
+          deadCells: dead,
+        })
+      }, delay))
+    }
+    probe(1500, '1.5s')
+    probe(5000, '5s')
+    return function () { stops.forEach(function (stop) { try { stop() } catch (error) { /* already fired */ } }) }
+  }, 'dsh-usage-stats: seat dom probe')
   injectStyles()
+  ctx.effect(bindHoverTips, 'dsh-usage-stats: hover tips')
   if (typeof window.dispatchEvent === 'function' && typeof window.Event === 'function') window.dispatchEvent(new window.Event('dsh-usage-stats/features-owner'))
   setModelSeatSync(function (enabled) { return syncModelSeat(ctx, enabled) })
   if (seatReadEnabledPref()) syncModelSeat(ctx, true)
@@ -3527,12 +6162,24 @@ function apply(ctx) {
       return React.createElement(UsageStatsSection, Object.assign({}, common, { intl: !props || props.intl !== false }))
     })
   }) }, 'dsh-usage-stats: settings section')
+  ctx.effect(function () { return slots.inject('sidebar.footer.action', function () {
+    return slots.register({ name: 'sidebar.footer.action', id: SECTION_ID + '-dashboard', locale: SECTION_ID }, UsageDashboardTrigger)
+  }) }, 'dsh-usage-stats: dashboard shortcut')
+  ctx.effect(function () { return slots.inject('shell.overlay', function () {
+    return slots.register({ name: 'shell.overlay', id: SECTION_ID + '-dashboard', locale: SECTION_ID }, function () {
+      return React.createElement(UsageDashboard, { api: api })
+    })
+  }) }, 'dsh-usage-stats: dashboard overlay')
 }
 
-// Only services the settings section itself cannot start without are hard
-// dependencies. The model seat and reasoning panel resolve their own optional
-// services (sessions, modelDirectories, remote.settings) through ctx.get or a
-// scoped ctx.inject, so a host missing one of them still mounts this section.
-exports.inject = ['slots', 'locale', 'timer']; exports.apply = apply; exports.__components = { Heatmap, HeatPager, buildHeatmap, OverviewDetails, TokenSpeedRanking, UsageDisplayControls, ControlsPanel, DetectionPanel, ProviderPicker };
+// `modelDirectories` stays out of this list so a host without the official
+// model selector still mounts the settings section; the composer seat takes it
+// through a scoped `ctx.inject` (see registerModelSeat). The services that
+// `ModelDirectoryResolver.directoryFor` reads on its caller's context —
+// `sessions`, `remote` and `remote.session` — are declared here because the
+// settings section's model detection also calls `directoryFor` on this fiber,
+// where the cordis guard turns an undeclared access into a throw.
+// `remote.session` is a separate service from `remote`, so both are required.
+exports.inject = ['slots', 'sessions', 'remote', 'remote.session', 'locale', 'timer']; exports.apply = apply; exports.__components = { Heatmap, HeatPager, buildHeatmap, OverviewDetails, TokenSpeedRanking, UsageDisplayControls, ControlsPanel, DetectionPanel, ProviderPicker };
 return module.exports
 } })

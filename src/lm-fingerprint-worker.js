@@ -12,9 +12,14 @@ const detector = codec.decodeDetector(await readFile(join(root, 'data', 'shared_
 if (!scorer.supportsSharedDetector(bank, detector)) throw new Error('参考库与检测器不匹配。')
 const models = bank.models.map(m => ({ id: m.id, name: m.display_name, family: m.family }))
 // Exercise the numerical interface before activating an update. No model calls.
-const fixture = Array.from({ length: 300 }, (_, i) => (i * 17) % 355 + 1).join(',')
+// Alternating extremes produce no tool-like small steps, so newer upstream
+// releases that reject regular sequences still rank this fixture.
+const fixture = Array.from({ length: 300 }, (_, index) => index % 2 ? 355 : 1).join(',')
 const check = scorer.analyzeSharedOutputs(Array.from({ length: 3 }, () => ({ text: fixture, expected_count: 300 })), bank, detector)
-if (!check.results?.length || check.results.some(r => !Number.isFinite(r.score)) ||
+// Older releases always return a full ranking; newer ones may classify this
+// fixture as an unusual distribution and return an empty ranking with a decision.
+if (!check || !Array.isArray(check.results) || !check.results.length && typeof check.decision !== 'string' ||
+    check.results.some(r => typeof r.model !== 'string' || !Number.isFinite(r.score)) ||
     check.probability !== null && (!Number.isFinite(check.probability) || check.probability < 0 || check.probability > 1)) throw new Error('上游检测接口不兼容。')
 const challenges = challenge.generateChallenges(3)
 if (challenges.length !== 3 || challenges.some(c => typeof c.prompt !== 'string' || !Number.isInteger(c.expected_count) || c.expected_count < 80 || c.expected_count > 500)) throw new Error('上游挑战接口不兼容。')

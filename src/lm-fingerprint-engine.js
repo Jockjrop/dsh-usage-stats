@@ -110,13 +110,13 @@ export function openEngine(directory, manifest, options = {}) {
 }
 export function createFingerprintEngine(options = {}) {
   const cache = options.path && resolve(options.path), fallback = options.bundledPath || bundled
-  let active = fallback, activeManifest, warning = '', checkedAt = 0, checking, initialized, disposed = false, autoTimer
+  let active = fallback, activeManifest, warning = '', warningKind = '', checkedAt = 0, checking, initialized, disposed = false, autoTimer
   const lifecycle = new AbortController()
   const sessions = new Set()
-  try { activeManifest = JSON.parse(readFileSync(join(fallback, 'UPSTREAM.json'), 'utf8')) } catch { warning = '内置指纹引擎不可用，请重新安装插件。' }
+  try { activeManifest = JSON.parse(readFileSync(join(fallback, 'UPSTREAM.json'), 'utf8')) } catch { warning = '内置指纹引擎不可用，请重新安装插件。'; warningKind = 'fatal' }
   function status() { return { name: 'lmfpd', version: activeManifest?.version || '', revision: activeManifest?.revision || '',
     builtAt: activeManifest?.builtAt || '', modelCount: activeManifest?.modelCount || 0, source: active === fallback ? 'bundled' : 'updated',
-    checkedAt, updating: !!checking, warning, autoUpdate: !!cache } }
+    checkedAt, updating: !!checking, warning, warningKind, autoUpdate: !!cache } }
   function cacheDirectory(version) {
     if (!cache || !/^\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?$/.test(version || '') || version.length > 64) throw new Error('指纹引擎缓存路径无效。')
     const target = resolve(cache, 'versions', version), rel = relative(cache, target)
@@ -131,11 +131,13 @@ export function createFingerprintEngine(options = {}) {
           const directory = cacheDirectory(pointer.version), manifest = await verifyEngine(directory)
           if (pointer.manifestHash !== hash(await readFile(join(directory, 'UPSTREAM.json')))) throw new Error('缓存清单不一致。')
           active = directory; activeManifest = manifest; checkedAt = Number(pointer.checkedAt) || 0
-        } catch (error) { if (error.code !== 'ENOENT') warning = '缓存引擎校验失败，已保留内置版本。' }
+        } catch (error) { if (error.code !== 'ENOENT') { warning = '缓存引擎校验失败，已保留内置版本。'; warningKind = 'cache' } }
         try {
           const check = JSON.parse(await readFile(join(cache, 'check.json'), 'utf8'))
           if (Number.isFinite(check.checkedAt)) checkedAt = Math.min(Date.now(), Math.max(0, check.checkedAt))
-          if (!warning && typeof check.warning === 'string' && check.warning === '上游更新暂不可用，继续使用已验证的指纹引擎。') warning = check.warning
+          // check.json only records background update attempts; an offline check
+          // must not override a real engine problem discovered above.
+          if (!warning && typeof check.warning === 'string' && check.warning) { warning = check.warning; warningKind = 'update' }
         } catch {}
       }
       activeManifest = await verifyEngine(active)
@@ -153,7 +155,7 @@ export function createFingerprintEngine(options = {}) {
       try {
         checkedAt = Date.now()
         const release = await publishedRelease({ fetch: options.fetch, signal: AbortSignal.any([lifecycle.signal, AbortSignal.timeout(15_000)]) })
-        if (release.version === activeManifest.version || compareVersions(release.version, activeManifest.version) <= 0) { warning = ''; return }
+        if (release.version === activeManifest.version || compareVersions(release.version, activeManifest.version) <= 0) { warning = ''; warningKind = ''; checkedAt = Date.now(); return }
         staging = join(cache, '.stage-' + randomUUID())
         const manifest = await buildRelease(release, staging, { fetch: options.fetch, signal: AbortSignal.any([lifecycle.signal, AbortSignal.timeout(60_000)]) })
         trial = openEngine(staging, manifest, options); await trial.ready
@@ -170,8 +172,8 @@ export function createFingerprintEngine(options = {}) {
         const temporary = join(cache, 'current-' + randomUUID() + '.tmp')
         await writePointer(temporary, pointer)
         await rename(temporary, join(cache, 'current.json'))
-        active = destination; activeManifest = manifest; warning = ''
-      } catch { warning = '上游更新暂不可用，继续使用已验证的指纹引擎。' }
+        active = destination; activeManifest = manifest; warning = ''; warningKind = ''
+      } catch { warning = '上游更新暂不可用，继续使用已验证的指纹引擎。'; warningKind = 'update' }
       finally {
         trial?.dispose()
         const rel = staging && relative(cache, resolve(staging))

@@ -84,7 +84,7 @@ test('statistics tabs restore the host scrollport without changing content width
       removeEventListener: name => documentEvents.delete(name),
     }, console, URLSearchParams,
   })
-  plugin.apply({ get: () => ({ inject: (_name, callback) => callback(), register: (_meta, render) => { section = render({}); return () => {} } }), effect: callback => callback() })
+  plugin.apply({ get: () => ({ inject: (_name, callback) => callback(), register: (meta, render) => { if (meta.name === 'settings.section') section = render({}); return () => {} } }), effect: callback => callback() })
   const render = (type, props) => { hooks = stores.get(type) || []; stores.set(type, hooks); hookIndex = 0; effects = []; return type(props) }
   let page = render(section.type, section.props)
   page.props.ref.current = { parentElement: { parentElement: port } }
@@ -385,7 +385,7 @@ test('usage page keeps chart controls independent and shows only connected panel
   plugin.apply({
     get: (name) => name === 'slots' ? {
       inject: (_name, callback) => callback(),
-      register: (_meta, render) => { section = render({ intl: true }); return () => {} },
+      register: (meta, render) => { if (meta.name === 'settings.section') section = render({ intl: true }); return () => {} },
     } : undefined,
     effect: (callback) => callback(),
   })
@@ -412,7 +412,7 @@ test('usage page keeps chart controls independent and shows only connected panel
   assert.ok(usageRefresh)
   assert.equal(walk(usageRefresh, (node) => node.type === 'svg')?.type, 'svg')
   const initialTabs = walkAll(page, (node) => node.props && node.props.role === 'tab')
-  assert.deepEqual(initialTabs.map(textOf), ['用量', '配额', '检测', '控制'])
+  assert.deepEqual(initialTabs.map(textOf), ['用量', '日志', '成本', '规则', '配额', '检测', '控制'])
   assert.equal(initialTabs[0].props['aria-selected'], true)
   assert.equal(initialTabs[1].props['aria-selected'], false)
   assert.equal(walk(page, (node) => node.props && node.props.id === 'dshus-quota-panel'), null)
@@ -545,7 +545,7 @@ test('usage page keeps chart controls independent and shows only connected panel
   heat = renderHeatPage(olderPage)
   const heatTip = walk(heat, (node) => node.props && node.props.className === 'dshus-tip dshus-heat-tip')
   assert.match(textOf(heatTip), /12\.35k.*6\.79k.*5 次/s)
-  assert.ok(walk(heatTip, (node) => node.type === 'strong' && node.props.title === '12,345 tokens'))
+  assert.ok(walk(heatTip, (node) => node.type === 'strong' && node.props['data-dshus-tip'] === '12,345 tokens'))
   // The tooltip anchors to the hovered cell's bottom-right rather than floating
   // above and centred on it. The cell hovered above used a synthetic event with
   // only clientX/clientY, which falls back to a point anchor, so hover a fresh

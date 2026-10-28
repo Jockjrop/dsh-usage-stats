@@ -222,6 +222,29 @@ test('storage failure stops calls before inference and abnormal distributions ar
   assert.equal(summarizeModelDetection({ status: 'complete', identity: { ...identity, probability: .74 } }).reason, 'low-confidence')
 })
 
+test('a sequence rejected by the upstream detector is inconclusive instead of unfinished', async t => {
+  const sequence = Array.from({ length: 300 }, (_, i) => i % 2 ? 355 : 1).join(',')
+  const engine = {
+    catalog: async () => ({ models: [] }), update: async () => ({}), dispose() {},
+    acquire: async () => ({
+      manifest: { version: '1.2.3', revision: 'a'.repeat(40), builtAt: '', modelCount: 1 },
+      models: [{ id: 'gpt-6.1-sol', name: 'GPT 6.1 Sol', family: 'gpt' }],
+      call: async (operation, value) => operation === 'challenges'
+        ? Array.from({ length: value }, () => ({ prompt: 'numbers', expected_count: 300 }))
+        : operation === 'parse' ? value.split(',').map(Number)
+          : { method: 'shared-detector-v2', used_outputs: 3, decision: 'not_model', results: [], probability: null, probability_scope: null },
+      dispose() {}
+    })
+  }
+  const runner = createModelDetectionRunner(host(async function* () {
+    yield { type: 'text-delta', text: sequence }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }), { engine }); t.after(() => runner.dispose())
+  const quote = await prepared(runner), job = await done(runner, runner.start({ sessionId: 'one', planId: quote.id, ackCost: true }).id)
+  assert.equal(job.status, 'complete'); assert.equal(job.identity.usedSamples, 3); assert.equal(job.identity.unusualDistribution, true)
+  assert.equal(job.conclusion.verdict, 'inconclusive'); assert.equal(job.conclusion.reason, 'distribution')
+})
+
 test('custom output limits are quoted, bound to the plan and persisted without implicit retries', async t => {
   const folder = await directory(t), path = join(folder, 'history.json'), history = createModelDetectionHistory(path), calls = []
   const runner = createModelDetectionRunner(host(options => { calls.push(options); return goodStream() }), { onUpdate: job => history.record(job) })
@@ -308,6 +331,30 @@ test('failed updates and invalid cache pointers keep the verified bundle', async
   await manager.update(); assert.equal(requests, 1)
   const restarted = createFingerprintEngine({ path: cache, fetch: async () => { requests++; throw new Error('PRIVATE_NETWORK') } }); t.after(() => restarted.dispose())
   await restarted.update(); assert.equal(requests, 1, 'daily check survives a host restart')
+})
+
+test('source downloads fall back to GitHub raw when jsDelivr is unreachable', async t => {
+  const folder = await directory(t), cache = join(folder, 'cache'), base = 'third_party/lm-fingerprint'
+  const manifest = await verifyEngine(base), version = '0.0.9999999999998'
+  const entries = [['package/package.json', JSON.stringify({ name: 'lmfpd', version, gitHead: manifest.revision })]]
+  for (const file of ['LICENSE', 'data/unified_bank.json', 'data/shared_detector.bin']) entries.push(['package/' + file, await readFile(join(base, file))])
+  const bytes = tar(entries), metadata = { name: 'lmfpd', version, gitHead: manifest.revision, dist: { integrity: integrityOf(bytes), tarball: 'https://registry.npmjs.org/lmfpd/-/lmfpd-' + version + '.tgz' } }
+  const attempts = []
+  const fetch = async url => {
+    attempts.push(url)
+    if (url.endsWith('/latest')) return new Response(JSON.stringify(metadata))
+    if (url.endsWith('.tgz')) return new Response(bytes)
+    if (url.startsWith('https://cdn.jsdelivr.net/gh/Ikaleio/lm-detector@')) throw new Error('mirror blocked')
+    if (!url.startsWith('https://raw.githubusercontent.com/Ikaleio/lm-detector/' + manifest.revision + '/shared/')) throw new Error('unexpected host')
+    const name = url.split('/').pop().replace(/\.(ts|js)$/, '.mjs')
+    const source = (await readFile(join(base, 'core', name), 'utf8')).replace(/\.mjs(["'])/g, '.ts$1')
+    return new Response(source)
+  }
+  const manager = createFingerprintEngine({ path: cache, fetch }); t.after(() => manager.dispose())
+  const update = await manager.update(true)
+  assert.equal(update.version, version); assert.equal(update.source, 'updated'); assert.equal(update.warning, '')
+  assert.ok(attempts.some(url => url.startsWith('https://cdn.jsdelivr.net/gh/Ikaleio/lm-detector@' + manifest.revision + '/shared/')), 'the first mirror is tried')
+  assert.ok(attempts.some(url => url.startsWith('https://raw.githubusercontent.com/Ikaleio/lm-detector/' + manifest.revision + '/shared/')), 'the raw host is tried after the mirror fails')
 })
 
 test('verified upstream update persists and a prepared quote keeps its prior engine version', async t => {

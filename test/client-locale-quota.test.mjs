@@ -88,7 +88,7 @@ function harness({ language = 'en', fetch: customFetch, code = bundle, services 
   plugin.apply({
     get: name => services[name] || (name === 'locale' ? locale : name === 'slots' ? {
       inject: (_name, callback) => callback(),
-      register(options, render) { meta = options; section = render(slotProps); return () => {} },
+      register(options, render) { if (options.name !== 'settings.section') return () => {}; meta = options; section = render(slotProps); return () => {} },
     } : undefined),
     effect: callback => callback(),
   })
@@ -371,6 +371,7 @@ test('quota tabs retain component identity and refresh-all feeds snapshots witho
     accounts: [{ id: 'cn', channelId: 'buddy', enabled: true, version: 1 }, { id: 'intl', channelId: 'workbuddy', enabled: true, version: 1 }],
     quotas: [{ channelId: 'buddy', accountId: 'cn', remaining: credits }, { channelId: 'workbuddy', accountId: 'intl', remaining: 150 }] })
   const h = harness({ fetch: async (url, options) => {
+    if (url.endsWith('/seat-diag')) return { ok: true, json: async () => ({ ok: true }) }
     requests.push(url)
     if (url.includes('fresh=1') || options?.method === 'POST') return new Promise((resolve, reject) => deferred.push({ url, accountId: options?.body && JSON.parse(options.body).accountId, resolve: body => resolve({ ok: true, json: async () => body }), reject }))
     return { ok: true, json: async () => url.includes('/provider-quotas') ? quota(10) : url.includes('/account-quotas') ? accountView() : url.includes('/controls')
@@ -467,6 +468,7 @@ test('quota refresh queries only enabled accounts and discards failures from a c
     { id: 'hidden', channelId: 'workbuddy' }, { id: 'no-api', channelId: 'gemini' },
   ], quotas: [{ channelId: 'buddy', accountId: 'main', remaining: fail ? null : 700, error: fail ? { message: 'offline' } : null }] })
   const h = harness({ fetch: async (url, opts) => {
+    if (url.endsWith('/seat-diag')) return { ok: true, json: async () => ({ ok: true }) }
     if (opts?.method === 'POST') {
       posts.push(JSON.parse(opts.body))
       if (changeVersion) version++
@@ -598,8 +600,8 @@ test('overview expansion shows six metrics with localized values and empty state
   const labels = panel.tree.props.children[0].map(node => textOf(find(node, child => child.type === 'dt')))
   assert.deepEqual(Array.from(labels), ['Cache hit rate', 'Peak daily tokens', 'Longest task', 'Current streak', 'Longest streak', 'Recent favorite model'])
   assert.match(textOf(panel.tree), /75.0%.*1.25M.*1h 2m.*3 days.*12 days.*example-model/s)
-  assert.equal(find(panel.tree, node => node.type === 'dd' && /1,250,000/.test(node.props.title)).props.title, '2026-10-01 · 1,250,000 Token')
-  assert.match(find(panel.tree, node => node.props?.className === 'dshus-favorite-model').props.title, /42 calls in the last 7 days/)
+  assert.equal(find(panel.tree, node => node.type === 'dd' && /1,250,000/.test(node.props['data-dshus-tip'])).props['data-dshus-tip'], '2026-10-01 · 1,250,000 Token')
+  assert.match(find(panel.tree, node => node.props?.className === 'dshus-favorite-model').props['data-dshus-tip'], /42 calls in the last 7 days/)
   assert.doesNotMatch(textOf(panel.tree), /NaN|undefined|[\u4e00-\u9fff]/)
   h.locale.switch('ja')
   assert.match(textOf(h.render(h.plugin.__components.OverviewDetails, { overview }).tree), /キャッシュヒット率/)
