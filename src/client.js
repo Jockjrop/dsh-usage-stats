@@ -2726,6 +2726,19 @@ function dashboardRange(preset, now) {
       return { preset: preset, from: start.getTime(), to: end }
     }
 
+/**
+ * The window actually queried. A preset means "up to now", so it is re-derived
+ * on every request — otherwise a refresh keeps the end frozen at the moment the
+ * preset was picked and hides every request made since. Only a custom range has
+ * a user-pinned end, and even that follows the clock when asked to.
+ */
+function dashboardLiveRange(range) {
+      if (range.preset === 'all' || range.preset === 'custom') {
+        return range.preset === 'custom' && range.follow ? Object.assign({}, range, { to: Date.now() }) : range
+      }
+      return dashboardRange(range.preset)
+    }
+
 function dashboardDateValue(ms) {
       var date = new Date(ms)
       return date.getFullYear() + '-' + dashboardPad(date.getMonth() + 1) + '-' + dashboardPad(date.getDate())
@@ -2800,6 +2813,16 @@ function costPresetRange(preset) {
       var days = preset === '7d' ? 7 : preset === '14d' ? 14 : preset === '30d' ? 30 : 1
       var start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1))
       return { preset: preset, from: dashboardDateValue(start.getTime()), to: to }
+    }
+
+/**
+ * The window actually queried. A cost preset means "up to today", but the range
+ * state is only rebuilt when the picker changes — so a panel first opened
+ * before midnight, or before the 1st of a new month, keeps excluding every
+ * later day. Only a custom range has a user-pinned end.
+ */
+function costLiveRange(range) {
+      return range.preset === 'custom' ? range : costPresetRange(range.preset)
     }
 
 function dayRangeShort(day) {
@@ -2995,6 +3018,54 @@ function dashboardSeriesLabel(point, granularity) {
       return point.key.slice(5)
     }
 
+/** Full bucket label for the hover card; the axis keeps the short one. */
+function dashboardTipName(point, granularity) {
+      var date = granularity === 'hour' ? new Date(Number(point.key))
+        : granularity === 'month' ? new Date(point.key + '-01T00:00:00')
+          : new Date(point.key + 'T00:00:00')
+      var label = granularity === 'month'
+        ? t('{year}年{month}月', { year: date.getFullYear(), month: date.getMonth() + 1 })
+        : t('{year}年{month}月{day}日', { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() })
+      if (granularity !== 'hour') return label
+      var hour = dashboardPad(date.getHours())
+      return label + ' · ' + hour + ':00–' + hour + ':59'
+    }
+
+/**
+ * A point's models, folded to one row per model and ordered by the metric the
+ * chart is drawing. Folding matches the usage page's default "by model" view:
+ * the same model served by two providers would otherwise produce two rows of
+ * the same colour, since colour keys off the model name.
+ */
+function dashboardPointModels(point, metric) {
+      var source = (point && point.models) || []
+      var merged = []
+      var index = Object.create(null)
+      for (var i = 0; i < source.length; i++) {
+        var entry = source[i]
+        var id = sharedNormModelKey(entry.model || entry.key)
+        if (index[id] === undefined) {
+          index[id] = merged.length
+          merged.push({ key: 'by-model:' + id, provider: '', model: sharedModelDisplayName(entry.model || entry.key),
+            cost: 0, billed: 0, calls: 0, inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+        }
+        var row = merged[index[id]]
+        row.cost += entry.cost || 0
+        row.billed += entry.billed || 0
+        row.calls += entry.calls || 0
+        row.inputTokens += entry.inputTokens || 0
+        row.cacheReadTokens += entry.cacheReadTokens || 0
+        row.cacheWriteTokens += entry.cacheWriteTokens || 0
+      }
+      for (var m = 0; m < merged.length; m++) {
+        var base = merged[m].inputTokens + merged[m].cacheReadTokens + merged[m].cacheWriteTokens
+        merged[m].cacheHitRate = base > 0 ? merged[m].cacheReadTokens / base : null
+      }
+      return merged.sort(function (a, b) {
+        return (dashboardMetricValue(b, metric) || 0) - (dashboardMetricValue(a, metric) || 0)
+      })
+    }
+
 function dashboardCacheFloor(series) {
       var min = null
       for (var index = 0; index < series.length; index++) {
@@ -3038,16 +3109,19 @@ function UsageDashboard(props) {
       var loading = loadingState[0], setLoading = loadingState[1]
       var errorState = React.useState('')
       var error = errorState[0], setError = errorState[1]
+      var dashTipState = React.useState(null)
+      var dashTip = dashTipState[0], setDashTip = dashTipState[1]
       var requestRef = React.useRef(0)
 
       function load(fresh) {
         var request = ++requestRef.current
+        var live = dashboardLiveRange(range)
         setLoading(true)
         setError('')
         api.dashboard({
-          all: range.preset === 'all',
-          from: range.preset === 'all' ? 0 : range.from,
-          to: range.preset === 'all' ? 0 : range.to,
+          all: live.preset === 'all',
+          from: live.preset === 'all' ? 0 : live.from,
+          to: live.preset === 'all' ? 0 : live.to,
           provider: provider, model: model, page: page, pageSize: pageSize, fresh: fresh,
         })
           .then(function (body) {
@@ -3189,7 +3263,7 @@ function UsageDashboard(props) {
         var to = draft.follow ? Date.now() : dashboardCombine(draft.dateTo, draft.timeTo)
         if (!Number.isFinite(from) || !Number.isFinite(to)) { setError(t('时间范围无效。')); return }
         if (from > to) { var swap = from; from = to; to = swap }
-        setRange({ preset: draft.preset === 'custom' ? 'custom' : draft.preset, from: from, to: to })
+        setRange({ preset: draft.preset === 'custom' ? 'custom' : draft.preset, from: from, to: to, follow: !!draft.follow })
         setRangeOpen(false)
         setPage(1)
       }
@@ -3233,6 +3307,46 @@ function UsageDashboard(props) {
       var labelStep = Math.max(1, Math.ceil(series.length / 31))
       var metricLabel = metric === 'calls' ? t('请求数') : metric === 'billed' ? t('Tokens') : metric === 'cache' ? t('缓存命中率') : t('成本')
       var granularityLabel = granularity === 'hour' ? t('按小时') : granularity === 'month' ? t('按月') : t('按天')
+
+      // One hover card per bucket: the bucket total on the selected metric, then
+      // every model that contributed to it. Mirrors the usage page's 24h chart so
+      // both charts read the same way.
+      function showDashTip(event, point) {
+        var models = dashboardPointModels(point, metric)
+        var x = event.clientX + 14
+        var y = event.clientY + 14
+        if (x + 270 > window.innerWidth) x = Math.max(8, event.clientX - 270)
+        var estimatedHeight = 70 + (models.length + 1) * 23
+        if (y + estimatedHeight > window.innerHeight) y = Math.max(8, window.innerHeight - estimatedHeight - 8)
+        // Re-anchoring on every mousemove would re-render the whole dialog —
+        // chart, stats and log table — while the cursor travels across one bar.
+        setDashTip(function (previous) {
+          return previous && previous.key === point.key ? previous : { x: x, y: y, key: point.key }
+        })
+      }
+      function hideDashTip() { setDashTip(null) }
+      var dashTipEl = null
+      // Tracked by bucket key rather than index: a reload can change how many
+      // buckets there are, and an index would then describe a different hour.
+      var dashTipPoint = dashTip ? series[series.findIndex(function (point) { return point.key === dashTip.key })] : null
+      if (dashTipPoint) {
+        var tipModels = dashboardPointModels(dashTipPoint, metric)
+        dashTipEl = React.createElement('div', { className: 'dshus-tip dshus-chart-tip', style: { left: dashTip.x, top: dashTip.y } },
+          React.createElement('div', { className: 'dshus-tip-name' }, dashboardTipName(dashTipPoint, granularity)),
+          React.createElement('div', { className: 'dshus-tip-row' },
+            React.createElement('span', { className: 'dshus-tip-swatch', style: { background: '#94a3b8' } }),
+            React.createElement('span', null, metricLabel),
+            React.createElement('strong', null, dashboardMetricText(dashTipPoint, metric)),
+          ),
+          tipModels.map(function (entry) {
+            return React.createElement('div', { className: 'dshus-tip-row', key: entry.key },
+              React.createElement('span', { className: 'dshus-tip-swatch', style: { background: sharedModelColor(entry.model) } }),
+              React.createElement('span', null, entry.model),
+              React.createElement('strong', null, dashboardMetricText(entry, metric)),
+            )
+          }),
+        )
+      }
 
       var draftSummary = ''
       if (draft) {
@@ -3361,7 +3475,7 @@ function UsageDashboard(props) {
                 type: 'button', className: 'dshus-range-trigger',
                 onClick: function () { if (rangeOpen) setRangeOpen(false); else openPicker() },
                 'aria-haspopup': 'dialog', 'aria-expanded': rangeOpen ? 'true' : undefined,
-              }, calendarIcon(15), React.createElement('span', null, dashboardRangeLabel(range)), chevronDownIcon(14)),
+              }, calendarIcon(15), React.createElement('span', null, dashboardRangeLabel(dashboardLiveRange(range))), chevronDownIcon(14)),
               rangePopover,
             ),
             React.createElement(SelectField, {
@@ -3401,21 +3515,43 @@ function UsageDashboard(props) {
                   return React.createElement('span', { key: tickIndex }, axisText(tick))
                 })),
                 React.createElement('div', { className: 'dshus-dash-plot-main' },
-                  React.createElement('div', { className: 'dshus-dash-chart-bars' }, series.map(function (point, pointIndex) {
+                  React.createElement('div', { className: 'dshus-dash-chart-bars', role: 'grid', 'aria-label': metricLabel + ' · ' + granularityLabel }, series.map(function (point, pointIndex) {
                     var pointValue = metricValues[pointIndex]
-                    var label = dashboardSeriesLabel(point, granularity)
                     var height = '2px'
                     if (metric === 'cache') {
                       if (pointValue !== null) height = Math.max(3, (pointValue - cacheFloor) / Math.max(1, 100 - cacheFloor) * 100) + '%'
                     } else if (pointValue > 0 && axisMax > 0) height = Math.max(3, pointValue / axisMax * 100) + '%'
+                    var models = dashboardPointModels(point, metric)
+                    // A hit rate is a ratio rather than a sum, so that bar stays
+                    // solid; the hover card still splits it per model.
+                    var segments = metric === 'cache' ? [] : models
+                    var ariaLabel = dashboardTipName(point, granularity) + ': ' + dashboardMetricText(point, metric)
+                    if (models.length > 1) ariaLabel += '；' + models.map(function (entry) {
+                      return entry.model + ' ' + dashboardMetricText(entry, metric)
+                    }).join('；')
                     return React.createElement('div', {
                       key: point.key, className: 'dshus-dash-bar', 'data-empty': pointValue === null || pointValue <= 0 ? '' : undefined,
-                      'data-dshus-tip': t('{time} · {value}', { time: label, value: dashboardMetricText(point, metric) }),
-                    }, React.createElement('div', { className: 'dshus-dash-bar-fill', style: { height: height } }))
+                      role: 'gridcell', tabIndex: 0, 'aria-label': ariaLabel,
+                      onMouseMove: function (event) { showDashTip(event, point) },
+                      onMouseLeave: hideDashTip,
+                      onClick: function (event) { showDashTip(event, point) },
+                      onFocus: function (event) {
+                        var rect = event.currentTarget.getBoundingClientRect()
+                        showDashTip({ clientX: rect.left, clientY: rect.bottom }, point)
+                      },
+                      onBlur: hideDashTip,
+                    }, React.createElement('div', { className: 'dshus-dash-bar-fill', style: { height: height } },
+                      segments.map(function (entry) {
+                        return React.createElement('div', {
+                          key: entry.key, className: 'dshus-dash-bar-seg',
+                          style: { flexGrow: Math.max(0, dashboardMetricValue(entry, metric) || 0), flexBasis: 0, background: sharedModelColor(entry.model) },
+                        })
+                      })))
                   })),
                   React.createElement('div', { className: 'dshus-dash-axis' }, series.map(function (point, pointIndex) {
                     return React.createElement('span', { key: point.key }, pointIndex % labelStep === 0 ? dashboardSeriesLabel(point, granularity) : '')
                   })),
+                  dashTipEl,
                 ),
               ),
             ),
@@ -3962,9 +4098,10 @@ function CostsPanel(props) {
 
       function load(fresh, nextRange, nextProvider) {
         var request = ++requestRef.current
+        var live = costLiveRange(nextRange || range)
         setLoading(true)
         setError('')
-        api.costs({ from: nextRange.from, to: nextRange.to, provider: nextProvider, fresh: fresh })
+        api.costs({ from: live.from, to: live.to, provider: nextProvider, fresh: fresh })
           .then(function (body) {
             if (request !== requestRef.current) return
             setData(body)

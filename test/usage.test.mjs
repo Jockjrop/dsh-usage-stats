@@ -13,6 +13,7 @@ import {
   modelDetectionContribution,
   foldSessionRows,
   syncCorpus,
+  collectFileFps,
   persistState,
   loadState,
   apply,
@@ -454,6 +455,22 @@ test('dashboard folds legacy aggregate-only sessions into totals, series and hea
   assert.equal(hourly.totals.calls, 1)
   assert.equal(hourly.totals.billed, 500)
   assert.equal(hourly.series.reduce((sum, point) => sum + point.calls, 0), 1)
+  // Every point carries a per-model split the chart can stack and the hover
+  // card can list, and it must sum back to that point — including the retained
+  // session that only has day aggregates.
+  const daily = foldDashboard(state, {
+    from: Date.parse('2026-08-19T00:00:00+08:00'), to: Date.parse('2026-08-20T23:59:59+08:00'),
+  }, now)
+  assert.equal(daily.granularity, 'day')
+  for (const point of [...daily.series, ...hourly.series]) {
+    assert.ok(Array.isArray(point.models))
+    assert.equal(point.models.reduce((sum, model) => sum + model.billed, 0), point.billed)
+    assert.equal(point.models.reduce((sum, model) => sum + model.calls, 0), point.calls)
+  }
+  assert.deepEqual(daily.series.map((point) => [point.key, point.models.map((model) => [model.provider, model.model, model.billed])]), [
+    ['2026-08-19', [['old', 'deepseek-v4-flash', 500]]],
+    ['2026-08-20', [['test', 'deepseek-v4-flash', 1000]]],
+  ])
 })
 
 test('cost range buckets merge once when rules fold several raw models into one row', () => {
@@ -552,6 +569,34 @@ test('desktop stats route uses the requested timezone', async () => {
   } finally {
     if (oldHome === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = oldHome
+  }
+})
+
+test('session log fingerprints recognise the v4 file name as well as the legacy one', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-us-session-files-'))
+  try {
+    const { mkdir, writeFile } = await import('node:fs/promises')
+    const put = async (workspace, id, filename, bytes) => {
+      const path = join(dir, workspace, id)
+      await mkdir(path, { recursive: true })
+      await writeFile(join(path, filename), bytes)
+    }
+    await put('ws-v4', 'live-v4', 'session.v4.jsonl.zstd', 'aaaa')
+    await put('ws-legacy', 'legacy-log', 'session.jsonl.zstd', 'bbb')
+    await put('ws-both', 'prefers-v4', 'session.v4.jsonl.zstd', 'cc')
+    await put('ws-both', 'prefers-v4', 'session.jsonl.zstd', 'dddddddd')
+    await mkdir(join(dir, 'ws-empty', 'not-a-session'), { recursive: true })
+    const fps = await collectFileFps(dir)
+    // Missing here means an empty Map for the whole corpus, which makes every
+    // refresh re-read every session instead of only the changed ones.
+    assert.deepEqual([...fps.keys()].sort(), ['legacy-log', 'live-v4', 'prefers-v4'])
+    assert.equal(fps.get('live-v4').size, 4)
+    assert.equal(fps.get('legacy-log').size, 3)
+    assert.equal(fps.get('prefers-v4').size, 2, 'the v4 log must win when both layouts exist')
+    assert.ok(Number.isFinite(fps.get('live-v4').mtimeMs))
+  } finally {
+    const { rm } = await import('node:fs/promises')
+    await rm(dir, { recursive: true, force: true })
   }
 })
 

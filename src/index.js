@@ -480,13 +480,16 @@ export async function loadState(storePath) {
 /* Filesystem fingerprinting of persisted session logs                  */
 /* ------------------------------------------------------------------ */
 
+const SESSION_LOG_NAMES = ['session.v4.jsonl.zstd', 'session.jsonl.zstd']
+
 /**
  * Cheap staleness detector. The persisted logs live at
- * <DSH_HOME>/sessions/<encoded-cwd>/<sessionId>/session.jsonl.zstd
- * (dsh-session-persistence-jsonl). We enumerate those files and key them by
- * the owning session id (the immediate parent directory name). Any id not
- * found here is either live-only or behind an unexpected layout — the caller
- * treats it as needing a re-read, which stays correct.
+ * <DSH_HOME>/sessions/<encoded-cwd>/<sessionId>/session.v4.jsonl.zstd
+ * (dsh-session-persistence-jsonl renamed this from session.jsonl.zstd). We
+ * enumerate those files and key them by the owning session id (the immediate
+ * parent directory name). Any id not found here is either live-only or behind
+ * an unexpected layout — the caller treats it as needing a re-read, which
+ * stays correct but makes every refresh pass a full rescan.
  */
 export async function collectFileFps(sessionsDir) {
   const out = new Map()
@@ -507,12 +510,17 @@ export async function collectFileFps(sessionsDir) {
     }
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
-      const file = join(sessionsDir, ws.name, entry.name, 'session.jsonl.zstd')
-      try {
-        const st = await stat(file)
-        if (st.isFile()) out.set(entry.name, { size: st.size, mtimeMs: st.mtimeMs })
-      } catch {
-        // not a persisted session dir
+      for (const name of SESSION_LOG_NAMES) {
+        let st
+        try {
+          st = await stat(join(sessionsDir, ws.name, entry.name, name))
+        } catch {
+          continue
+        }
+        if (st.isFile()) {
+          out.set(entry.name, { size: st.size, mtimeMs: st.mtimeMs })
+          break
+        }
       }
     }
   }
@@ -1301,7 +1309,18 @@ export function foldDashboard(state, options = {}, now = Date.now(), additional 
   const totals = emptyBucket()
   const series = []
   const seriesIndex = new Map()
-  const newPoint = () => ({ cost: 0, billed: 0, calls: 0, inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+  const newPoint = () => ({ cost: 0, billed: 0, calls: 0, inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, models: new Map() })
+  // Per-model split of one series point: the chart stacks its bars with it and
+  // the hover card lists the breakdown under the point total.
+  const pointModel = (point, rowProvider, rowModel) => {
+    const key = rowProvider + '/' + rowModel
+    let entry = point.models.get(key)
+    if (entry === undefined) {
+      entry = { key, provider: rowProvider, model: rowModel, bucket: emptyBucket(), cost: 0 }
+      point.models.set(key, entry)
+    }
+    return entry
+  }
   if (granularity === 'hour') {
     const dayStart = keyMidnight(localDayKey(from, tz), tz)
     for (let start = dayStart + Math.floor((from - dayStart) / 3600000) * 3600000; start <= to; start += 3600000) {
@@ -1388,6 +1407,9 @@ export function foldDashboard(state, options = {}, now = Date.now(), additional 
             point.cacheReadTokens += bucket.cacheReadTokens || 0
             point.cacheWriteTokens += bucket.cacheWriteTokens || 0
             if (bucketCost !== null) point.cost += bucketCost
+            const pm = pointModel(point, legacyProvider, legacyModel)
+            mergeBucket(pm.bucket, bucket)
+            if (bucketCost !== null) pm.cost += bucketCost
           }
         }
         if (all) {
@@ -1461,6 +1483,9 @@ export function foldDashboard(state, options = {}, now = Date.now(), additional 
           point.cacheReadTokens += cacheReadTokens
           point.cacheWriteTokens += cacheWriteTokens
           if (rowCost !== null) point.cost += rowCost
+          const pm = pointModel(point, eventProvider, eventModel)
+          addUsage(pm.bucket, { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens })
+          if (rowCost !== null) pm.cost += rowCost
         }
       }
       if (all) {
@@ -1494,6 +1519,17 @@ export function foldDashboard(state, options = {}, now = Date.now(), additional 
     delete point.inputTokens
     delete point.cacheReadTokens
     delete point.cacheWriteTokens
+    const models = [...point.models.values()].map((entry) => ({
+      key: entry.key, provider: entry.provider, model: entry.model,
+      cost: entry.cost, billed: entry.bucket.billed, calls: entry.bucket.calls,
+      // The raw cache triple travels too: a client that folds these rows by
+      // model name cannot recompute a rate from per-provider rates.
+      inputTokens: entry.bucket.inputTokens, cacheReadTokens: entry.bucket.cacheReadTokens,
+      cacheWriteTokens: entry.bucket.cacheWriteTokens,
+      cacheHitRate: cacheRate(entry.bucket.inputTokens, entry.bucket.cacheReadTokens, entry.bucket.cacheWriteTokens),
+    }))
+    models.sort((a, b) => b.billed - a.billed)
+    point.models = models
   }
   let heatmap = null
   if (all) {

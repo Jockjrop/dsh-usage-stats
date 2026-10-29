@@ -1,5 +1,47 @@
 # 更新日志 / Changelog
 
+## 0.2.7 - 2026-10-29
+
+<a id="v027-zh"></a>
+**简体中文** · [English](#v027-en)
+
+### ✨ 新增与改进
+
+- 用量统计的柱状图按模型分色，同一个模型在任何图表里颜色一致。
+- 鼠标停在柱子上，除了这一段的总量，还能看到每个模型各用了多少。
+- 柱子也能用键盘逐个聚焦、用触摸点按查看，读屏软件能读到每根柱子的数值。
+- 近 7 天这类段数少的图表，柱子不再粗到糊成一片。
+- 兼容 DSH Desktop `>=0.2.1-rc.1 <=0.2.1-rc.3`（含 0.2.1-rc.1、0.2.1-rc.2、0.2.1-rc.3）。
+
+### 🐛 问题修复
+
+- 修复点「刷新」看不到新数据、必须重新选一次时间范围才有的问题。
+- 修复「成本」页开着跨过零点或换月后不再纳入新数据的问题。
+
+### ⚡ 性能
+
+- 刷新「用量统计」从约 1.6 秒降到约 40 毫秒（67 个会话的实测）。
+
+<a id="v027-en"></a>
+**English** · [简体中文](#v027-zh)
+
+### ✨ New and improved
+
+- Dashboard bars are coloured per model, and a model keeps the same colour in every chart.
+- Hovering a bar now shows what each model contributed, under the bucket total.
+- Bars can be stepped through with the keyboard and tapped on touch screens, and a screen reader reads each bar's numbers.
+- Charts with few bars, such as the last 7 days, no longer render bloated bars.
+- Compatible with DSH Desktop `>=0.2.1-rc.1 <=0.2.1-rc.3` (0.2.1-rc.1, 0.2.1-rc.2 and 0.2.1-rc.3).
+
+### 🐛 Bug fixes
+
+- Fixed refresh showing no new data until the time range was picked again.
+- Fixed the Costs tab silently stopping to include new data once it had been open past midnight or into a new month.
+
+### ⚡ Performance
+
+- Dashboard refresh dropped from about 1.6 seconds to about 40 milliseconds (measured with 67 sessions).
+
 ## 0.2.6 - 2026-10-28
 
 <a id="v026-zh"></a>
