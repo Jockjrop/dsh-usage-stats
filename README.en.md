@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="#installation"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH Desktop"></a>
-  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.6-64748b?style=flat-square" alt="Plugin version 0.2.6"></a>
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.8-64748b?style=flat-square" alt="Plugin version 0.2.8"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 license"></a>
 </p>
 
@@ -107,16 +107,16 @@ Click **Enable now**, then open **Settings → Usage Stats**. Fully exit and reo
 Enter this in the same installer for this release:
 
 ```text
-@sligqoer/dsh-usage-stats@0.2.6
+@sligqoer/dsh-usage-stats@0.2.8
 ```
 
 Alternatively, download a `.tgz` and `SHA256SUMS` from the [GitHub release page](https://github.com/Jockjrop/dsh-usage-stats/releases/latest), verify the hash and enter the archive's local absolute path. Do not extract it before installation.
 
 ```powershell
-Get-FileHash ./sligqoer-dsh-usage-stats-0.2.6.tgz -Algorithm SHA256
+Get-FileHash ./sligqoer-dsh-usage-stats-0.2.8.tgz -Algorithm SHA256
 ```
 
-Assets include `sligqoer-dsh-usage-stats-0.2.6.tgz`, the equivalent `dsh-usage-stats.tgz`, and `SHA256SUMS`. Both archives contain identical modules.
+Assets include `sligqoer-dsh-usage-stats-0.2.8.tgz`, the equivalent `dsh-usage-stats.tgz`, and `SHA256SUMS`. Both archives contain identical modules.
 
 </details>
 
@@ -197,4 +197,4 @@ npm run release
 
 Edit `src/` and run `npm run build` to generate `lib/`. `src/client.js` is the renderer template; the build inlines `client-messages.js`, `client-styles.js`, `client-format.js` and the other modules at their markers, so the shipped artifact is still a single `lib/client.js`. `npm run lint` checks syntax, JSON documents and the three-language table; `npm run check:release` checks versions, generated files, third-party integrity and private workspace files. `npm run release` builds the package and verifies installation and loading in an isolated temporary project; artifacts go to `release/`.
 
-The GitHub workflow requires the tag to match the package version (`v0.2.6` for this release) and publishes the same verified archive to npm and GitHub Releases. The npm trusted publisher workflow file is `.github/workflows/release.yml`. Third-party assets, source revisions and licenses are recorded in `third_party/` and [NOTICE](NOTICE). This project uses the [Apache-2.0 license](LICENSE).
+The GitHub workflow requires the tag to match the package version (`v0.2.8` for this release) and publishes the same verified archive to npm and GitHub Releases. The npm trusted publisher workflow file is `.github/workflows/release.yml`. Third-party assets, source revisions and licenses are recorded in `third_party/` and [NOTICE](NOTICE). This project uses the [Apache-2.0 license](LICENSE).

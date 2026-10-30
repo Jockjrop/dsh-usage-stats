@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="#安装"><img src="https://img.shields.io/badge/DSH-Desktop-2563eb?style=flat-square" alt="DSH 桌面端"></a>
-  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.6-64748b?style=flat-square" alt="插件版本 0.2.6"></a>
+  <a href="https://github.com/Jockjrop/dsh-usage-stats/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.8-64748b?style=flat-square" alt="插件版本 0.2.8"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-22c55e?style=flat-square" alt="Apache 2.0 许可"></a>
 </p>
 
@@ -107,16 +107,16 @@
 安装本次版本时，在同一入口填入：
 
 ```text
-@sligqoer/dsh-usage-stats@0.2.6
+@sligqoer/dsh-usage-stats@0.2.8
 ```
 
 也可从 [GitHub 发布页](https://github.com/Jockjrop/dsh-usage-stats/releases/latest)下载 `.tgz` 安装包和 `SHA256SUMS`，校验后填入压缩包的本地绝对路径，无需解压。
 
 ```powershell
-Get-FileHash ./sligqoer-dsh-usage-stats-0.2.6.tgz -Algorithm SHA256
+Get-FileHash ./sligqoer-dsh-usage-stats-0.2.8.tgz -Algorithm SHA256
 ```
 
-发布附件包含版本安装包 `sligqoer-dsh-usage-stats-0.2.6.tgz`、通用安装包 `dsh-usage-stats.tgz` 和校验文件 `SHA256SUMS`；两个安装包内容一致。
+发布附件包含版本安装包 `sligqoer-dsh-usage-stats-0.2.8.tgz`、通用安装包 `dsh-usage-stats.tgz` 和校验文件 `SHA256SUMS`；两个安装包内容一致。
 
 </details>
 
@@ -197,4 +197,4 @@ npm run release
 
 修改 `src/` 后运行 `npm run build` 生成 `lib/`。`src/client.js` 是渲染器模板，`client-messages.js`、`client-styles.js`、`client-format.js` 等模块由构建按标记内联，发布产物仍是单个 `lib/client.js`。`npm run lint` 校验语法、JSON 文档与三语条目；`npm run check:release` 检查版本、构建一致性、第三方完整性与工作区隐私文件；`npm run release` 构建安装包并在独立临时项目中验证安装与加载，输出位于 `release/`。
 
-GitHub 发布流程要求标签与包版本一致（本版为 `v0.2.6`），通过检查后使用同一份安装包发布 npm 与 GitHub Release。npm 可信发布对应的工作流文件为 `.github/workflows/release.yml`。第三方资源、来源版本和许可记录于 `third_party/` 与 [NOTICE](NOTICE)，本项目使用 [Apache-2.0 许可证](LICENSE)。
+GitHub 发布流程要求标签与包版本一致（本版为 `v0.2.8`），通过检查后使用同一份安装包发布 npm 与 GitHub Release。npm 可信发布对应的工作流文件为 `.github/workflows/release.yml`。第三方资源、来源版本和许可记录于 `third_party/` 与 [NOTICE](NOTICE)，本项目使用 [Apache-2.0 许可证](LICENSE)。
