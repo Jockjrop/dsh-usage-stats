@@ -1,5 +1,23 @@
 # 更新日志 / Changelog
 
+## 0.2.8 - 2026-10-30
+
+<a id="v028-zh"></a>
+**简体中文** · [English](#v028-en)
+
+### 🐛 问题修复
+
+- 适配 DSH Desktop `0.2.1-rc.5`，兼容范围改为 `>=0.2.1-rc.1`。
+- 修复在 DSH Desktop 0.2.1-rc.4 与 0.2.1-rc.5 上「用量统计」不再出现在设置页、侧栏入口与仪表盘的问题。
+
+<a id="v028-en"></a>
+**English** · [简体中文](#v028-zh)
+
+### 🐛 Bug fixes
+
+- Support DSH Desktop `0.2.1-rc.5` with the compatibility range `>=0.2.1-rc.1`.
+- Fixed Usage Stats disappearing from the settings page, the sidebar shortcut and the dashboard on DSH Desktop 0.2.1-rc.4 and 0.2.1-rc.5.
+
 ## 0.2.7 - 2026-10-29
 
 <a id="v027-zh"></a>

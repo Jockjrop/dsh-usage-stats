@@ -1,7 +1,7 @@
 {
   "name": "@sligqoer/dsh-usage-stats",
   "description": "在 DSH Desktop 中看清每一次请求的 Token、费用与速度，按模型和供应商汇总花费，统一同一模型的不同名称，核对余额并比较模型实际表现。",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "type": "module",
   "repository": {
     "type": "git",
@@ -65,7 +65,7 @@
   "license": "Apache-2.0",
   "icon": "screenshots/icon.svg",
   "peerDependencies": {
-    "@deepseek-ai/dsh": ">=0.2.1-rc.1 <=0.2.1-rc.3"
+    "@deepseek-ai/dsh": ">=0.2.1-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh": {
