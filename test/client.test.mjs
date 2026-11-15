@@ -95,6 +95,29 @@ test('statistics tabs restore the host scrollport without changing content width
   restoreScrollport()
 })
 
+test('plain browser tabs without any host bridge stay unmounted', () => {
+  let plugin, section
+  const React = { createElement(type, props, ...children) { return { type, props: { ...props, children } } }, useState(i) { return [i, () => {}] }, useRef(i) { return { current: i } }, useEffect() {} }
+  vm.runInNewContext(bundle, {
+    window: {
+      localStorage: { getItem: () => null },
+      __ModuleLoader__: { load(definition) { plugin = definition.factory(() => React) } },
+      addEventListener() {}, removeEventListener() {},
+    },
+    document: {
+      getElementById: () => null, createElement: () => ({ style: {} }), head: { appendChild() {} },
+      documentElement: { hasAttribute: () => false, style: { setProperty() {} } },
+      addEventListener() {}, removeEventListener() {},
+      querySelector: () => null, querySelectorAll: () => [],
+    }, console, URLSearchParams,
+  })
+  plugin.apply({
+    get: () => ({ inject: (_name, callback) => callback(), register: (meta, render) => { if (meta.name === 'settings.section') section = render({}); return () => {} } }),
+    effect: callback => callback(),
+  })
+  assert.equal(section, undefined, 'no bridge marker means no client mount')
+})
+
 /**
  * Remove comments while preserving string-literal contents, so the token scan
  * below sees real style declarations only. Documentation legitimately names
@@ -230,8 +253,12 @@ test('usage settings row uses a chart glyph when the host sidebar mounts', () =>
   const cleanups = []
   const row = (label) => ({
     label,
+    textContent: label,
     attributes: {},
     querySelector: () => ({ textContent: label }),
+    querySelectorAll: () => [{ textContent: label }],
+    hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attributes, name) },
+    removeAttribute(name) { delete this.attributes[name] },
     setAttribute(name, value) { this.attributes[name] = value },
   })
   const usageRow = row('用量统计')
@@ -245,7 +272,7 @@ test('usage settings row uses a chart glyph when the host sidebar mounts', () =>
       head: { appendChild() {} },
       body: {},
       querySelectorAll: (selector) => {
-        assert.equal(selector, '[data-shortcut-modal="settings"] nav button')
+        assert.match(selector, /\[data-shortcut-modal="settings"\] nav button/)
         return visibleRows
       },
     },

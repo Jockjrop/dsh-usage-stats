@@ -1,5 +1,37 @@
 # 更新日志 / Changelog
 
+## 0.2.9 - 2026-11-12
+
+<a id="v029-zh"></a>
+**简体中文** · [English](#v029-en)
+
+### ✨ 新增与改进
+
+- 仪表盘新增「模型排行」与「供应商排行」：可切换分组维度，展开任意一行查看最近 30 天趋势；切到「全部」热力图时排行依然完整。
+- 「今天」的小时图一次展示完整 24 小时，尚未到来的时段留空，不再随时间逐格冒出。
+- 优化模型推理等级选择。
+- 优化侧边窗口交互。
+- 兼容 DSH Desktop `>=0.2.1-rc.1`。
+
+### 🐛 问题修复
+
+- 速度排行不再出现几千 tok/s 的失真数值：整段一次性返回的回复不计入输出速度。
+
+<a id="v029-en"></a>
+**English** · [简体中文](#v029-zh)
+
+### ✨ New and improved
+
+- The dashboard adds Model ranking and Provider ranking: switch the grouping dimension and expand any row to see its last-30-day trend; rankings stay complete in the "all" heatmap view.
+- The "today" hourly chart now shows all 24 hours at once, with future hours left empty instead of growing bar by bar.
+- Refined model reasoning-level selection.
+- Refined sidebar picker interaction.
+- Compatible with DSH Desktop `>=0.2.1-rc.1`.
+
+### 🐛 Bug fixes
+
+- The speed ranking no longer shows inflated values of thousands of tok/s: replies delivered in a single chunk are excluded from output speed.
+
 ## 0.2.8 - 2026-10-30
 
 <a id="v028-zh"></a>

@@ -58,6 +58,19 @@ const STORE_FILE = 'usage-stats-corpus.json'
 /** Rescan live logs when persisted speed timing fields change. */
 const SPEED_VERSION = 2
 
+/**
+ * Streaming decode tops out around 250 tok/s on the fastest models behind this
+ * panel. A sample claiming more came from a response delivered in a single
+ * chunk, whose output window (~0 ms) is too short to measure; counting it
+ * would show 1000-4000 tok/s on the ranking. Treat those samples as
+ * unmeasured instead of letting them poison the speed stats.
+ */
+const SPEED_TPS_SANITY_LIMIT = 300
+function plausibleSpeed(outputTokens, outputMs) {
+  return Number.isFinite(outputTokens) && outputTokens > 0 && Number.isFinite(outputMs) && outputMs > 0 &&
+    outputTokens * 1000 / outputMs <= SPEED_TPS_SANITY_LIMIT
+}
+
 /** Fallback for requests without a desktop timezone. */
 const SYSTEM_TZ = new Date().getTimezoneOffset()
 
@@ -813,6 +826,9 @@ export function foldResponse(state, days, modelKey, tz, now, additional = [], ru
     for (const event of s.usageEvents || []) {
       const outputTokens = event[4], outputMs = event[8]
       if (!Number.isFinite(outputTokens) || outputTokens < 0 || !Number.isFinite(outputMs) || outputMs <= 0) continue
+      // Zero-output events still carry decode duration; only drop positive-
+      // token samples whose rate is physically implausible (single-chunk replies).
+      if (outputTokens > 0 && !plausibleSpeed(outputTokens, outputMs)) continue
       const model = resolveModel(event[2]), key = event[1] + '/' + model
       if (filterModel && key !== filterModel || fromKey && localDayKey(event[0], bucketTz) < fromKey) continue
       let speed = speedSum.get(key)
@@ -1184,7 +1200,7 @@ export function foldLogs(state, options = {}, additional = [], overrides = null,
         title, detection: !!contribution.detection,
         inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,
         reasoningTokens: Number(event[7]) || 0, outputMs,
-        tokensPerSecond: outputMs > 0 && outputTokens > 0 ? outputTokens / (outputMs / 1000) : null,
+        tokensPerSecond: plausibleSpeed(outputTokens, outputMs) ? outputTokens / (outputMs / 1000) : null,
         ttftMs,
         cost: price ? usageCost({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }, price) : null,
       })
@@ -1322,9 +1338,13 @@ export function foldDashboard(state, options = {}, now = Date.now(), additional 
     return entry
   }
   if (granularity === 'hour') {
-    const dayStart = keyMidnight(localDayKey(from, tz), tz)
-    for (let start = dayStart + Math.floor((from - dayStart) / 3600000) * 3600000; start <= to; start += 3600000) {
-      const key = String(start)
+    // The axis always covers complete local days: "today" renders all 24 hours
+    // at once and not-yet-elapsed hours stay empty slots, instead of the chart
+    // growing one bar per elapsed hour. Folded data still respects [from, to].
+    const start = keyMidnight(localDayKey(from, tz), tz)
+    const end = keyMidnight(localDayKey(to, tz), tz) + 23 * 3600000
+    for (let time = start; time <= end; time += 3600000) {
+      const key = String(time)
       seriesIndex.set(key, series.length)
       series.push({ key, ...newPoint() })
     }
@@ -1373,6 +1393,27 @@ export function foldDashboard(state, options = {}, now = Date.now(), additional 
   const rows = []
   const providers = new Set()
   const models = new Set()
+  // Range-wide per-model / per-provider aggregates, independent of the chart
+  // granularity, so the legend, the group-by dimension and the usage ranking
+  // have real data even in the "all" (heatmap) view where series is empty.
+  const modelAgg = new Map()
+  const providerAgg = new Map()
+  const rankAdd = (rowProvider, rowModel, day, b, rowCost) => {
+    const mk = rowProvider + '/' + rowModel
+    let m = modelAgg.get(mk)
+    if (!m) { m = { key: mk, provider: rowProvider, model: rowModel, bucket: emptyBucket(), cost: 0, days: new Map() }; modelAgg.set(mk, m) }
+    mergeBucket(m.bucket, b)
+    if (rowCost !== null) m.cost += rowCost
+    let d = m.days.get(day)
+    if (!d) { d = { date: day, calls: 0, billed: 0, cost: 0 }; m.days.set(day, d) }
+    d.calls += b.calls || 0
+    d.billed += b.billed || 0
+    if (rowCost !== null) d.cost += rowCost
+    let p = providerAgg.get(rowProvider)
+    if (!p) { p = { provider: rowProvider, bucket: emptyBucket(), cost: 0 }; providerAgg.set(rowProvider, p) }
+    mergeBucket(p.bucket, b)
+    if (rowCost !== null) p.cost += rowCost
+  }
   for (const contribution of contributions) {
     const events = Array.isArray(contribution.usageEvents) ? contribution.usageEvents : []
     if (events.length === 0) {
@@ -1397,6 +1438,7 @@ export function foldDashboard(state, options = {}, now = Date.now(), additional 
         const bucketCost = price ? usageCost(bucket, price) : null
         mergeBucket(totals, bucket)
         if (bucketCost !== null) cost += bucketCost
+        rankAdd(legacyProvider, legacyModel, day, bucket, bucketCost)
         if (granularity !== 'heatmap') {
           const point = series[granularity === 'hour' ? hourDayPoint.get(day)
             : seriesIndex.get(granularity === 'month' ? day.slice(0, 7) : day)]
@@ -1469,6 +1511,7 @@ export function foldDashboard(state, options = {}, now = Date.now(), additional 
       const rowCost = price ? usageCost({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }, price) : null
       addUsage(totals, { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens })
       if (rowCost !== null) cost += rowCost
+      rankAdd(eventProvider, eventModel, day, { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, billed: inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens, calls: 1 }, rowCost)
       if (granularity !== 'heatmap') {
         let seriesKey = day
         if (granularity === 'hour') {
@@ -1503,7 +1546,7 @@ export function foldDashboard(state, options = {}, now = Date.now(), additional 
         time, provider: eventProvider, model: eventModel, rawModel: rawModel === eventModel ? undefined : rawModel,
         title, detection: !!contribution.detection,
         inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, outputMs,
-        tokensPerSecond: outputMs > 0 && outputTokens > 0 ? outputTokens / (outputMs / 1000) : null,
+        tokensPerSecond: plausibleSpeed(outputTokens, outputMs) ? outputTokens / (outputMs / 1000) : null,
         ttftMs,
         cost: rowCost,
       })
@@ -1531,6 +1574,18 @@ export function foldDashboard(state, options = {}, now = Date.now(), additional 
     models.sort((a, b) => b.billed - a.billed)
     point.models = models
   }
+  // Ranking rows carry a capped per-day trail so an expanded row can show a
+  // recent trend without shipping a year of daily detail for every model.
+  const modelRanking = [...modelAgg.values()].map((m) => ({
+    key: m.key, provider: m.provider, model: m.model,
+    cost: m.cost, billed: m.bucket.billed, calls: m.bucket.calls,
+    cacheHitRate: cacheRate(m.bucket.inputTokens, m.bucket.cacheReadTokens, m.bucket.cacheWriteTokens),
+    days: [...m.days.values()].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0).slice(-30),
+  })).sort((a, b) => b.billed - a.billed)
+  const providerRanking = [...providerAgg.values()].map((p) => ({
+    provider: p.provider, cost: p.cost, billed: p.bucket.billed, calls: p.bucket.calls,
+    cacheHitRate: cacheRate(p.bucket.inputTokens, p.bucket.cacheReadTokens, p.bucket.cacheWriteTokens),
+  })).sort((a, b) => b.billed - a.billed)
   let heatmap = null
   if (all) {
     const days = [...heatmapDays.values()].map((day) => ({
@@ -1553,6 +1608,7 @@ export function foldDashboard(state, options = {}, now = Date.now(), additional 
     spanDays: spanDaysOf(from, to), granularity, from, to, earliest,
     totals: { ...serializeBucket(totals), cost, cacheHitRate: cacheRate(totals.inputTokens, totals.cacheReadTokens, totals.cacheWriteTokens) },
     series, heatmap,
+    modelRanking, providerRanking,
     rows: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length, page, pageSize, pages,
     providers: [...providers].sort(), models: [...models].sort(), provider: provider || null, model: model || null,
   }
@@ -1612,7 +1668,9 @@ export function apply(ctx) {
     syncTz = tz
     syncPromise = syncCorpus(ctx, tz, state)
       .then(async (result) => {
-        if (result.changed > 0 || result.tzChanged) await persistState(state, storePath)
+        if (result.changed > 0 || result.tzChanged) {
+          await persistState(state, storePath)
+        }
         return result
       })
       .catch((error) => {

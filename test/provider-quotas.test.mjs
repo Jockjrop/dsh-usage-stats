@@ -48,7 +48,7 @@ test('OpenCode queries only the configured Go provider and never substitutes Zen
 
 test('OpenCode uses its own DSH record without falling back to a shared environment key', async () => {
   let profile = {}, records = 0, queries = 0
-  let ownKey = 'dsh-go-record-key'
+  let ownKey = 'opencode-record-key'
   const ctx = { get(name) {
     if (name === 'llm') return { listConfigurableProviders: () => [{ provider: 'opencode-go', settingsNs: 'models', declared: false }] }
     if (name === 'settings') return { describe: () => [{ ns: 'models', value: { providers: profile === undefined ? {} : { 'opencode-go': profile } } }] }
@@ -60,7 +60,7 @@ test('OpenCode uses its own DSH record without falling back to a shared environm
   const reader = createProviderQuotaReader(ctx, async (url, options) => {
     queries++
     assert.equal(url, 'https://opencode.ai/zen/go/v1/usage')
-    assert.equal(options.headers.authorization, 'Bearer dsh-go-record-key')
+    assert.equal(options.headers.authorization, 'Bearer opencode-record-key')
     return { ok: true, json: async () => ({ usage: { rolling: { percent: 10 } } }) }
   })
   assert.equal((await reader(true)).quotas[0].provider, 'opencode-go')

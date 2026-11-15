@@ -800,8 +800,15 @@ test('a session with a projected model still opens on the effort slider', async 
   // the rail element it renders.
   assert.ok(walk(tree, (node) => node.props?.className === 'rs2-sliderbox'), 'a projected model keeps the effort slider as the first pane')
   assert.equal(walk(tree, (node) => node.props?.className === 'rs2-back'), null, 'the advanced pane is not reached through the back button')
+  // The header is one control: the level headline and the model breadcrumb are
+  // both inside the same button, so either click opens the model list.
   const jump = walk(tree, (node) => node.props?.className === 'rs2-modeljump')
   assert.ok(jump, 'the advanced pane offers the way to the model list')
+  assert.equal(jump.type, 'button', 'the whole header must be the model-list button')
+  assert.ok(walkAll(tree, (node) => typeof node.props?.className === 'string' && node.props.className.startsWith('rs2-curlevel')).length >= 1,
+    'the current level is rendered as the headline inside that button')
+  assert.equal(walk(tree, (node) => node.props?.className === 'rs2-reset'), null,
+    'no reset control is offered')
   jump.props.onClick()
   tree = harness.paint('session-existing')
   assert.ok(walkAll(tree, (node) => node.props?.className === 'rs2-option').length >= 1, 'the model list is one click away')
@@ -933,6 +940,48 @@ test('a session that does not exist yet lists the shared catalog and writes the 
   assert.match(textOf(tree), /Model Two/, 'the trigger follows the accepted default')
 })
 
+/**
+ * The seat stages the level: sliding keeps the popover open, and the value is
+ * written when the picker is dismissed. Committing on every slide made the
+ * readout under the card flip mid-gesture, which is what the reference UI avoids.
+ */
+test('the seat stages a level and writes it when the picker closes', async () => {
+  const groups = [{ id: 'p', name: 'Provider', models: [{ id: 'm1', name: 'Model One', reasoning: { efforts: [{ id: 'low' }, { id: 'high' }], defaultEffort: 'low' } }] }]
+  const harness = mountSeat({
+    snapshot: { current: { provider: 'p', model: 'm1', reasoningEffort: 'low' }, routable: null, groups, failures: [], status: 'ready', pending: null, error: null },
+  })
+  await harness.settle()
+
+  let tree = harness.paint('session-effort')
+  walk(tree, (node) => node.props?.className === 'rs2-trigger').props.onClick()
+  tree = harness.paint('session-effort')
+  assert.ok(walk(tree, (node) => node.props?.className === 'rs2-sliderbox'), 'the trigger opens on the effort slider')
+  assert.match(textOf(tree), /选择推理强度/, 'the readout asks for a level while the picker is open')
+
+  const trigger = walk(tree, (node) => node.props?.className === 'rs2-trigger')
+  const slider = walk(tree, (node) => typeof node.props?.onCommit === 'function' && typeof node.props?.onPreview === 'function')
+  assert.ok(slider, 'the slider exposes a commit callback')
+  slider.props.onCommit(1)
+  await harness.settle()
+  tree = harness.paint('session-effort')
+
+  assert.equal(harness.selections.length, 0, 'sliding only stages the level')
+  assert.ok(walk(tree, (node) => node.props?.className === 'rs2-sliderbox'), 'the picker stays open after a slide')
+  assert.match(textOf(tree), /选择推理强度/, 'the readout still asks for a level until the picker closes')
+
+  walk(tree, (node) => node.props?.className === 'rs2-trigger').props.onClick()
+  await harness.settle()
+  tree = harness.paint('session-effort')
+
+  assert.equal(harness.selections.length, 1, 'dismissing the picker writes the staged level')
+  assert.equal(harness.selections[0].reasoningEffort, 'high')
+  assert.equal(walk(tree, (node) => typeof node.props?.className === 'string' && node.props.className.startsWith('rs2-menu')), null,
+    'the popover is gone once the choice is written')
+  assert.doesNotMatch(textOf(tree), /选择推理强度/, 'the readout shows the model and its level again')
+  assert.match(textOf(tree), /Model One/, 'the model name is back in the trigger')
+  assert.ok(trigger, 'the trigger is the control that dismisses the picker')
+})
+
 test('a rejected default-model write keeps the menu open and shows the reason', async () => {
   const groups = [{ id: 'p', name: 'Provider', models: [{ id: 'm1', name: 'Model One' }] }]
   const harness = mountSeat({
@@ -986,11 +1035,11 @@ test('the slider keeps auto as the lowest stop when a model has no default effor
   const at = source.indexOf('function seatEffortStops(')
   const end = source.indexOf('\n    }', at)
   assert.ok(at >= 0 && end > at)
-  const stopsFor = new Function('seatEffortZh', 't', source.slice(at, end + 6) + '; return seatEffortStops')((id) => id, fallbackTranslation)
+  const stopsFor = new Function('seatEffortLabel', 't', source.slice(at, end + 6) + '; return seatEffortStops')((id) => id, fallbackTranslation)
   const reasoning = { efforts: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }] }
 
   assert.deepEqual(stopsFor(reasoning).map((stop) => stop.id), [undefined, 'low', 'medium', 'high'])
-  assert.equal(stopsFor(reasoning)[0].label, '自动')
+  assert.equal(stopsFor(reasoning)[0].label, 'Auto')
   assert.deepEqual(stopsFor({ ...reasoning, defaultEffort: 'high' }).map((stop) => stop.id), ['low', 'medium', 'high'])
 })
 
@@ -1002,6 +1051,7 @@ test('ordinary efforts keep their dots while the highest effort releases them an
   const React = {
     createElement(type, props, ...children) { return { type, props: { ...props, children } } },
     useRef(value) { return { current: value } },
+    useState(value) { return [value, function () {}] },
   }
   const SeatSlider = new Function('React', 'seatPrand', 't', source.slice(start, end) + '; return SeatSlider')(React, (i, salt) => ((i * 37 + salt * 13) % 97) / 97, fallbackTranslation)
   const render = (value) => SeatSlider({ count: 5, value, onPreview() {}, onCommit() {} })
@@ -1081,12 +1131,18 @@ test('the seat slider paints its fill with the real accent token, never the mono
     'the rail keeps rounded ends and a theme-aware neutral rest')
   assert.match(cssLiteral, /\.rs2-fill\{[^\n]*SEAT_BLUE/,
     'the ordinary fill uses the reference blue')
-  assert.match(cssLiteral, /\.rs2-fill\{[^\n]*width:calc\(14px \+ \(100% - 28px\) \* var\(--rs2-p,0\)\)/,
+  assert.match(cssLiteral, /\.rs2-fill\{[^\n]*width:calc\(11px \+ \(100% - 22px\) \* var\(--rs2-p,0\)\)/,
     'the lowest fill ends beneath the thumb without a visible blue overflow')
-  assert.match(cssLiteral, /\.rs2-max \.rs2-fill\{[^\n]*SEAT_BLUE[^\n]*SEAT_MAX_ACCENT/,
-    'the full-strength fill transitions from blue to purple')
-  assert.match(cssLiteral, /\.rs2-dot\{[^\n]*width:28px;height:28px;border-radius:50%/,
-    'the white thumb is circular and slightly taller than the 24px rail')
+  assert.match(cssLiteral, /\.rs2-fill\{[^\n]*border-radius:999px[^\n]*var\(--rs2-fill,/,
+    'below the top stop the fill is one flat colour, with no speckle texture')
+  assert.doesNotMatch(cssLiteral, /\.rs2-fill\{[^\n]*radial-gradient/,
+    'the white speckles belong to the max stop only, not to every level')
+  assert.match(cssLiteral, /\.rs2-knob\{[^\n]*box-sizing:border-box;width:22px;height:22px[^\n]*border-radius:50%/,
+    'the white thumb is a 22px circle with its rim inside the box')
+  assert.match(cssLiteral, /\.rs2-rail\{[^\n]*inset:2px 0/,
+    'the rail and the 22px thumb must keep the same thickness (26px track minus 2px insets)')
+  assert.match(cssLiteral, /\.rs2-knob\{[^\n]*border:1px solid/,
+    'a crisp rim keeps the round thumb visible against the pale full-strength fill')
   assert.match(cssLiteral, /\.rs2-max \.rs2-tick-shell\{animation:rs2-tick-flight[^\n]*forwards/,
     'all stop marks leave their positions and stay away until full strength ends')
   assert.match(cssLiteral, /\.rs2-stream\{[^\n]*animation:rs2-stream-flight[^\n]*linear infinite/,
@@ -1112,10 +1168,13 @@ test('the advanced selector exposes five page-level themes while blue keeps the 
   // The themed slots read from the page variables, with the original tokens as
   // fallbacks so a selector mounted before its settings arrive stays branded.
   assert.match(source, /\.rs2-trigger-icon\{[^\n]*var\(--rs2-accent,[^\n]*SEAT_ACCENT/)
-  assert.match(source, /\.rs2-curlevel\{[^\n]*var\(--rs2-accent,[^\n]*SEAT_ACCENT/)
+  assert.match(source, /\.rs2-curlevel\{[^\n]*var\(--rs2-accent,[^\n]*SEAT_ACCENT/,
+    'every level keeps the palette accent, not just the top stop')
+  assert.match(source, /\.rs2-curlevel-max\{[^\n]*var\(--rs2-max,[^\n]*SEAT_MAX_ACCENT/,
+    'only the top stop tints the headline with the palette max colour')
   assert.match(source, /\.rs2-check\{[^\n]*var\(--rs2-accent,[^\n]*SEAT_ACCENT/)
   assert.match(source, /\.rs2-fill\{[^\n]*var\(--rs2-fill,[^\n]*SEAT_BLUE/)
-  assert.match(source, /\.rs2-max \.rs2-fill\{[^\n]*var\(--rs2-fill,[^\n]*SEAT_BLUE[^\n]*var\(--rs2-max,[^\n]*SEAT_MAX_ACCENT/)
+  assert.match(source, /\.rs2-fill\{[^\n]*var\(--rs2-max,[^\n]*SEAT_MAX_ACCENT/)
   assert.match(source, /seatColors: SEAT_COLOR_NAMES\.map/)
   assert.match(source, /\.dshus-seat-color \{[^\n]*background: var\(--dshus-seat-swatch\)/)
   assert.match(source, /\.dshus-seat-color\[aria-pressed="true"\]/)
@@ -1215,10 +1274,26 @@ test('the seat collapses with the host compact mode and clamps its popover on na
   assert.match(rule('.rs2-trigger{'), /width:max-content/, 'the trigger must fit the full model name')
   assert.doesNotMatch(rule('.rs2-trigger-name{'), /text-overflow:ellipsis|overflow:hidden/,
     'the model name must never be truncated')
-  assert.doesNotMatch(rule('.rs2-modeljump-name{') + rule('.rs2-optname{'), /text-overflow:ellipsis|overflow:hidden/,
-    'model names in the menu must wrap instead of showing an ellipsis')
-  assert.doesNotMatch(rule('.rs2-trigger-effort{'), /min-width:36px/,
-    'the effort label must not reserve a wide gap before the arrow')
+  assert.doesNotMatch(rule('.rs2-optname{'), /text-overflow:ellipsis|overflow:hidden/,
+    'model names in the list must wrap instead of showing an ellipsis')
+  // The advanced pane is a narrow bubble, so its breadcrumb line clips instead
+  // of wrapping (a wrapped two-line header looked broken under a short trigger).
+  assert.match(rule('.rs2-menu.rs2-menu-adv .rs2-modeljump-name{'), /text-overflow:ellipsis/,
+    'the advanced pane keeps its header on one line inside the narrow card')
+  // The level rides directly behind the model name: no hidden sizer, so no dead
+  // space between the two texts (and the chevron follows the level).
+  assert.doesNotMatch(rule('.rs2-trigger-effort{'), /min-width/,
+    'the badge sizes itself from its own text instead of a guessed fixed width')
+  assert.doesNotMatch(source, /longestLabel/,
+    'no hidden sizer reserves width between the model name and the level')
+  assert.match(rule('.rs2-trigger-effort{'), /margin-left:4px/,
+    'the level sits a hair behind the model name')
+  assert.match(rule('.rs2-trigger-effort{'), /color:var\(--rs2-accent,/,
+    'every level is tinted, not just the high stop')
+  assert.doesNotMatch(rule('.rs2-trigger-effort{'), /label-caption/,
+    'the collapsed badge is not the neutral caption colour')
+  assert.match(rule('.rs2-trigger-effort.rs2-effort-max{'), /var\(--rs2-max,/,
+    'the top stop leans into the max colour like the card headline')
 
   // The trigger must still be reachable when it collapses to a bare icon.
   assert.match(rule('.rs2-trigger{'), /min-width/, 'the collapsed trigger needs a hit target')
@@ -1226,8 +1301,15 @@ test('the seat collapses with the host compact mode and clamps its popover on na
   // Width follows the official `width:max-content` + viewport clamp pattern so
   // the popover never exceeds the window it is clamped to.
   const menu = rule('.rs2-menu{')
-  assert.match(menu, /max-width:min\(420px,100vw - 32px\)/,
-    'the menu must clamp to the viewport like the official popover')
+  assert.match(menu, /width:max-content/, 'the menu sizes to its content like the host menu')
+  assert.match(menu, /min-width:min\(200px,calc\(100vw - 32px\)\)/,
+    'the menu keeps a narrow floor that still clamps to the viewport')
+  assert.match(menu, /max-width:min\(300px,calc\(100vw - 32px\)\)/,
+    'the model list never grows past the host cap or the viewport')
+  assert.match(rule('.rs2-menu.rs2-menu-adv{'), /max-width:min\(224px,calc\(100vw - 32px\)\)/,
+    'the advanced pane is a compact bubble: 224px instead of a 300px panel')
+  assert.match(rule('.rs2-sliderbox{'), /width:208px/,
+    'the slider row gives the advanced pane its floor so the menu cannot collapse')
   assert.match(menu, /box-sizing:border-box/,
     'the viewport width limit must include menu padding')
   assert.match(menu, /left:50%;transform:translateX\(-50%\)/,
@@ -1303,6 +1385,71 @@ test('the popover clamp keeps the panel inside the viewport at every width', () 
   }
 })
 
+
+/**
+ * The request log is one table reused in two panels (dashboard section and the
+ * usage module). Its column alignment therefore lives on the table class, not on
+ * the hosting panel, and it centres every column so the header sits over the
+ * middle of its values.
+ */
+test('the request log centres a column header over its cells', () => {
+  const source = renderClient()
+
+  assert.match(source,
+    /\.dshus-table\.dshus-logs-table th, \.dshus-table\.dshus-logs-table td \{ text-align: center; \}/,
+    'one table-level rule centres both the header and its cells')
+  assert.doesNotMatch(source, /\.dshus-table\.dshus-logs-table th\.dshus-log-col-num[^}]*text-align: right/,
+    'numeric columns must not fall back to a right edge while the rest is centred')
+  assert.doesNotMatch(source, /\.dshus-dash-logs \.dshus-table th\.dshus-log-col/,
+    'alignment must not be re-declared per panel: one table-level rule has to win')
+  assert.doesNotMatch(source, /\.dshus-logs-module \.dshus-table th\.dshus-log-col/,
+    'alignment must not be re-declared per panel: one table-level rule has to win')
+})
+
+/**
+ * The stylesheet rule is not enough on its own: the host styles `th` too, and a
+ * panel CSS surprise once left the header offset from its values. Every cell of
+ * the request log must carry the alignment inline so header and value share one
+ * axis no matter which stylesheet wins.
+ */
+test('the request log cells carry their alignment inline, header and value alike', () => {
+  const source = renderClient()
+  const alignAt = source.indexOf('var LOG_CELL_ALIGN = ')
+  assert.ok(alignAt >= 0, 'LOG_CELL_ALIGN must be defined')
+  const alignLine = source.slice(alignAt, source.indexOf('\n', alignAt))
+
+  const headAt = source.indexOf('function logTableHead')
+  const rowAt = source.indexOf('function logRowElement')
+  assert.ok(headAt >= 0 && rowAt >= 0, 'both request-log renderers must be locatable')
+  const headEnd = source.indexOf('\n    }', headAt)
+  const rowEnd = source.indexOf('\n    }', rowAt)
+
+  const scope = [
+    alignLine,
+    source.slice(headAt, headEnd + 6),
+    source.slice(rowAt, rowEnd + 6),
+    'return { logTableHead: logTableHead, logRowElement: logRowElement }',
+  ].join('\n')
+  const identity = (value) => String(value)
+  const React = { createElement: (type, props, ...children) => ({ type, props: props || {}, children }) }
+  const render = new Function('React', 't', 'fmt', 'fmtExact', 'fmtInTz', 'fmtCost', 'LOCAL_TZ', scope)
+  const log = render(React, (key) => key, identity, identity, identity, identity, 'UTC')
+
+  const headers = log.logTableHead().children[0].children[0]
+  const row = log.logRowElement({
+    time: 0, title: 'Session', provider: 'p', model: 'm', cost: 0.1,
+    inputTokens: 10, outputTokens: 20, cacheReadTokens: 30, tokensPerSecond: 40, ttftMs: 500,
+  }, 0)
+
+  assert.equal(headers.length, 10, 'every column has a header')
+  assert.equal(row.children.length, 10, 'every column has a value')
+  ;[headers, row.children].forEach((cells, side) => {
+    cells.forEach((cell, index) => {
+      assert.equal(cell.props.style?.textAlign, 'center',
+        (side === 0 ? 'header ' : 'value ') + index + ' must be centred like the rest of its column')
+    })
+  })
+})
 
 test('model provider picker keeps keyboard focus and scrolling local', () => {
   let plugin, section, hooks, hookIndex = 0, effects = []

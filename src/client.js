@@ -364,6 +364,11 @@ var clientStyles = createClientStyles()
 var styles = clientStyles.styles
 var SEAT_CSS = clientStyles.seatCss
 var SEAT_COLOR_CHOICES = clientStyles.seatColors || []
+// Stamped into the diagnostics so a stale renderer bundle (the host can serve
+// last build until the window is reloaded) is distinguishable from a real
+// layout regression.
+var SEAT_REV = SEAT_CSS.indexOf('rs2-menu.rs2-menu-adv') >= 0 ? 'r227'
+  : SEAT_CSS.indexOf('width:max-content') >= 0 ? 'r222' : 'legacy'
 
 function injectStyles() {
       // Always refresh the stylesheet content, even when the element already
@@ -387,12 +392,20 @@ function injectStyles() {
     }
 
 function markUsageNavIcon() {
-      var buttons = document.querySelectorAll('[data-shortcut-modal="settings"] nav button')
+      var label = t('用量统计')
+      // Host markup moved around before (the icon svg is not always a direct
+      // child and the label is not always the first span), so match any span
+      // or the whole button text, and also scan open-dialog navs as a fallback.
+      var buttons = document.querySelectorAll('[data-shortcut-modal="settings"] nav button, dialog[open] nav button')
       for (var i = 0; i < buttons.length; i++) {
-        var label = buttons[i].querySelector('span')
-        if (label && label.textContent.trim() === t('用量统计')) {
-          buttons[i].setAttribute('data-dshus-nav-icon', '')
+        var button = buttons[i]
+        var matched = button.textContent.trim() === label
+        var spans = button.querySelectorAll('span')
+        for (var j = 0; j < spans.length && !matched; j++) {
+          if (spans[j].textContent.trim() === label) matched = true
         }
+        if (matched) button.setAttribute('data-dshus-nav-icon', '')
+        else if (button.hasAttribute('data-dshus-nav-icon')) button.removeAttribute('data-dshus-nav-icon')
       }
     }
 
@@ -2518,34 +2531,47 @@ function OverviewDetails(props) {
       }))
     }
 
+// Every column of the request log is centred - header and value alike - so a
+// label always sits over the middle of its numbers. The alignment rides on the
+// cells inline, not only in the stylesheet: this table is mounted by two
+// different panels and the host also styles `th`, so a class-only rule can lose
+// the cascade and leave the header offset from its column.
+var LOG_CELL_ALIGN = { textAlign: 'center' }
+
 function logTableHead() {
+      var columns = [['时间', 'text'], ['应用', 'text'], ['供应商', 'text'], ['模型', 'text'], ['成本', 'num'], ['新增输入', 'num'], ['输出', 'num'], ['缓存命中', 'num'], ['速度', 'num'], ['首字', 'num']]
       return React.createElement('thead', null,
-        React.createElement('tr', null,
-          ['时间', '应用', '供应商', '模型', '成本', '新增输入', '输出', '缓存命中', '速度', '首字'].map(function (label) {
-            return React.createElement('th', { key: label }, t(label))
-          }),
-        ),
+        React.createElement('tr', null, columns.map(function (column) {
+          return React.createElement('th', {
+            key: column[0],
+            className: 'dshus-log-col-' + column[1],
+            style: LOG_CELL_ALIGN,
+          }, t(column[0]))
+        })),
       )
     }
 
 function logRowElement(row, index) {
-      var title = row.detection ? t('模型检测') : (row.title || '—')
+      var rawTitle = row.detection ? t('模型检测') : (row.title || '')
+      // Session titles sometimes start with a raw code fence ("```json");
+      // show the bare title and keep the original under the hover tip.
+      var title = rawTitle.replace(/^`{1,3}[A-Za-z0-9+#_-]*\s*/, '').trim() || '—'
       var speed = typeof row.tokensPerSecond === 'number' && row.tokensPerSecond > 0 ? '≈' + row.tokensPerSecond.toFixed(1) + ' tok/s' : '—'
       var ttft = typeof row.ttftMs === 'number' ? '≈' + (row.ttftMs / 1000).toFixed(1) + 's' : '—'
       var numCell = function (value, key) {
-        return React.createElement('td', { key: key, className: 'dshus-log-num', 'data-dshus-tip': fmtExact(value) }, fmt(value))
+        return React.createElement('td', { key: key, className: 'dshus-log-num', style: LOG_CELL_ALIGN, 'data-dshus-tip': fmtExact(value) }, fmt(value))
       }
       return React.createElement('tr', { key: String(row.time) + '-' + index },
-        React.createElement('td', { className: 'dshus-log-time' }, fmtInTz(row.time, LOCAL_TZ)),
-        React.createElement('td', { className: 'dshus-log-app', 'data-dshus-tip': title }, title),
-        React.createElement('td', null, row.provider),
-        React.createElement('td', { className: 'dshus-log-model', 'data-dshus-tip': row.rawModel || row.model }, row.model),
-        React.createElement('td', { className: 'dshus-log-num dshus-log-cost' }, fmtCost(row.cost)),
+        React.createElement('td', { className: 'dshus-log-time', style: LOG_CELL_ALIGN }, fmtInTz(row.time, LOCAL_TZ)),
+        React.createElement('td', { className: 'dshus-log-app', style: LOG_CELL_ALIGN, 'data-dshus-tip': rawTitle || title }, title),
+        React.createElement('td', { style: LOG_CELL_ALIGN }, row.provider),
+        React.createElement('td', { className: 'dshus-log-model', style: LOG_CELL_ALIGN, 'data-dshus-tip': row.rawModel || row.model }, row.model),
+        React.createElement('td', { className: 'dshus-log-num dshus-log-cost', style: LOG_CELL_ALIGN }, fmtCost(row.cost)),
         numCell(row.inputTokens, 'in'),
         numCell(row.outputTokens, 'out'),
         numCell(row.cacheReadTokens, 'cache'),
-        React.createElement('td', { className: 'dshus-log-num' }, speed),
-        React.createElement('td', { className: 'dshus-log-num' }, ttft),
+        React.createElement('td', { className: 'dshus-log-num', style: LOG_CELL_ALIGN }, speed),
+        React.createElement('td', { className: 'dshus-log-num', style: LOG_CELL_ALIGN }, ttft),
       )
     }
 
@@ -2669,6 +2695,51 @@ function useDashboardOpen() {
 function usageChartIcon(size) {
       return React.createElement('svg', { viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
         React.createElement('path', { d: 'M4 20h16M7 20v-8M12 20V5M17 20v-5' }))
+    }
+
+function priceTagIcon(size) {
+      return React.createElement('svg', { viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
+        React.createElement('path', { d: 'M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V4a2 2 0 0 1 2-2h8l8.59 8.59a2 2 0 0 1 0 2.82z' }),
+        React.createElement('circle', { cx: '7.5', cy: '7.5', r: '1.5' }))
+    }
+
+var RANK_STAT_ICONS = {
+      calls: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+      tokens: 'M4 5.5c0-1.66 3.58-3 8-3s8 1.34 8 3v13c0 1.66-3.58 3-8 3s-8-1.34-8-3zM4 5.5c0 1.66 3.58 3 8 3s8-1.34 8-3M4 11.5c0 1.66 3.58 3 8 3s8-1.34 8-3',
+      cache: 'M13 2 3 14h9l-1 8 10-12h-9l1-8z',
+      cost: 'M3 7.5h18v9H3zM7.5 12h.01M16.5 12h.01M12 12h.01',
+    }
+
+function rankStatIcon(kind) {
+      return React.createElement('svg', { viewBox: '0 0 24 24', width: 15, height: 15, fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true' },
+        React.createElement('path', { d: RANK_STAT_ICONS[kind] || RANK_STAT_ICONS.calls }))
+    }
+
+// Last ≤7 days of the current metric as a mini bar row; hover a bar for the
+// exact day and value.
+function rankDaySpark(entry, metric, group) {
+      var days = entry.days.slice(-7)
+      var color = dashboardGroupColor(entry, group)
+      var values = days.map(function (d) {
+        return metric === 'cost' ? (Number(d.cost) || 0) : metric === 'calls' ? (Number(d.calls) || 0) : (Number(d.billed) || 0)
+      })
+      var max = 0
+      for (var i = 0; i < values.length; i++) if (values[i] > max) max = values[i]
+      return React.createElement('div', { className: 'dshus-dash-rank-spark' },
+        React.createElement('em', { className: 'dshus-dash-rank-spark-label' }, days[0].date.slice(5)),
+        React.createElement('div', { className: 'dshus-dash-rank-spark-bars', role: 'img', 'aria-label': t('最近 {count} 天', { count: days.length }) },
+          days.map(function (d, index) {
+            var value = values[index]
+            var height = value > 0 && max > 0 ? Math.max(3, Math.round(value / max * 30)) : 2
+            var text = metric === 'cost' ? fmtCost(d.cost) : metric === 'calls' ? fmtExact(d.calls) : fmt(d.billed)
+            return React.createElement('i', {
+              key: d.date, style: { height: height + 'px', background: color },
+              'data-zero': value > 0 ? undefined : '',
+              'data-dshus-tip': d.date.slice(5) + ' · ' + text,
+            })
+          })),
+        React.createElement('em', { className: 'dshus-dash-rank-spark-label' }, days[days.length - 1].date.slice(5)),
+      )
     }
 
 function UsageDashboardTrigger(props) {
@@ -3012,8 +3083,14 @@ function dashboardNiceMax(value) {
       return 10 * base
     }
 
-function dashboardSeriesLabel(point, granularity) {
-      if (granularity === 'hour') return dashboardPad(new Date(Number(point.key)).getHours()) + ':00'
+function dashboardSeriesLabel(point, granularity, multiDay) {
+      if (granularity === 'hour') {
+        var date = new Date(Number(point.key))
+        // A hourly window crossing midnight marks the day change at 00:00,
+        // the way cc-switch labels its multi-day hourly axis.
+        if (multiDay && date.getHours() === 0) return dashboardPad(date.getMonth() + 1) + '/' + dashboardPad(date.getDate())
+        return dashboardPad(date.getHours()) + ':00'
+      }
       if (granularity === 'month') return point.key
       return point.key.slice(5)
     }
@@ -3066,6 +3143,69 @@ function dashboardPointModels(point, metric) {
       })
     }
 
+/**
+ * The chart's stack/legend dimension. "model" reuses the by-model fold;
+ * "provider" folds the same per-bucket rows by provider so the bars, legend and
+ * hover card can all switch between the two without touching the data shape.
+ */
+function dashboardPointGroups(point, metric, group) {
+      if (group !== 'provider') return dashboardPointModels(point, metric)
+      var source = (point && point.models) || []
+      var merged = []
+      var index = Object.create(null)
+      for (var i = 0; i < source.length; i++) {
+        var entry = source[i]
+        var id = entry.provider || 'unknown'
+        if (index[id] === undefined) {
+          index[id] = merged.length
+          merged.push({ key: 'by-provider:' + id, provider: id, model: id,
+            cost: 0, billed: 0, calls: 0, inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+        }
+        var row = merged[index[id]]
+        row.cost += entry.cost || 0
+        row.billed += entry.billed || 0
+        row.calls += entry.calls || 0
+        row.inputTokens += entry.inputTokens || 0
+        row.cacheReadTokens += entry.cacheReadTokens || 0
+        row.cacheWriteTokens += entry.cacheWriteTokens || 0
+      }
+      for (var m = 0; m < merged.length; m++) {
+        var base = merged[m].inputTokens + merged[m].cacheReadTokens + merged[m].cacheWriteTokens
+        merged[m].cacheHitRate = base > 0 ? merged[m].cacheReadTokens / base : null
+      }
+      return merged.sort(function (a, b) {
+        return (dashboardMetricValue(b, metric) || 0) - (dashboardMetricValue(a, metric) || 0)
+      })
+    }
+
+function dashboardGroupColor(entry, group) {
+      return sharedModelColor(group === 'provider' ? (entry.provider || entry.model) : entry.model)
+    }
+
+/**
+ * Range-wide ranking rows (from the backend aggregates) ordered by the active
+ * metric, each with a share of the range total. Works in every granularity,
+ * including "all" where the series is empty but the aggregates are not.
+ */
+function dashboardRankRows(data, metric, group) {
+      var source = (data && (group === 'provider' ? data.providerRanking : data.modelRanking)) || []
+      var rows = source.map(function (r) {
+        return {
+          key: group === 'provider' ? 'p:' + r.provider : r.key,
+          provider: r.provider, model: group === 'provider' ? r.provider : sharedModelDisplayName(r.model),
+          cost: r.cost, billed: r.billed, calls: r.calls, cacheHitRate: r.cacheHitRate, days: r.days || [],
+        }
+      })
+      rows.sort(function (a, b) { return (dashboardMetricValue(b, metric) || 0) - (dashboardMetricValue(a, metric) || 0) })
+      var sum = 0
+      for (var i = 0; i < rows.length; i++) { var v = dashboardMetricValue(rows[i], metric); if (v !== null) sum += v }
+      for (var j = 0; j < rows.length; j++) {
+        var value = dashboardMetricValue(rows[j], metric)
+        rows[j].share = metric === 'cache' ? (value !== null ? value / 100 : 0) : (sum > 0 && value !== null ? value / sum : 0)
+      }
+      return rows
+    }
+
 function dashboardCacheFloor(series) {
       var min = null
       for (var index = 0; index < series.length; index++) {
@@ -3099,6 +3239,12 @@ function UsageDashboard(props) {
       var provider = providerState[0], setProvider = providerState[1]
       var modelState = React.useState('')
       var model = modelState[0], setModel = modelState[1]
+      var groupState = React.useState('model')
+      var group = groupState[0], setGroup = groupState[1]
+      var rankOpenState = React.useState({})
+      var rankOpen = rankOpenState[0], setRankOpen = rankOpenState[1]
+      var rankAllState = React.useState(false)
+      var rankAll = rankAllState[0], setRankAll = rankAllState[1]
       var pageState = React.useState(1)
       var page = pageState[0], setPage = pageState[1]
       var pageSizeState = React.useState(10)
@@ -3109,9 +3255,24 @@ function UsageDashboard(props) {
       var loading = loadingState[0], setLoading = loadingState[1]
       var errorState = React.useState('')
       var error = errorState[0], setError = errorState[1]
+      var granularity = data ? data.granularity : 'day'
       var dashTipState = React.useState(null)
       var dashTip = dashTipState[0], setDashTip = dashTipState[1]
+      // Hover card position lives outside React state: it is written straight to
+      // the node in a rAF (cc-switch style glide), so travelling the cursor across
+      // the plot never re-renders the dialog — only a bucket change does.
+      var dashTipRef = React.useRef(null)
+      var dashBarsRef = React.useRef(null)
+      var dashTipPos = React.useRef({ x: 0, y: 0, frame: 0 })
+      var dashWidthState = React.useState(0)
+      var dashWidth = dashWidthState[0], setDashWidth = dashWidthState[1]
       var requestRef = React.useRef(0)
+      var priceOpenState = React.useState(false)
+      var priceOpen = priceOpenState[0], setPriceOpen = priceOpenState[1]
+      var priceModelState = React.useState([])
+      var priceModels = priceModelState[0], setPriceModels = priceModelState[1]
+      var priceLoadingState = React.useState(false)
+      var priceLoading = priceLoadingState[0], setPriceLoading = priceLoadingState[1]
 
       function load(fresh) {
         var request = ++requestRef.current
@@ -3136,6 +3297,26 @@ function UsageDashboard(props) {
           })
       }
 
+      function openPrice() {
+        if (priceLoading) return
+        setPriceLoading(true)
+        // The price editor snapshots its drafts from the model list when it
+        // mounts, so it must only open after the all-time costs payload (which
+        // carries every model with its saved price) has arrived — opening it
+        // earlier would freeze blank drafts on the first click.
+        api.costs({ from: 0, to: 0, provider: '', fresh: false })
+          .then(function (body) {
+            setPriceModels((body && body.priceModels) || [])
+            setPriceLoading(false)
+            setPriceOpen(true)
+          })
+          .catch(function () {
+            setPriceModels([])
+            setPriceLoading(false)
+            setPriceOpen(true)
+          })
+      }
+
       React.useEffect(function () {
         if (!open) return
         load(false)
@@ -3150,6 +3331,33 @@ function UsageDashboard(props) {
           else dialog.setAttribute('open', '')
         } else if (!open && dialog.open) dialog.close()
       }, [open])
+
+      // Measure the plot before paint (same pattern as the heatmap viewport) so
+      // hour labels thin out on narrow windows instead of clipping. Re-attach
+      // when the dialog opens or the granularity swaps the chart node.
+      var useDashMeasure = React.useLayoutEffect || React.useEffect
+      useDashMeasure(function () {
+        var node = dashBarsRef.current
+        if (!node) return
+        var measure = function () {
+          var width = Math.max(0, node.clientWidth)
+          setDashWidth(width)
+          return width
+        }
+        if (measure() === 0 && window.requestAnimationFrame) {
+          // The <dialog> is shown by a passive effect after this layout effect,
+          // so the first read can be 0; re-measure next frame to thin labels on
+          // the first paint even where ResizeObserver delivery is delayed.
+          window.requestAnimationFrame(measure)
+        }
+        var observer = window.ResizeObserver ? new window.ResizeObserver(measure) : null
+        if (observer) observer.observe(node)
+        else if (window.addEventListener) window.addEventListener('resize', measure)
+        return function () {
+          if (observer) observer.disconnect()
+          else if (window.removeEventListener) window.removeEventListener('resize', measure)
+        }
+      }, [open, granularity])
 
       if (!open) return null
 
@@ -3271,7 +3479,6 @@ function UsageDashboard(props) {
       var totals = (data && data.totals) || null
       var series = (data && data.series) || []
       var heatmap = (data && data.heatmap) || null
-      var granularity = data ? data.granularity : 'day'
       var rows = (data && data.rows) || []
       var providers = (data && data.providers) || []
       var models = (data && data.models) || []
@@ -3285,6 +3492,22 @@ function UsageDashboard(props) {
         { key: 'billed', label: t('真实消耗 Tokens'), value: totals ? fmt(totals.billed) : '—', exact: totals ? fmtExact(totals.billed) + ' Token' : '' },
         { key: 'cache', label: t('缓存命中率'), value: cacheText, exact: totals && typeof totals.cacheHitRate === 'number' ? (totals.cacheHitRate * 100).toFixed(2) + '%' : t('缓存读取占全部输入的比例') },
       ]
+
+      var rankRows = dashboardRankRows(data, metric, group)
+      var legendRows = rankRows.slice(0, 6)
+      var legendRest = rankRows.length - legendRows.length
+      var chartTotalText = totals ? dashboardMetricText(totals, metric) : '—'
+      var chartRangeText = data ? dashboardRangeShort(data.from) + ' — ' + dashboardRangeShort(data.to) : ''
+      var legendEl = legendRows.length > 0 ? React.createElement('div', { className: 'dshus-dash-legend' },
+        legendRows.map(function (entry) {
+          return React.createElement('span', { className: 'dshus-dash-legend-item', key: entry.key },
+            React.createElement('i', { className: 'dshus-dash-legend-dot', style: { background: dashboardGroupColor(entry, group) } }),
+            React.createElement('span', { className: 'dshus-dash-legend-name' }, entry.model),
+            React.createElement('strong', null, metric === 'cache' ? dashboardMetricText(entry, metric) : formatPct(entry.share * 100)),
+          )
+        }),
+        legendRest > 0 && React.createElement('span', { className: 'dshus-dash-legend-item dshus-dash-legend-rest' }, t('其他 {count} 项', { count: legendRest })),
+      ) : null
 
       var metricValues = []
       var metricMax = 0
@@ -3305,33 +3528,83 @@ function UsageDashboard(props) {
         return fmtCost(tick)
       }
       var labelStep = Math.max(1, Math.ceil(series.length / 31))
+      if (granularity === 'hour' && dashWidth > 0) {
+        // A "00:00" tick needs ~34px; thin the labels on narrow plots instead of
+        // letting all 24 hours clip into each other.
+        labelStep = Math.max(1, Math.ceil(series.length / Math.max(1, Math.floor(dashWidth / 34))))
+      }
+      var hourMultiDay = granularity === 'hour' && series.length > 24
+      // Height of the hovered bar, so the active dot can sit on its top edge.
+      var dashActiveHeight = 0
+      if (dashTipState[0] && series.length > 0) {
+        var activeIndex = series.findIndex(function (p) { return p.key === dashTipState[0].key })
+        var activeValue = activeIndex >= 0 ? metricValues[activeIndex] : null
+        if (metric === 'cache') { if (activeValue !== null) dashActiveHeight = Math.max(3, (activeValue - cacheFloor) / Math.max(1, 100 - cacheFloor) * 100) }
+        else if (activeValue > 0 && axisMax > 0) dashActiveHeight = Math.max(3, activeValue / axisMax * 100)
+      }
       var metricLabel = metric === 'calls' ? t('请求数') : metric === 'billed' ? t('Tokens') : metric === 'cache' ? t('缓存命中率') : t('成本')
       var granularityLabel = granularity === 'hour' ? t('按小时') : granularity === 'month' ? t('按月') : t('按天')
 
       // One hover card per bucket: the bucket total on the selected metric, then
-      // every model that contributed to it. Mirrors the usage page's 24h chart so
-      // both charts read the same way.
-      function showDashTip(event, point) {
-        var models = dashboardPointModels(point, metric)
-        var x = event.clientX + 14
-        var y = event.clientY + 14
-        if (x + 270 > window.innerWidth) x = Math.max(8, event.clientX - 270)
-        var estimatedHeight = 70 + (models.length + 1) * 23
-        if (y + estimatedHeight > window.innerHeight) y = Math.max(8, window.innerHeight - estimatedHeight - 8)
-        // Re-anchoring on every mousemove would re-render the whole dialog —
-        // chart, stats and log table — while the cursor travels across one bar.
+      // every model that contributed to it — the same data structure as before.
+      // The card glides after the cursor like cc-switch's chart tooltip: position
+      // is written straight to the node in a rAF with a CSS transform transition,
+      // so moving across the plot stays smooth without re-rendering the dialog.
+      function placeDashTip() {
+        var node = dashTipRef.current
+        if (!node) return
+        var pos = dashTipPos.current
+        var width = node.offsetWidth || 260
+        var height = node.offsetHeight || 120
+        var x = pos.x + 14
+        var y = pos.y + 14
+        if (x + width > window.innerWidth - 8) x = Math.max(8, pos.x - width - 14)
+        if (y + height > window.innerHeight - 8) y = Math.max(8, pos.y - height - 14)
+        var first = !node.classList.contains('on')
+        if (first) node.style.transition = 'none'
+        node.style.transform = 'translate3d(' + Math.round(x) + 'px,' + Math.round(y) + 'px,0)'
+        if (first) {
+          // Flush the un-transitioned position before enabling the glide + fade,
+          // so the card appears at the cursor instead of flying in from (0,0).
+          void node.offsetWidth
+          node.style.transition = ''
+          node.classList.add('on')
+        }
+      }
+      function scheduleDashTip() {
+        var pos = dashTipPos.current
+        if (pos.frame) return
+        pos.frame = window.requestAnimationFrame
+          ? window.requestAnimationFrame(function () { pos.frame = 0; placeDashTip() })
+          : setTimeout(function () { pos.frame = 0; placeDashTip() }, 16)
+      }
+      // Track the hovered bucket from the cursor's X over the whole plot, so the
+      // card keeps following through the gaps between bars instead of flickering
+      // off and on. Only a bucket change touches React state.
+      function trackDashTip(event) {
+        var bars = dashBarsRef.current
+        if (!bars || series.length === 0) return
+        var rect = bars.getBoundingClientRect()
+        if (!(rect.width > 0)) return
+        var index = Math.floor((event.clientX - rect.left) / rect.width * series.length)
+        index = Math.min(series.length - 1, Math.max(0, index))
+        var point = series[index]
+        dashTipPos.current.x = event.clientX
+        dashTipPos.current.y = event.clientY
+        scheduleDashTip()
         setDashTip(function (previous) {
-          return previous && previous.key === point.key ? previous : { x: x, y: y, key: point.key }
+          return previous && previous.key === point.key ? previous : { key: point.key }
         })
       }
       function hideDashTip() { setDashTip(null) }
       var dashTipEl = null
       // Tracked by bucket key rather than index: a reload can change how many
       // buckets there are, and an index would then describe a different hour.
-      var dashTipPoint = dashTip ? series[series.findIndex(function (point) { return point.key === dashTip.key })] : null
+      var dashTipIndex = dashTip ? series.findIndex(function (point) { return point.key === dashTip.key }) : -1
+      var dashTipPoint = dashTipIndex >= 0 ? series[dashTipIndex] : null
       if (dashTipPoint) {
-        var tipModels = dashboardPointModels(dashTipPoint, metric)
-        dashTipEl = React.createElement('div', { className: 'dshus-tip dshus-chart-tip', style: { left: dashTip.x, top: dashTip.y } },
+        var tipModels = dashboardPointGroups(dashTipPoint, metric, group)
+        dashTipEl = React.createElement('div', { className: 'dshus-tip dshus-chart-tip dshus-dash-tip', ref: dashTipRef },
           React.createElement('div', { className: 'dshus-tip-name' }, dashboardTipName(dashTipPoint, granularity)),
           React.createElement('div', { className: 'dshus-tip-row' },
             React.createElement('span', { className: 'dshus-tip-swatch', style: { background: '#94a3b8' } }),
@@ -3340,7 +3613,7 @@ function UsageDashboard(props) {
           ),
           tipModels.map(function (entry) {
             return React.createElement('div', { className: 'dshus-tip-row', key: entry.key },
-              React.createElement('span', { className: 'dshus-tip-swatch', style: { background: sharedModelColor(entry.model) } }),
+              React.createElement('span', { className: 'dshus-tip-swatch', style: { background: dashboardGroupColor(entry, group) } }),
               React.createElement('span', null, entry.model),
               React.createElement('strong', null, dashboardMetricText(entry, metric)),
             )
@@ -3460,6 +3733,12 @@ function UsageDashboard(props) {
           React.createElement('div', { className: 'dshus-dash-title' }, usageChartIcon(18), React.createElement('h2', null, t('用量统计'))),
           React.createElement('div', { className: 'dshus-dash-head-actions' },
             data && React.createElement('span', { className: 'dshus-dash-sync' }, dashboardSyncLabel(data.syncedAt)),
+            React.createElement('button', {
+              type: 'button', id: 'dshus-dash-price-button', className: 'dshus-dash-iconbtn',
+              onClick: openPrice, 'aria-haspopup': 'dialog', disabled: priceLoading,
+              'aria-busy': priceLoading ? 'true' : undefined,
+              'data-dshus-tip': t('价格表'), 'aria-label': t('价格表'),
+            }, priceLoading ? React.createElement('span', { className: 'dshus-spin', 'aria-hidden': 'true' }) : priceTagIcon(16)),
             refreshIconButton(function () { load(true) }, loading, t('刷新用量统计')),
             React.createElement('button', {
               type: 'button', className: 'dshus-dash-close', onClick: function () { setDashboardOpen(false) },
@@ -3470,6 +3749,16 @@ function UsageDashboard(props) {
         ),
         React.createElement('div', { className: 'dshus-dash-body' },
           React.createElement('div', { className: 'dshus-dash-toolbar' },
+            React.createElement('div', { className: 'dshus-dash-seg', role: 'group', 'aria-label': t('时间范围') },
+              [['today', t('当天')]].map(function (option) {
+                return React.createElement('button', {
+                  type: 'button', key: option[0], className: 'dshus-dash-seg-btn',
+                  'data-active': range.preset === option[0] ? '' : undefined,
+                  'aria-pressed': range.preset === option[0],
+                  onClick: function () { setRange(dashboardRange(option[0])); setRangeOpen(false); setPage(1) },
+                }, option[1])
+              }),
+            ),
             React.createElement('div', { className: 'dshus-range-wrap', ref: rangeAnchorRef },
               React.createElement('button', {
                 type: 'button', className: 'dshus-range-trigger',
@@ -3492,6 +3781,13 @@ function UsageDashboard(props) {
               options: [{ value: '', name: t('全部模型') }].concat(models.map(function (name) { return { value: name, name: name } })),
               onChange: function (value) { setPage(1); setModel(value) },
             }),
+            React.createElement(SelectField, {
+              id: 'dshus-dash-group', variant: 'field',
+              'aria-label': t('分组维度'),
+              value: group,
+              options: [{ value: 'model', name: t('按模型') }, { value: 'provider', name: t('按供应商') }],
+              onChange: function (value) { setGroup(value); setRankOpen({}) },
+            }),
           ),
           error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
           React.createElement('div', { className: 'dshus-dash-stats' }, stats.map(function (entry) {
@@ -3505,23 +3801,47 @@ function UsageDashboard(props) {
             )
           })),
           granularity === 'heatmap' && heatmap
-            ? dashboardHeatmapElement(heatmap, metric)
+            ? dashboardHeatmapElement(heatmap, metric, { total: chartTotalText, range: chartRangeText, legend: legendEl })
             : React.createElement('section', { className: 'dshus-dash-chart' },
               React.createElement('div', { className: 'dshus-dash-chart-head' },
                 React.createElement('h3', null, metricLabel + ' · ' + granularityLabel),
+                React.createElement('div', { className: 'dshus-dash-chart-meta' },
+                  React.createElement('span', { className: 'dshus-dash-chart-range' }, chartRangeText),
+                  React.createElement('strong', { className: 'dshus-dash-chart-total' }, chartTotalText),
+                ),
               ),
               React.createElement('div', { className: 'dshus-dash-plot' },
                 (metric === 'cache' || axisMax > 0) && React.createElement('div', { className: 'dshus-dash-yaxis' }, axisTicks.map(function (tick, tickIndex) {
                   return React.createElement('span', { key: tickIndex }, axisText(tick))
                 })),
                 React.createElement('div', { className: 'dshus-dash-plot-main' },
-                  React.createElement('div', { className: 'dshus-dash-chart-bars', role: 'grid', 'aria-label': metricLabel + ' · ' + granularityLabel }, series.map(function (point, pointIndex) {
+                  React.createElement('div', {
+                    className: 'dshus-dash-chart-bars', ref: dashBarsRef, role: 'grid', 'aria-label': metricLabel + ' · ' + granularityLabel,
+                    'data-hover': dashTipPoint ? '' : undefined,
+                    onMouseMove: trackDashTip, onMouseLeave: hideDashTip,
+                  },
+                    // cc-switch's cursor band: a subtle column highlight that glides
+                    // to the hovered bucket, behind the bars.
+                    dashTipPoint && React.createElement('div', {
+                      className: 'dshus-dash-cursor',
+                      style: { left: (dashTipIndex / series.length * 100) + '%', width: (100 / series.length) + '%' },
+                    }),
+                    // ChatGPT-style crosshair + a dot riding the active bar's top.
+                    dashTipPoint && React.createElement('div', {
+                      className: 'dshus-dash-crosshair',
+                      style: { left: ((dashTipIndex + 0.5) / series.length * 100) + '%' },
+                    }),
+                    dashTipPoint && React.createElement('div', {
+                      className: 'dshus-dash-dot',
+                      style: { left: ((dashTipIndex + 0.5) / series.length * 100) + '%', bottom: dashActiveHeight + '%' },
+                    }),
+                    series.map(function (point, pointIndex) {
                     var pointValue = metricValues[pointIndex]
                     var height = '2px'
                     if (metric === 'cache') {
                       if (pointValue !== null) height = Math.max(3, (pointValue - cacheFloor) / Math.max(1, 100 - cacheFloor) * 100) + '%'
                     } else if (pointValue > 0 && axisMax > 0) height = Math.max(3, pointValue / axisMax * 100) + '%'
-                    var models = dashboardPointModels(point, metric)
+                    var models = dashboardPointGroups(point, metric, group)
                     // A hit rate is a ratio rather than a sum, so that bar stays
                     // solid; the hover card still splits it per model.
                     var segments = metric === 'cache' ? [] : models
@@ -3531,30 +3851,79 @@ function UsageDashboard(props) {
                     }).join('；')
                     return React.createElement('div', {
                       key: point.key, className: 'dshus-dash-bar', 'data-empty': pointValue === null || pointValue <= 0 ? '' : undefined,
+                      'data-active': dashTipPoint && dashTipPoint.key === point.key ? '' : undefined,
                       role: 'gridcell', tabIndex: 0, 'aria-label': ariaLabel,
-                      onMouseMove: function (event) { showDashTip(event, point) },
-                      onMouseLeave: hideDashTip,
-                      onClick: function (event) { showDashTip(event, point) },
+                      onClick: function (event) {
+                        dashTipPos.current.x = event.clientX
+                        dashTipPos.current.y = event.clientY
+                        scheduleDashTip()
+                        setDashTip({ key: point.key })
+                      },
                       onFocus: function (event) {
                         var rect = event.currentTarget.getBoundingClientRect()
-                        showDashTip({ clientX: rect.left, clientY: rect.bottom }, point)
+                        dashTipPos.current.x = rect.left + rect.width / 2
+                        dashTipPos.current.y = rect.top + rect.height / 2
+                        scheduleDashTip()
+                        setDashTip({ key: point.key })
                       },
                       onBlur: hideDashTip,
                     }, React.createElement('div', { className: 'dshus-dash-bar-fill', style: { height: height } },
                       segments.map(function (entry) {
                         return React.createElement('div', {
                           key: entry.key, className: 'dshus-dash-bar-seg',
-                          style: { flexGrow: Math.max(0, dashboardMetricValue(entry, metric) || 0), flexBasis: 0, background: sharedModelColor(entry.model) },
+                          style: { flexGrow: Math.max(0, dashboardMetricValue(entry, metric) || 0), flexBasis: 0, background: dashboardGroupColor(entry, group) },
                         })
                       })))
                   })),
                   React.createElement('div', { className: 'dshus-dash-axis' }, series.map(function (point, pointIndex) {
-                    return React.createElement('span', { key: point.key }, pointIndex % labelStep === 0 ? dashboardSeriesLabel(point, granularity) : '')
+                    return React.createElement('span', { key: point.key }, pointIndex % labelStep === 0 ? dashboardSeriesLabel(point, granularity, hourMultiDay) : '')
                   })),
                   dashTipEl,
                 ),
               ),
+              legendEl,
             ),
+          React.createElement('section', { className: 'dshus-dash-rank' },
+            React.createElement('div', { className: 'dshus-dash-logs-head' },
+              React.createElement('h3', null, group === 'provider' ? t('供应商排行') : t('模型排行')),
+              React.createElement('span', { className: 'dshus-muted' }, t('按{metric}排序', { metric: metricLabel })),
+            ),
+            React.createElement('div', { className: 'dshus-dash-rank-body' },
+              (rankAll ? rankRows : rankRows.slice(0, 5)).map(function (entry) {
+                var open = !!rankOpen[entry.key]
+                return React.createElement('div', { className: 'dshus-dash-rank-row', key: entry.key, 'data-open': open ? '' : undefined },
+                  React.createElement('button', {
+                    type: 'button', className: 'dshus-dash-rank-main', 'aria-expanded': open,
+                    onClick: function () { setRankOpen(function (prev) { var next = Object.assign({}, prev); next[entry.key] = !prev[entry.key]; return next }) },
+                  },
+                    React.createElement('span', { className: 'dshus-dash-rank-chev' }, chevronDownIcon(14)),
+                    React.createElement('i', { className: 'dshus-dash-legend-dot', style: { background: dashboardGroupColor(entry, group) } }),
+                    React.createElement('span', { className: 'dshus-dash-rank-name' }, entry.model,
+                      group !== 'provider' && entry.provider ? React.createElement('em', null, entry.provider) : null),
+                    React.createElement('span', { className: 'dshus-dash-rank-bar' },
+                      React.createElement('i', { style: { width: Math.max(2, entry.share * 100) + '%', background: dashboardGroupColor(entry, group) } })),
+                    React.createElement('strong', { className: 'dshus-dash-rank-value' }, metric === 'billed' ? fmt(dashboardMetricValue(entry, metric)) : dashboardMetricText(entry, metric)),
+                    React.createElement('span', { className: 'dshus-dash-rank-pct' }, metric === 'cache' ? '' : formatPct(entry.share * 100)),
+                  ),
+                  open && React.createElement('div', { className: 'dshus-dash-rank-detail' },
+                    React.createElement('div', { className: 'dshus-dash-rank-stats' },
+                      React.createElement('span', { className: 'dshus-dash-rank-stat', 'data-dshus-tip': t('请求数') },
+                        rankStatIcon('calls'), React.createElement('strong', null, fmtExact(entry.calls))),
+                      React.createElement('span', { className: 'dshus-dash-rank-stat', 'data-dshus-tip': t('真实消耗 Tokens') },
+                        rankStatIcon('tokens'), React.createElement('strong', null, fmt(entry.billed))),
+                      React.createElement('span', { className: 'dshus-dash-rank-stat', 'data-dshus-tip': t('缓存命中率') },
+                        rankStatIcon('cache'), React.createElement('strong', null, typeof entry.cacheHitRate === 'number' ? (entry.cacheHitRate * 100).toFixed(1) + '%' : '—')),
+                      React.createElement('span', { className: 'dshus-dash-rank-stat', 'data-dshus-tip': t('成本') },
+                        rankStatIcon('cost'), React.createElement('strong', null, fmtCost(entry.cost))),
+                    ),
+                    entry.days.length > 0 && rankDaySpark(entry, metric, group),
+                  ),
+                )
+              }),
+              rankRows.length === 0 && React.createElement('div', { className: 'dshus-muted', style: { padding: '12px 0' } }, t('暂无数据')),
+            ),
+            rankRows.length > 5 && React.createElement('button', { type: 'button', className: 'dshus-btn dshus-dash-rank-more', onClick: function () { setRankAll(!rankAll) } }, rankAll ? t('收起') : t('显示更多')),
+          ),
           React.createElement('section', { className: 'dshus-dash-logs' },
             React.createElement('div', { className: 'dshus-dash-logs-head' },
               React.createElement('h3', null, t('请求日志')),
@@ -3589,10 +3958,17 @@ function UsageDashboard(props) {
             ),
           ),
         ),
+        priceOpen && React.createElement(PriceTableDialog, {
+          api: api, models: priceModels,
+          returnFocusId: 'dshus-dash-price-button',
+          onClose: function () { setPriceOpen(false) },
+          onSaved: function () { load(true) },
+        }),
       )
     }
 
-function dashboardHeatmapElement(heatmap, metric) {
+function dashboardHeatmapElement(heatmap, metric, extra) {
+      extra = extra || {}
       var dayMap = {}
       var days = heatmap.days || []
       for (var index = 0; index < days.length; index++) dayMap[days[index].date] = days[index]
@@ -3626,6 +4002,10 @@ function dashboardHeatmapElement(heatmap, metric) {
       return React.createElement('section', { className: 'dshus-dash-chart dshus-dash-heatmap' },
         React.createElement('div', { className: 'dshus-dash-chart-head' },
           React.createElement('h3', null, t('用量热力图')),
+          React.createElement('div', { className: 'dshus-dash-chart-meta' },
+            React.createElement('span', { className: 'dshus-dash-chart-range' }, extra.range || (heatmap.start + ' — ' + heatmap.end)),
+            React.createElement('strong', { className: 'dshus-dash-chart-total' }, extra.total || ''),
+          ),
         ),
         React.createElement('p', { className: 'dshus-dash-heatmap-summary' },
           React.createElement('span', { className: 'dshus-dash-heatmap-range' }, heatmap.start + ' — ' + heatmap.end),
@@ -3657,6 +4037,7 @@ function dashboardHeatmapElement(heatmap, metric) {
             })),
           ),
         ),
+        extra.legend || null,
       )
     }
 
@@ -3712,7 +4093,7 @@ function PriceTableDialog(props) {
         })
       }
 
-      return React.createElement(ControlDialog, { id: 'dshus-price-dialog', title: t('价格表'), onClose: props.onClose, returnFocusId: 'dshus-price-button' },
+      return React.createElement(ControlDialog, { id: 'dshus-price-dialog', title: t('价格表'), onClose: props.onClose, returnFocusId: props.returnFocusId || 'dshus-price-button' },
         React.createElement('p', { className: 'dshus-setting-help' }, t('美元 / 百万 Tokens')),
         error && React.createElement('div', { className: 'dshus-error', role: 'alert' }, uiError(error)),
         models.length === 0
@@ -5070,6 +5451,12 @@ function SeatCheckIcon() {
         React.createElement('path', { d: 'M3.5 8.5l3 3 6-7', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', fill: 'none' }))
     }
 
+/** Right-pointing caret that opens the model list from the advanced pane. */
+function SeatCaretIcon() {
+      return React.createElement('svg', { viewBox: '0 0 16 16', width: '12', height: '12', 'aria-hidden': true },
+        React.createElement('path', { d: 'M6.2 4l4 4-4 4', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', fill: 'none' }))
+    }
+
 function seatReadEnabledPref() {
       try { return localStorage.getItem(SEAT_ENABLED_KEY) === '1' } catch (error) { return false }
     }
@@ -5078,18 +5465,21 @@ function seatWriteEnabledPref(value) {
       try { localStorage.setItem(SEAT_ENABLED_KEY, value ? '1' : '0') } catch (error) { /* startup hint is best-effort */ }
     }
 
-var SEAT_EFFORT_ZH = { auto: '自动', default: '默认', none: '关', off: '关闭', minimal: '极低', low: '低', medium: '中', high: '高', xhigh: '极高', max: '最大' }
+// Effort levels render in English on purpose (like the reference card in the
+// design video): the badge reads as a compact model spec, and a stable Latin
+// label keeps its width predictable across levels.
+var SEAT_EFFORT_EN = { auto: 'Auto', default: 'Default', none: 'Off', off: 'Off', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'XHigh', max: 'Max' }
 
-function seatEffortZh(id, name) {
+function seatEffortLabel(id, name) {
       if (id !== undefined) {
         var key = String(id).toLowerCase()
-        if (SEAT_EFFORT_ZH[key]) return t(SEAT_EFFORT_ZH[key])
+        if (SEAT_EFFORT_EN[key]) return SEAT_EFFORT_EN[key]
       }
       if (name) {
-        var key2 = String(name).toLowerCase()
-        if (SEAT_EFFORT_ZH[key2]) return t(SEAT_EFFORT_ZH[key2])
+        var trimmed = String(name).trim()
+        if (trimmed) return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
       }
-      return name ? String(name) : (id === undefined ? t('自动') : String(id))
+      return id === undefined ? 'Auto' : String(id)
     }
 
 function seatEffortStops(reasoning) {
@@ -5097,10 +5487,10 @@ function seatEffortStops(reasoning) {
       // Keep the selectable unspecified effort even when an adapter reports
       // the current selection as a concrete effort.
       if (reasoning.defaultEffort === undefined) {
-        stops.push({ id: undefined, label: t('自动') })
+        stops.push({ id: undefined, label: 'Auto' })
       }
       for (var i = 0; i < reasoning.efforts.length; i++) {
-        stops.push({ id: reasoning.efforts[i].id, label: seatEffortZh(reasoning.efforts[i].id, reasoning.efforts[i].name) })
+        stops.push({ id: reasoning.efforts[i].id, label: seatEffortLabel(reasoning.efforts[i].id, reasoning.efforts[i].name) })
       }
       return stops
     }
@@ -5153,6 +5543,8 @@ function SeatSlider(props) {
       var trackRef = React.useRef(null)
       var dragRectRef = React.useRef(null)
       var draggingRef = React.useRef(false)
+      var dragVisualState = React.useState(false)
+      var dragVisual = dragVisualState[0], setDragVisual = dragVisualState[1]
       var valueRef = React.useRef(value)
       valueRef.current = value
       var max = Math.max(count - 1, 1)
@@ -5161,7 +5553,7 @@ function SeatSlider(props) {
         var el = trackRef.current
         if (!el) return valueRef.current
         var rect = dragRectRef.current || el.getBoundingClientRect()
-        var ratio = Math.min(1, Math.max(0, (clientX - rect.left - 14) / Math.max(rect.width - 28, 1)))
+        var ratio = Math.min(1, Math.max(0, (clientX - rect.left - 11) / Math.max(rect.width - 22, 1)))
         return Math.round(ratio * max)
       }
       function previewIndex(index) {
@@ -5200,10 +5592,10 @@ function SeatSlider(props) {
         React.createElement('div', { className: 'rs2-fill' }),
         tickEls,
         streamEls)]
-      kids.push(React.createElement('div', { key: 'thumb', className: 'rs2-dot' }))
+      kids.push(React.createElement('div', { key: 'thumb', className: 'rs2-knob', style: { borderRadius: '50%' } }))
       return React.createElement('div', {
         ref: trackRef,
-        className: 'rs2-track' + (isMax ? ' rs2-max' : ''),
+        className: 'rs2-track' + (isMax ? ' rs2-max' : '') + (dragVisual ? ' rs2-dragging' : ''),
         role: 'slider',
         'aria-label': t('推理强度'),
         'aria-valuemin': 0,
@@ -5215,6 +5607,7 @@ function SeatSlider(props) {
           try { event.currentTarget.setPointerCapture(event.pointerId) } catch (error) { /* capture is best-effort */ }
           dragRectRef.current = trackRef.current ? trackRef.current.getBoundingClientRect() : null
           draggingRef.current = true
+          setDragVisual(true)
           previewIndex(posToIndex(event.clientX))
         },
         onPointerMove: function (event) {
@@ -5224,12 +5617,17 @@ function SeatSlider(props) {
         onPointerUp: function (event) {
           if (!draggingRef.current) return
           draggingRef.current = false
+          setDragVisual(false)
           try { event.currentTarget.releasePointerCapture(event.pointerId) } catch (error) { /* capture is best-effort */ }
           var index = posToIndex(event.clientX)
           dragRectRef.current = null
           props.onCommit(index)
         },
-        onLostPointerCapture: function () { draggingRef.current = false; dragRectRef.current = null },
+        onLostPointerCapture: function () {
+          draggingRef.current = false
+          dragRectRef.current = null
+          setDragVisual(false)
+        },
       }, kids)
     }
 
@@ -5287,6 +5685,9 @@ function ModelSeatBody(props) {
       var setFailure = failureState[1]
       var rootRef = React.useRef(null)
       var selectingRef = React.useRef(false)
+      // Latest staged/committed context, read by handlers (outside click, trigger
+      // click) that fire long after the render that registered them.
+      var seatLive = React.useRef(null)
       var listRef = React.useRef(null)
       React.useEffect(function () {
         if (!open || mode !== 'models') return
@@ -5335,22 +5736,12 @@ function ModelSeatBody(props) {
       React.useEffect(function () {
         if (!open) return undefined
         var onDown = function (event) {
-          if (rootRef.current && !rootRef.current.contains(event.target)) {
-            setOpen(false)
-            setMode('advanced')
-          }
+          if (rootRef.current && !rootRef.current.contains(event.target)) closeSeat()
         }
         if (typeof document === 'undefined') return undefined
         document.addEventListener('mousedown', onDown)
         return function () { document.removeEventListener('mousedown', onDown) }
       }, [open])
-      React.useEffect(function () {
-        if (!opt) return undefined
-        return props.scheduleClear(function () {
-          setOpt(function (current) { return current === opt ? null : current })
-        })
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [opt])
       if (!props.available || !store || !state) return null
       var current = state.current || null
       var groups = state.groups || []
@@ -5358,9 +5749,39 @@ function ModelSeatBody(props) {
       var displayName = current ? ((model && model.name) || current.model) : ''
       var reasoning = (current && model) ? model.reasoning : undefined
       var effLabel
+      var effMax = false
       if (reasoning) {
         var eff = current.reasoningEffort !== undefined ? current.reasoningEffort : reasoning.defaultEffort
-        effLabel = eff === undefined ? t('自动') : seatEffortZh(eff, (reasoning.efforts.find(function (x) { return x.id === eff }) || {}).name || eff)
+        if (eff === undefined) effLabel = 'Auto'
+        else {
+          effLabel = seatEffortLabel(eff, (reasoning.efforts.find(function (x) { return x.id === eff }) || {}).name || eff)
+        }
+        // The top stop gets the max tint, every other level the plain accent.
+        var ladder = seatEffortStops(reasoning)
+        for (var li = 0; li < ladder.length; li++) {
+          if (ladder[li].id === eff) effMax = ladder.length > 1 && li === ladder.length - 1
+        }
+      }
+      /**
+       * Dismiss the popover, and with it the staged level.
+       *
+       * Picking a stop only stages it: the slider stays open so the user can
+       * keep sliding, and the value is written when the picker is dismissed
+       * (outside click or a second click on the trigger). That keeps the
+       * composer readout quiet until the choice is actually finished.
+       */
+      function closeSeat() {
+        var live = seatLive.current || {}
+        setOpen(false)
+        setMode('advanced')
+        if (!live.current || typeof live.commit !== 'function') return
+        if (selectingRef.current) return
+        if (live.value === live.committed) return
+        var stop = (live.stops || [])[live.value]
+        if (!stop) return
+        var selection = { provider: live.current.provider, model: live.current.model }
+        if (stop.id !== undefined) selection.reasoningEffort = stop.id
+        live.commit(selection)
       }
       function commitSelection(selection) {
         selectingRef.current = true
@@ -5402,28 +5823,21 @@ function ModelSeatBody(props) {
       // current model (or no effort levels) the menu opens on the model list.
       var effortPane = stops.length > 0
       var pane = mode === 'models' || !effortPane ? 'models' : 'advanced'
+      // Fresh context for closeSeat(): it runs from a document listener that was
+      // registered on the render that opened the popover, so it cannot read this
+      // render's closures directly.
+      seatLive.current = { current: current, stops: stops, value: value, committed: committedIdx, commit: commitSelection }
       function commitStop(i) {
-        if (!current || selectingRef.current) { setOpt(null); return }
-        var stop = stops[i]
-        if (!stop || i === committedIdx) { setOpt(null); return }
-        var selection = { provider: current.provider, model: current.model }
-        if (stop.id !== undefined) selection.reasoningEffort = stop.id
-        commitSelection(selection)
+        // Staging only: the popover stays open (see closeSeat) so the model and
+        // level readout under it does not flip on every slider move.
+        if (!current || !stops[i]) { setOpt(null); return }
+        setOpt({ provider: current.provider, model: current.model, value: i })
       }
       function pickModel(group, entry) {
         setOpt(null)
         var selection = { provider: group.id, model: entry.id }
         if (entry.reasoning && entry.reasoning.defaultEffort !== undefined) selection.reasoningEffort = entry.reasoning.defaultEffort
         commitSelection(selection)
-        setMode('advanced')
-      }
-      function pickEffort(id) {
-        if (!current) return
-        setOpt(null)
-        var selection = { provider: current.provider, model: current.model }
-        if (id !== undefined) selection.reasoningEffort = id
-        commitSelection(selection)
-        setOpen(false)
         setMode('advanced')
       }
       var body
@@ -5453,12 +5867,15 @@ function ModelSeatBody(props) {
           )
         )
       } else {
+        var levelMax = stops.length > 1 && value === stops.length - 1
         body = React.createElement(React.Fragment, null,
-          React.createElement('div', { className: 'rs2-advhead' },
-            React.createElement('button', { type: 'button', className: 'rs2-modeljump', onClick: function () { setMode('models') } },
+          // One button for the whole header: the level headline and the model
+          // breadcrumb both open the model list.
+          React.createElement('button', { type: 'button', className: 'rs2-modeljump', onClick: function () { setMode('models') } },
+            React.createElement('span', { className: 'rs2-curlevel' + (levelMax ? ' rs2-curlevel-max' : '') }, (stops[value] || {}).label || effLabel),
+            React.createElement('span', { className: 'rs2-modeljump-row' },
               React.createElement('span', { className: 'rs2-modeljump-name' }, current ? displayName : t('选择模型')),
-              React.createElement(SeatChevron, { open: false })),
-            React.createElement('div', { className: 'rs2-curlevel' + (stops.length > 1 && value === stops.length - 1 ? ' rs2-curlevel-max' : '') }, (stops[value] || {}).label || effLabel)),
+              React.createElement('span', { className: 'rs2-modeljump-chev', 'aria-hidden': true }, React.createElement(SeatCaretIcon, null)))),
           React.createElement('div', { className: 'rs2-sliderbox' },
             React.createElement(SeatSlider, {
               count: stops.length,
@@ -5467,6 +5884,14 @@ function ModelSeatBody(props) {
               onCommit: function (i) { commitStop(i) },
             })))
       }
+      // While the effort pane is open the readout asks for the choice instead of
+      // showing a value that is still being staged; it shows model + level again
+      // once the popover is dismissed and the level has been written.
+      var askingLevel = open && pane === 'advanced'
+      var triggerText = askingLevel ? t('选择推理强度') : (current ? displayName : t('选择模型'))
+      var triggerEffort = !askingLevel && reasoning
+        ? React.createElement('span', { className: 'rs2-trigger-effort' + (effMax ? ' rs2-effort-max' : '') }, effLabel)
+        : null
       return React.createElement('div', { className: 'rs2-root', ref: rootRef },
         React.createElement('button', {
           type: 'button',
@@ -5474,24 +5899,24 @@ function ModelSeatBody(props) {
           'aria-expanded': open,
           disabled: props.locked === true,
           onClick: function () {
-            setOpt(null)
             setFailure(null)
+            if (open) { closeSeat(); return }
+            setOpt(null)
             if (props.available) props.load()
-            setOpen(function (v) {
-              var next = !v
-              if (next) setMode(effortPane ? 'advanced' : 'models')
-              return next
-            })
+            setMode(effortPane ? 'advanced' : 'models')
+            setOpen(true)
           },
         },
           // Compact-mode glyph first, exactly like the official seat: the host
           // row toggles the two display variables defined above, so this icon
           // appears only when the composer cannot fit the text.
           React.createElement('span', { className: 'rs2-trigger-icon', 'aria-hidden': true }, React.createElement(SeatDataIcon, null)),
-          React.createElement('span', { className: 'rs2-trigger-name' }, current ? displayName : t('选择模型')),
-          reasoning ? React.createElement('span', { className: 'rs2-trigger-effort' }, effLabel) : null,
+          React.createElement('span', { className: 'rs2-trigger-name' }, triggerText),
+          // The level rides right behind the model name: no reserved width, so
+          // there is no dead space between the two texts.
+          triggerEffort,
           React.createElement(SeatChevron, { open: open })),
-        open && React.createElement('div', { className: 'rs2-menu' },
+        open && React.createElement('div', { className: 'rs2-menu' + (pane === 'advanced' ? ' rs2-menu-adv' : '') },
           failure ? React.createElement('div', { className: 'rs2-error', role: 'alert' },
             React.createElement('span', { className: 'rs2-error-text' }, failure.text),
             React.createElement('button', {
@@ -5691,6 +6116,7 @@ function seatDiag(event, data) {
     /* diagnostics must never break the seat */
   }
 }
+
 
 /**
  * Per-session seat store that survives a late-arriving model directory.
@@ -6185,18 +6611,33 @@ function registerLocale(ctx) {
   localeService = locale; translate = locale.bind(SECTION_ID)
 }
 
+function desktopBridgeReady() {
+  if (typeof window === 'undefined' || !window.dshDesktop) return false
+  return typeof window.dshDesktop.deviceInfo === 'function' || typeof window.dshDesktop.protocolVersion === 'number'
+}
+
 function apply(ctx) {
-  // DSH Desktop marks its renderer through the preload bridge dshDesktop.
-  // 0.2.0-rc.2 exposes only { protocolVersion: 1 }; older builds carried a
-  // deviceInfo() function. Accept either marker so the settings section
-  // registers on both, while plain browser tabs (no bridge) still bail out.
-  if (typeof window === 'undefined' || !window.dshDesktop) return
-  var hasDeviceInfo = typeof window.dshDesktop.deviceInfo === 'function'
-  var hasProtocolVersion = typeof window.dshDesktop.protocolVersion === 'number'
-  if (!hasDeviceInfo && !hasProtocolVersion) return
-  if (applyStarted) return
-  applyStarted = true
-  mountClient(ctx, 0)
+  if (typeof window === 'undefined' || applyStarted) return
+  var start = function () {
+    if (applyStarted) return
+    applyStarted = true
+    mountClient(ctx, 0)
+  }
+  // The web half mounts under the Desktop preload; a plain browser tab (no
+  // bridge) stays unmounted.
+  if (desktopBridgeReady()) { start(); return }
+  var attempt = 0
+  var again = function () {
+    if (desktopBridgeReady()) { start(); return }
+    attempt += 1
+    if (attempt >= APPLY_RETRY_LIMIT) return
+    var delay = Math.min(50 + attempt * 50, 1000)
+    if (typeof ctx.timeout === 'function') {
+      try { ctx.timeout(again, delay); return } catch (error) { /* fall through to window timer */ }
+    }
+    if (typeof window.setTimeout === 'function') window.setTimeout(again, delay)
+  }
+  again()
 }
 
 // The client half must never lose the race against the services it renders
@@ -6257,12 +6698,60 @@ function mountClientOnce(ctx, slots) {
   }
   var api = new UsageApi()
   // Final evidence for the composer seat: does our trigger actually exist in the
-  // DOM, does it have a box, and is the host showing a dead cell instead?
+  // DOM, does it have a box, is the host showing a dead cell instead, and — once
+  // the menu is opened — what does the card actually measure? The renderer is
+  // not inspectable from here, so these numbers are the only ground truth for
+  // the card width and the slider geometry.
   ctx.effect(function () {
     if (typeof ctx.timeout !== 'function') return undefined
     if (typeof document === 'undefined' || typeof document.querySelector !== 'function') return undefined
     var schedule = ctx.timeout
     var stops = []
+    var disposed = false
+    var pollTimer = null
+    var pollCount = 0
+    function box(scope, selector) {
+      try {
+        var el = scope.querySelector(selector)
+        if (!el || typeof el.getBoundingClientRect !== 'function') return null
+        var rect = el.getBoundingClientRect()
+        return [Math.round(rect.width), Math.round(rect.height)]
+      } catch (error) {
+        return null
+      }
+    }
+    function reportMenu(menu) {
+      var computed = null
+      var ownRect = null
+      try { computed = window.getComputedStyle(menu) } catch (error) { computed = null }
+      try { ownRect = menu.getBoundingClientRect() } catch (error) { ownRect = null }
+      function styleValue(name) { return computed ? String(computed.getPropertyValue(name) || '') : null }
+      seatDiag('seat/menu', {
+        rev: SEAT_REV,
+        menu: ownRect ? [Math.round(ownRect.width), Math.round(ownRect.height)] : null,
+        advhead: box(menu, '.rs2-advhead'),
+        jump: box(menu, '.rs2-modeljump'),
+        level: box(menu, '.rs2-curlevel'),
+        sliderbox: box(menu, '.rs2-sliderbox'),
+        track: box(menu, '.rs2-track'),
+        rail: box(menu, '.rs2-rail'),
+        knob: box(menu, '.rs2-knob'),
+        cssWidth: styleValue('width'),
+        cssMinWidth: styleValue('min-width'),
+        cssMaxWidth: styleValue('max-width'),
+        cssPadding: styleValue('padding'),
+        dpr: typeof window.devicePixelRatio === 'number' ? window.devicePixelRatio : null,
+        zoom: styleValue('zoom'),
+      })
+    }
+    function pollMenu() {
+      if (disposed) return
+      pollCount++
+      var menu = null
+      try { menu = document.querySelector('.rs2-menu') } catch (error) { menu = null }
+      if (menu) { reportMenu(menu); return }
+      if (pollCount < 200) pollTimer = schedule(pollMenu, 700)
+    }
     function probe(delay, label) {
       stops.push(schedule(function () {
         var trigger = null
@@ -6273,6 +6762,7 @@ function mountClientOnce(ctx, slots) {
         try { dead = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('[data-slot-error]').length : 0 } catch (error) { dead = 0 }
         seatDiag('seat/dom', {
           at: label,
+          rev: SEAT_REV,
           trigger: trigger !== null,
           width: rect ? Math.round(rect.width) : null,
           height: rect ? Math.round(rect.height) : null,
@@ -6282,7 +6772,12 @@ function mountClientOnce(ctx, slots) {
     }
     probe(1500, '1.5s')
     probe(5000, '5s')
-    return function () { stops.forEach(function (stop) { try { stop() } catch (error) { /* already fired */ } }) }
+    pollTimer = schedule(pollMenu, 700)
+    return function () {
+      disposed = true
+      stops.forEach(function (stop) { try { stop() } catch (error) { /* already fired */ } })
+      if (pollTimer) { try { pollTimer() } catch (error) { /* already fired */ } }
+    }
   }, 'dsh-usage-stats: seat dom probe')
   injectStyles()
   ctx.effect(bindHoverTips, 'dsh-usage-stats: hover tips')

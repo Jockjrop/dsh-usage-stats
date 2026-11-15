@@ -159,7 +159,7 @@ test('usage streaks follow local calendar days across leap years and fractional 
 test('TPS ranks providers/models by cumulative decode time, not usage or averaged request rates', () => {
   const state = defaultState(); state.tz = 0
   state.sessions.one = scanSessionEvents([
-    ...speedEvents('2026-10-01T12:00:00Z', 'relay', 'same', 1000, 1000, 1, 10000),
+    ...speedEvents('2026-10-01T12:00:00Z', 'relay', 'same', 1000, 5000, 1, 10000),
     ...speedEvents('2026-10-03T12:00:00Z', 'relay', 'same', 1000, 9000, 2),
     ...speedEvents('2026-10-03T12:00:00Z', 'direct', 'same', 200, 1000, 3),
     ...speedEvents('2026-10-03T12:00:00Z', 'relay', 'missing', 9999, 1000, 4).map(e => e.type === 'assistant/message' ? { ...e, data: { ...e.data, stream: [] } } : e),
@@ -170,16 +170,30 @@ test('TPS ranks providers/models by cumulative decode time, not usage or average
   const now = Date.parse('2026-10-03T18:00:00Z')
   const result = foldResponse(state, 0, null, 0, now)
   assert.deepEqual(result.tokenSpeeds.map(s => [s.key, s.samples, s.outputTokens, s.outputMs, s.tokensPerSecond]), [
-    ['direct/same', 1, 200, 1000, 200], ['relay/same', 4, 3000, 20000, 150],
+    ['direct/same', 1, 200, 1000, 200], ['relay/same', 4, 3000, 24000, 125],
   ])
   assert.deepEqual(result.tokenSpeeds.map(s => [s.key, s.ttftMs, s.ttftSamples, s.averageTtftMs]), [
     ['direct/same', 2000, 1, 2000], ['relay/same', 16000, 4, 4000],
   ])
   assert.deepEqual(foldResponse(state, 1, null, 0, now).tokenSpeeds.map(s => [s.key, s.outputMs]), [['direct/same', 1000], ['relay/same', 19000]])
   assert.equal(foldResponse(state, 1, 'relay/same', 0, now).tokenSpeeds[0].averageTtftMs, 2000)
-  assert.equal(foldResponse(state, 0, 'relay/same', 0, now).tokenSpeeds[0].tokensPerSecond, 150)
+  assert.equal(foldResponse(state, 0, 'relay/same', 0, now).tokenSpeeds[0].tokensPerSecond, 125)
   assert.deepEqual(foldResponse(state, 0, 'relay/missing', 0, now).tokenSpeeds, [])
   assert.doesNotMatch(JSON.stringify(state), /PRIVATE/)
+})
+
+test('implausibly fast speed samples are treated as unmeasured', () => {
+  const state = defaultState(); state.tz = 0
+  state.sessions.one = scanSessionEvents([
+    // 3000 tok in 1 s: a single-chunk reply, not a real decode rate.
+    ...speedEvents('2026-10-03T12:00:00Z', 'relay', 'burst', 3000, 1000, 1),
+    ...speedEvents('2026-10-03T12:00:00Z', 'relay', 'sane', 750, 3000, 2),
+    ...speedEvents('2026-10-03T12:00:00Z', 'relay', 'silent', 0, 2000, 3),
+  ], 0)
+  const result = foldResponse(state, 0, null, 0, Date.parse('2026-10-03T18:00:00Z'))
+  assert.deepEqual(result.tokenSpeeds.map(s => [s.key, s.samples, s.outputTokens, s.outputMs, s.tokensPerSecond]), [
+    ['relay/sane', 1, 750, 3000, 250], ['relay/silent', 1, 0, 2000, 0],
+  ])
 })
 
 test('TPS and TTFT mirror DSH first non-empty deltas, tool names, retry attempts and step boundaries', () => {
@@ -192,7 +206,7 @@ test('TPS and TTFT mirror DSH first non-empty deltas, tool names, retry attempts
     start(1), message(1, [{ type: 'text-chunks', time0: time - 9000, dt: [1000, 1000], texts: ['', 'a', 'b'] }]),
     start(2), message(2, [{ type: 'chunk', time: time - 9000, chunk: { type: 'text-delta', text: '' } },
       { type: 'chunk', time: time - 4000, chunk: { type: 'reasoning-delta', text: 'a' } }]),
-    start(3), message(3, [{ type: 'tool-call-chunks', time0: time - 2000, dt: [], args: [''], name: 'tool' }]),
+    start(3), message(3, [{ type: 'tool-call-chunks', time0: time - 2000, dt: [], args: [''], name: 'tool' }], 500),
     start(4), { type: 'assistant/attempt', time: time - 5000, data: { turn: 1, step: 4,
       stream: [{ type: 'chunk', time: time - 6000, chunk: { type: 'tool-call-delta', name: 'tool', argumentsDelta: '' } }] } },
     { type: 'llm/retry', time: time - 4000, data: { turn: 1, step: 4 } },
@@ -471,6 +485,82 @@ test('dashboard folds legacy aggregate-only sessions into totals, series and hea
     ['2026-08-19', [['old', 'deepseek-v4-flash', 500]]],
     ['2026-08-20', [['test', 'deepseek-v4-flash', 1000]]],
   ])
+})
+
+test('dashboard hourly axis always covers complete local days', () => {
+  const state = defaultState()
+  state.tz = -480
+  state.sessions.one = scanSessionEvents([
+    usageEvent('2026-08-20T02:00:00Z', 'alpha', 1000),
+    usageEvent('2026-08-20T03:30:00Z', 'beta', 500),
+  ], -480)
+  const now = Date.parse('2026-08-20T12:56:00+08:00')
+  // "Today" ends at the current moment, but the axis must still render all 24
+  // hours at once — future hours are empty slots, not missing bars.
+  const today = foldDashboard(state, { from: Date.parse('2026-08-20T00:00:00+08:00'), to: now }, now)
+  assert.equal(today.granularity, 'hour')
+  assert.equal(today.series.length, 24)
+  assert.equal(today.series[0].key, String(Date.parse('2026-08-20T00:00:00+08:00')))
+  assert.equal(today.series[23].key, String(Date.parse('2026-08-20T23:00:00+08:00')))
+  assert.equal(today.series[10].calls, 1) // 02:00Z == 10:00 local
+  assert.equal(today.series[11].calls, 1) // 03:30Z == 11:30 local
+  assert.equal(today.series[23].calls, 0)
+  assert.deepEqual(today.series[23].models, [])
+  assert.equal(today.series.reduce((sum, point) => sum + point.calls, 0), 2)
+  assert.equal(today.totals.calls, 2)
+  // A rolling window crossing midnight renders both calendar days in full.
+  const rolling = foldDashboard(state, { from: now - 24 * 3600000, to: now }, now)
+  assert.equal(rolling.granularity, 'hour')
+  assert.equal(rolling.series.length, 48)
+  assert.equal(rolling.series.reduce((sum, point) => sum + point.calls, 0), 2)
+  // A fixed mid-day custom range also keeps the whole day on the axis while
+  // folded data still respects the requested window.
+  const custom = foldDashboard(state, {
+    from: Date.parse('2026-08-20T09:00:00+08:00'), to: Date.parse('2026-08-20T11:00:00+08:00'),
+  }, now)
+  assert.equal(custom.granularity, 'hour')
+  assert.equal(custom.series.length, 24)
+  assert.equal(custom.totals.calls, 1)
+  assert.equal(custom.series[10].calls, 1)
+  assert.equal(custom.series[11].calls, 0) // 11:30 is outside [09:00, 11:00]
+})
+
+test('dashboard model/provider ranking aggregates the range independent of granularity', () => {
+  const state = defaultState()
+  state.tz = 0
+  const ev = (iso, provider, model, billed) => ({
+    type: 'assistant/message', time: Date.parse(iso),
+    data: { usage: { inputTokens: billed }, message: { source: { provider, model } } },
+  })
+  state.sessions.one = scanSessionEvents([
+    ev('2026-11-10T05:00:00Z', 'deepseek', 'v4-pro', 700),
+    ev('2026-11-11T02:00:00Z', 'deepseek', 'v4-pro', 1000),
+    ev('2026-11-11T03:00:00Z', 'deepseek', 'v4-flash', 500),
+    ev('2026-11-11T04:00:00Z', 'zhipu', 'glm', 300),
+  ], 0)
+  const now = Date.parse('2026-11-11T12:00:00Z')
+  // "all" has an empty series but the ranking must still cover every day.
+  const all = foldDashboard(state, { all: true }, now)
+  assert.equal(all.granularity, 'heatmap')
+  assert.equal(all.series.length, 0)
+  assert.deepEqual(all.modelRanking.map((m) => [m.model, m.billed, m.calls]), [
+    ['v4-pro', 1700, 2], ['v4-flash', 500, 1], ['glm', 300, 1],
+  ])
+  const pro = all.modelRanking[0]
+  assert.equal(pro.provider, 'deepseek')
+  assert.deepEqual(pro.days.map((d) => [d.date, d.billed, d.calls]), [
+    ['2026-11-10', 700, 1], ['2026-11-11', 1000, 1],
+  ])
+  assert.deepEqual(all.providerRanking.map((p) => [p.provider, p.billed, p.calls]), [
+    ['deepseek', 2200, 3], ['zhipu', 300, 1],
+  ])
+  // A narrow range narrows the ranking too, and provider filter narrows further.
+  const today = foldDashboard(state, {}, now)
+  assert.deepEqual(today.modelRanking.map((m) => m.model), ['v4-pro', 'v4-flash', 'glm'])
+  assert.equal(today.modelRanking[0].billed, 1000)
+  const filtered = foldDashboard(state, { provider: 'deepseek' }, now)
+  assert.deepEqual(filtered.providerRanking.map((p) => p.provider), ['deepseek'])
+  assert.deepEqual(filtered.modelRanking.map((m) => m.model), ['v4-pro', 'v4-flash'])
 })
 
 test('cost range buckets merge once when rules fold several raw models into one row', () => {
